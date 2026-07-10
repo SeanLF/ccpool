@@ -15,6 +15,12 @@ import (
 // Week is the 7-day weekly window length in seconds.
 const Week = 7 * 86400
 
+// resetJitter is how far below the newest reset a snapshot's reset may sit and still count as the
+// SAME window. Snapshots freeze resets_at at different render moments, so Anthropic's reported epoch
+// wobbles a few seconds between them; a strict max otherwise picks a lone outlier snapshot and
+// under-reports used%. A window is >= 5h from its neighbour, so 300s can't merge two real windows.
+const resetJitter = 300
+
 // Stale is how old a snapshot may be before the raw % is distrusted (CCPOOL_STALE_SECS, default
 // 120s). During active use the statusline re-renders seconds apart, so a trustworthy snapshot is
 // seconds old; past this the caller extrapolates or tiers down.
@@ -83,14 +89,15 @@ func GetWindow(snaps []map[string]any, key string, now, maxAhead int64) (Window,
 		return Window{}, false
 	}
 	// Newest plausible reset, then the max used% on it (monotonic within a window -> freshest).
-	// used% is clamped to [0,100] above and maxReset is one of lives', so a 0.0 seed is safe.
+	// Bucket resets within resetJitter of the max so the wobbling epoch stays one window; used% is
+	// clamped to [0,100] above and maxReset is one of lives', so a 0.0 seed is safe.
 	maxReset := lives[0].Reset
 	for _, l := range lives {
 		maxReset = max(maxReset, l.Reset)
 	}
 	maxUsed := 0.0
 	for _, l := range lives {
-		if l.Reset == maxReset {
+		if maxReset-l.Reset <= resetJitter {
 			maxUsed = max(maxUsed, l.Used)
 		}
 	}

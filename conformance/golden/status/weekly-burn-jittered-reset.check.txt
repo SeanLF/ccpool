@@ -1,0 +1,12 @@
+0
+time     2024-07-03 09:46 UTC (Wed)
+data     fresh (10s ago)
+
+SESSION  30% used  ·  resets in 1h 0m  (5h window)
+WEEKLY   42% used  ·  resets in 3d 0h  (7d window)
+         57% of week elapsed -> 15pts UNDER even-burn pace -- expected unless you run 24/7 (idle/sleep counts as elapsed)
+         pace guide: ~19%/day spends the rest evenly to reset (not a hard cap)
+         burn: ~4.1%/h; IF sustained 24/7, cap in ~14h 5m -- ~2d 9h idle before reset -- ease off IF you'll sustain this unattended (idle/sleep stretches this out)
+         runway: ~9-20 working-hours of pool left -> at your active-hour burn you'd throttle before reset (3d 0h out)
+
+VERDICT  BURN DOWN -- 58% unspent, reset in 3d 0h; at your ~1/7/day pace ~15% would go UNSPENT and reset to zero (you can't bank it). If you have valuable but deferrable work -- deep passes, parallel fan-outs, research, an overnight loop -- spend it now: go bigger/parallel. Not busywork, but don't waste the headroom.

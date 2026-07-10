@@ -32,6 +32,12 @@ const (
 	recentMinDelta = 2.0    // and this much climb (past integer noise)
 
 	keepSecs = 14 * 86400 // drop samples older than this on read
+
+	// resetJitter is how far below the max a reset may sit and still count as the SAME window.
+	// Anthropic's reported resets_at wobbles a few SECONDS between renders, so a strict max lands on
+	// a 1-sample outlier and collapses the envelope (burn/runway silently die). A window is >= 5h
+	// away from its neighbour, so 300s can't merge two real windows.
+	resetJitter = 300.0
 )
 
 // Projection is the weekly burn result: avg %/hour over the current run and the derived time-to-cap,
@@ -159,8 +165,8 @@ func Envelope(entries []Entry, field, resetField string) []Entry {
 		}
 		if hasLatest {
 			rv, rok := num(e[resetField])
-			if !rok || rv != latest {
-				continue // current window only
+			if !rok || latest-rv > resetJitter {
+				continue // current window only (bucketing jittered resets within tolerance of the max)
 			}
 		} else if e[resetField] != nil {
 			continue // no reset recorded anywhere: only rows with a nil reset pass (nil == nil)
