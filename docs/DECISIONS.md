@@ -57,6 +57,16 @@ context compaction or the scratch wipe. (Governor-era detail also in
   `model` field**; hooks docs confirm only `SessionStart` *receives* a model field and no hook
   can *set* model/effort. The working lever is the **`CLAUDE_CODE_SUBAGENT_MODEL` /
   `CLAUDE_CODE_EFFORT_LEVEL` env vars** (VERIFIED: a subagent actually ran haiku).
+- **Detect the work rhythm from usage (auto-profile)** → PoC'd against 407k real transcript
+  events (2026-07-10), then banked. Findings: circular resultant length **R = 0.22–0.33**
+  (all-time / last-30d) — Sean is near-**even/24-7** because the overnight loops smear the
+  circadian signal, so `even` is empirically the right default. The killer insight: **detection
+  is self-obviating** — pace-value and detectability both scale with R, so you only *need* a
+  schedule profile when the rhythm is strong (high R = easy to read), and when it's weak (low R,
+  Sean) `even` is already correct. No "valuable-and-hard" middle → no BOCPD/ADWIN change-point
+  machinery. Timezone travel (UTC-stamped jsonl) further poisons naive hour-of-day detection,
+  but that's a red herring given the above. Survives only as a possible opt-in `ccpool rhythm`
+  *diagnostic* (compute R on a recency window, SUGGEST a profile, never auto-apply).
 
 ## Research findings (durable)
 
@@ -93,6 +103,18 @@ context compaction or the scratch wipe. (Governor-era detail also in
   `task_budget`/effort guidance (calls `max_tokens` a "blunt instrument"), discretionary pool
   resets. Points AWAY from a hard client-side governor — but they will NOT build weekly-pacing
   for flat-fee *local* users (misaligned incentive), so that gap is ours/the ecosystem's.
+- **Native `/status` Usage + Stats tabs** (shipped ~2026-07; the biggest competitive event so
+  far). Usage tab now shows weekly % (all-models AND a separate Fable bucket), 5h %, per-model $,
+  AND diagnostic tips — *"81% subagent-heavy → configure a cheaper model", ">150k context",
+  "8h+ loops", "4+ parallel share one limit"*. That **ate the meter + `review`'s diagnosis**
+  (its first-of-kind claim). Stats tab shows a day×hour activity heatmap (the very rhythm data
+  "detect-from-usage" wanted — but display-only, wired into nothing). **What survives, and it's
+  exactly Sean's persona:** ccpool *projects* (working-hours runway, throttle-before-reset),
+  *enforces* (`run` auto-downshift — native only *advises*), *decides* (`check` verdict for
+  loops), and *delivers proactively* (mid-turn `warn`, always-on statusline — native `/status`
+  is a manual pull an autonomous loop can't open). Net: as a *product* native torched most of
+  the surface; as a *personal tool that drives your own loops within the pool* (the DECISIONS
+  call: "use it, not ship it"), the enforce+project+decide core is still uniquely ccpool's.
 - **Market (IICP/persona):** beachhead = the autonomous-agent operator (Sean; known best,
   positive product-strength). But conversion play is NOT out-metering ccum (sticky) — it's owning
   the unserved "get the most out of your fixed pool" category. As a *free tool* the bar is lower;
@@ -121,12 +143,19 @@ scoped build, not a big misdirected product.
 
 ## Current state & roadmap
 
-Built, tested (30 hermetic), committed, and Sean's LIVE statusLine. Files: `pool.rb` (reconcile
-engine), `calibration.rb`, `analyzer.rb`, `burn.rb`, `statusline.rb`, `ccpool.rb`, `bin/ccpool`,
-`test_ccpool.rb`, `README.md`.
+**Update 2026-07-10** — the consolidation is DONE and LIVE. Every roadmap TODO shipped, each
+review+adversarially-reviewed, ~85 hermetic tests. New modules: `warn.rb` (`ccpool warn`, now
+wired at Sean's UserPromptSubmit/PostToolUse hooks), `check.rb` (`ccpool check`, the checking-usage
+skill now points here via a symlink to ccpool's canonical `skills/checking-usage/SKILL.md`),
+`profile.rb` (schedule-aware pace), `runway.rb` (working-hours-to-reset). Also: statusline parity
+(anomaly log + per-session/ses-keyed history dedup, which surfaced + fixed a latent $/1%
+calibration inflation); history write-throttle + opt-in `prune --history`; `CCPOOL_DOWNSHIFT`
+enforce/advise/off toggle; context-compaction warn now keys off ABSOLUTE token headroom (a 1M
+window isn't nagged at 85%). Old files retired (usage-pace-warn.rb, checking-usage/usage.rb+burn.rb,
+statusline-command.rb) across ~/.claude + dotfiles.
 
-Consolidation (dotfiles tooling → ccpool): DONE = reconcile engine, burn projection (`status`),
-rich coloured statusline. TODO = port `usage-pace-warn.rb` → `ccpool warn` (still wired at Sean's
-UserPromptSubmit/PostToolUse hooks); `ccpool check` verdict (from checking-usage skill); statusline
-parity (anomaly log to `statusline.log`, per-session history dedup); then retire the old files +
-point settings/hooks at ccpool. Possible later: Rust reimplementation once the Ruby proves out.
+Key design threads this session (see graveyard/competitor above): pace reorganized around two
+orthogonal knobs (`WORK_DAYS × WAKE_HOURS`, 24/7 default) with named profiles as sugar; the
+working-hours runway (SRE error-budget burn-rate shape) as the actionable reframe of "% left";
+detect-from-usage PoC'd and banked. Possible later: `ccpool rhythm` diagnostic; Rust reimpl if the
+warn hook's ~67ms Ruby startup ever bites a tight loop.

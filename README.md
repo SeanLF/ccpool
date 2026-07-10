@@ -105,6 +105,12 @@ bar together — they can't disagree.
 - **Single data source.** Reads the statusline snapshot; no OAuth fallback. Stamps data age when
   stale. Robust to the known leak bug (#52326) and clamps garbage, but it's one source, not
   ccum's three-tier hierarchy (yet).
+- **`seven_day` is only the ALL-MODELS weekly window.** Anthropic tracks *separate* per-model
+  weekly caps — a Sonnet-only one ([#27915](https://github.com/anthropics/claude-code/issues/27915))
+  and a distinct Fable weekly bucket — that `/status` shows but that are **not** in the
+  `rate_limits` payload ccpool reads. So you could hit a per-model weekly cap with ccpool showing
+  the main pool healthy. Minor for mixed use; a churn risk if Anthropic adds more buckets. Treat a
+  healthy weekly % as necessary-but-not-sufficient for model-heavy work and check `/status`.
 - **`review` proxies effort** from output-token volume + tool-call count (effort isn't logged
   per-turn); `ultrathink`/thinking inflate output invisibly. Treat it as a hint, not a verdict.
 

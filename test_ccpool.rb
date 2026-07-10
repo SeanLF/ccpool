@@ -328,6 +328,19 @@ csig = Warn.signals(Pool.load_snapshots, "me", NOW)
 ok("warn: own context near compaction -> ctx signal", csig.any? { _1.key == "ctx" })
 ok("warn: context is session-local (ignored for another session)", Warn.signals(Pool.load_snapshots, "other", NOW).none? { _1.key == "ctx" })
 
+# context nag keys off ABSOLUTE headroom, not a flat % -- a 1M window at 89% (~110k free) mustn't nag.
+def ctxsnap(sid, pct, size)
+  File.write(ENV["USAGE_CACHE"].sub(/\.json\z/, "-#{sid}.json"),
+             JSON.generate("captured_at" => NOW, "session_id" => sid,
+                           "context_window" => { "used_percentage" => pct, "context_window_size" => size }, "rate_limits" => {}))
+end
+clear_snaps; ctxsnap("big", 89, 1_000_000)
+ok("warn: 1M window at 89% (~110k free) -> no context nag", Warn.signals(Pool.load_snapshots, "big", NOW).none? { _1.key == "ctx" })
+clear_snaps; ctxsnap("full", 98, 1_000_000)
+ok("warn: 1M window at 98% (~20k free) -> context nag", Warn.signals(Pool.load_snapshots, "full", NOW).any? { _1.key == "ctx" })
+clear_snaps; ctxsnap("sm", 85, 200_000)
+ok("warn: 200k window at 85% (30k free) -> context nag (unchanged)", Warn.signals(Pool.load_snapshots, "sm", NOW).any? { _1.key == "ctx" })
+
 sig = [Warn::Sig.new("pace", Warn::THROTTLE, "TXT")]
 ok("warn.emit: UserPromptSubmit emits plain text", Warn.emit(sig, "UserPromptSubmit", "u", NOW) == "TXT")
 first = Warn.emit(sig, "PostToolUse", "s", NOW) # distinct session -> own marker

@@ -30,7 +30,8 @@ require_relative "statusline" # fmt_size
 module Warn
   STALE        = (ENV["CCPOOL_WARN_STALE_SECS"]     || "3600").to_i # ignore data older than this
   THROTTLE     = (ENV["CCPOOL_WARN_THROTTLE_SECS"]  || "1800").to_i # min gap between weekly/5h warnings
-  CTX_WARN     = (ENV["CCPOOL_WARN_CTX_PCT"]        || "85").to_f   # context % that trips a compaction warning
+  CTX_WARN     = (ENV["CCPOOL_WARN_CTX_PCT"]        || "85").to_f   # % fallback when window size is unknown
+  CTX_WARN_LEFT = (ENV["CCPOOL_WARN_CTX_LEFT"]      || "30000").to_i # or: trip at this many tokens of headroom
   CTX_THROTTLE = (ENV["CCPOOL_WARN_CTX_THROTTLE_SECS"] || "600").to_i # min gap between compaction warnings (more urgent)
   SES_WARN     = (ENV["CCPOOL_WARN_5H_PCT"]         || "85").to_f   # 5h % that trips an auto-throttle heads-up
   MARGIN       = (ENV["CCPOOL_PACE_MARGIN"]         || "3").to_f    # pace overshoot (pts) before we nag
@@ -62,10 +63,24 @@ module Warn
     cap = own && own["captured_at"]
     cw  = own && own["context_window"]
     if cap.is_a?(Numeric) && now - cap <= STALE && cw.is_a?(Hash) &&
-       (ctx = cw["used_percentage"]).is_a?(Numeric) && ctx.between?(0, 100) && ctx >= CTX_WARN
+       (ctx = cw["used_percentage"]).is_a?(Numeric) && ctx.between?(0, 100) && ctx_near?(ctx, cw)
       out << Sig.new("ctx", CTX_THROTTLE, ctx_text(ctx, cw))
     end
     out
+  end
+
+  # Tokens of headroom before the window fills, or nil when the size field is missing.
+  def ctx_left(ctx, cw)
+    size = cw["context_window_size"]
+    size * (100 - ctx) / 100.0 if size.is_a?(Numeric) && size.positive?
+  end
+
+  # Near auto-compaction? Prefer ABSOLUTE headroom (window-size-aware) so a 1M-token window isn't
+  # nagged at 85% (= 150k free); fall back to a flat % only when the size field is missing.
+  def ctx_near?(ctx, cw)
+    return ctx >= CTX_WARN unless (left = ctx_left(ctx, cw))
+
+    left <= CTX_WARN_LEFT
   end
 
   def pace_text(used, p)
@@ -92,11 +107,13 @@ module Warn
 
   def ctx_text(ctx, cw)
     size  = Statusline.fmt_size(cw["context_window_size"])
+    left  = ctx_left(ctx, cw)
+    room  = left&.positive? ? " (~#{Statusline.fmt_size(left)} left)" : "" # omit at exactly 100% (fmt_size(0)=nil)
     where = size ? " of the #{size} context window" : ""
     format(
-      "[context] this session is at %d%%%s -- auto-compaction is near. Land or checkpoint important state " \
-      "now, and consider /compact at a clean point so it doesn't cut mid-task.",
-      ctx.round, where
+      "[context] this session is at %d%%%s%s -- auto-compaction is near. Land or checkpoint important " \
+      "state now, and consider /compact at a clean point so it doesn't cut mid-task.",
+      ctx.round, where, room
     )
   end
 
