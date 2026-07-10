@@ -23,7 +23,8 @@ driver, see `docs/RUST-REIMPL.md`). Consequences for you:
 - **The DESIGN INVARIANTS below are language-agnostic and carry across the migration.** They are
   the durable contract; the Ruby idioms are not.
 - Don't start the Go port unprompted — it's a scoped, sequenced piece of work, not a side effect
-  of a feature.
+  of a feature. When it's time: `docs/standards/go.md` is the how (idioms, fail-open-via-recover,
+  single-binary build, GoReleaser + Homebrew release path); `docs/RUST-REIMPL.md` is the scope.
 
 ## Commands
 
