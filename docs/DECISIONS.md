@@ -116,6 +116,17 @@ context compaction or the scratch wipe. (Governor-era detail also in
   is a manual pull an autonomous loop can't open). Net: as a *product* native torched most of
   the surface; as a *personal tool that drives your own loops within the pool* (the DECISIONS
   call: "use it, not ship it"), the enforce+project+decide core is still uniquely ccpool's.
+  - **CORRECTION (2026-07-10 due-diligence):** the "ate `review`'s diagnosis" claim above was
+    **overstated**. A fresh pass over the current Claude Code docs/changelog (`/usage`, `/stats`,
+    analytics) finds native has **no** expensive-model-on-trivial-work signal (no "Opus did
+    trivial work → downshift"; the diagnostic *tips* are about subagent-share / context / loop
+    length, a different question than `review`'s per-turn provisioning check), and the Stats
+    activity view is a **day-of-week grid, not the day×hour heatmap** claimed — so it doesn't even
+    overlap `rhythm`'s hour-of-day analysis. Net: native absorbed **visibility** (richer
+    dashboards) but not the **diagnosis/decision** layer. `review` and `rhythm` are **less
+    subsumed than feared** — which *strengthens* the lean-KEEP, it doesn't just permit it.
+    (Source: `claude-code-guide` research pass; treat as directional, re-verify against `/status`
+    before any cut.)
 - **Market (IICP/persona):** beachhead = the autonomous-agent operator (Sean; known best,
   positive product-strength). But conversion play is NOT out-metering ccum (sticky) — it's owning
   the unserved "get the most out of your fixed pool" category. As a *free tool* the bar is lower;
@@ -160,3 +171,28 @@ orthogonal knobs (`WORK_DAYS × WAKE_HOURS`, 24/7 default) with named profiles a
 working-hours runway (SRE error-budget burn-rate shape) as the actionable reframe of "% left";
 detect-from-usage PoC'd, banked, then shipped as the opt-in `ccpool rhythm` diagnostic. Possible
 later: Rust reimpl if the warn hook's ~67ms Ruby startup ever bites a tight loop.
+
+**Update 2026-07-10 (part 2) — the sharing pass.** Reframe: ccpool is meant to be *shared*, so
+onboarding earns its keep. Shipped + decided:
+
+- **`ccpool init` (BUILT).** The onboarding vehicle: dry-run diff by default, `--apply` merges the
+  `statusLine` + `warn` hooks into `~/.claude/settings.json` after a timestamped backup.
+  Idempotent, never-clobber, symlink-aware (edits the real dotfiles target, keeps the link),
+  aborts loudly on a dangling symlink or unparseable settings rather than corrupting them. Zero
+  required config — the happy path is `ccpool init --apply` and nothing else. (`init.rb`, tests in
+  `test_ccpool.rb`.) A review + silent-failure pass caught a dangling-symlink clobber, now fixed +
+  tested.
+- **Rust/Go reimpl (SCOPED, not built).** `docs/RUST-REIMPL.md`. Measured the hot path: `warn`
+  ~45 ms / `statusline` ~63 ms cold-process, of which **~32 ms is bare Ruby-interpreter startup**
+  paid on every fire even when `warn` stays silent. Real usage = 6.1 tool-calls/turn → ~7 `warn`
+  fires/turn → ~0.3 s/turn, **<1% of turn wall-clock**. Verdict: latency alone doesn't clear the
+  bar; the real driver is **distribution** (one static binary, no Ruby dep) for the sharing goal —
+  **defer the build**, recommend **Go** when it happens, port only the hot path first.
+- **`--json` (DEFERRED).** No consumer parses ccpool today. Revisit when something actually does
+  (e.g. an autonomous loop consuming `ccpool check` structured output instead of scraping text).
+  Building it now is speculative surface. See `docs/CONFIG-AUDIT.md` for the env-var sweep.
+- **Config audit (`docs/CONFIG-AUDIT.md`).** ~45 `CCPOOL_*`/`USAGE_*` vars inventoried against the
+  "delight via sensible defaults, not config-everything" principle. Finding: a fresh user needs
+  **ZERO** of them; ~15 are documented user choices that earn their keep; the ~30 undocumented
+  ones are cheap `|| default` threshold escape-hatches, invisible on the happy path. The sprawl is
+  low-cost and doesn't burden onboarding — keep defaults, don't grow the documented surface.
