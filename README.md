@@ -57,21 +57,26 @@ ccpool review 7                  # provisioning review, last 7 days
 ## Pace profiles (env)
 
 Pace is `used%` vs how far through the week you *should* be. By default that's the plain
-elapsed fraction of the rolling 7-day window (`even` — assumes uniform 24/7 burn). But the
-window's start is arbitrary (Anthropic-controlled) and few people burn evenly, so a Mon–Fri
-worker looks "ahead of pace" every Friday for no real reason. Set a profile to weight pace by
-your **wall-clock** rhythm instead:
+elapsed fraction of the rolling 7-day window — uniform 24/7, which fits a continuous
+autonomous-loop operator. But the window's start is arbitrary (Anthropic-controlled) and few
+humans burn evenly, so a Mon–Fri worker would look "ahead of pace" every Friday for no real
+reason. Describe your rhythm with two orthogonal knobs (off either → the `CCPOOL_PACE_FLOOR`
+residual, not zero, so one late night isn't read as infinitely ahead of pace):
 
-| `CCPOOL_PACE_PROFILE` | pace target |
-|---|---|
-| `even` (default) | uniform 24/7 — also the honest choice for a random schedule |
-| `weekdays` | Mon–Fri full weight, weekends down to the floor |
-| `workhours` | `CCPOOL_WORK_DAYS` (`1-5`) ∩ `CCPOOL_WORK_HOURS` (`9-17`) full, else floor |
-| `custom` | `CCPOOL_PACE_WEIGHTS` (7, Sun–Sat) × `CCPOOL_PACE_HOUR_WEIGHTS` (24), literal |
+| knob | default | meaning |
+|---|---|---|
+| `CCPOOL_WORK_DAYS` | `0-6` (all) | which days you're active (wday `0`=Sun … `6`=Sat) |
+| `CCPOOL_WAKE_HOURS` | `0-24` (no sleep) | your waking window on those days |
+| `CCPOOL_PACE_FLOOR` | `0.15` | weight for off-days / sleeping hours |
 
-`CCPOOL_PACE_FLOOR` (default `0.15`) is the off-schedule residual so working one evening
-isn't read as infinitely ahead of pace. This one setting steers `status`, `check`, `warn`,
-`run`'s downshift, and the statusline bar together — they can't disagree.
+Examples: **24/7 loop operator** → *defaults*. **9–5 human** → `WORK_DAYS=1-5 WAKE_HOURS=9-17`.
+**7-day indie who sleeps** → `WAKE_HOURS=8-24`. **4-day week** → `WORK_DAYS=1-4 WAKE_HOURS=8-24`.
+
+`CCPOOL_PACE_PROFILE` is optional shorthand that just presets those knobs: `even` (default,
+all/24h), `weekdays` (`1-5`/24h), `workhours` (`1-5`/`9-17`), or `custom` for graded
+`CCPOOL_PACE_WEIGHTS` (7, Sun–Sat) × `CCPOOL_PACE_HOUR_WEIGHTS` (24). An explicit knob overrides
+the preset. One setting steers `status`, `check`, `warn`, `run`'s downshift, and the statusline
+bar together — they can't disagree.
 
 ## Config (env)
 

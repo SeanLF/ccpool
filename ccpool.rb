@@ -75,9 +75,10 @@ module CCPool
 
     d = p[:delta]
     el = p[:elapsed_pct].round
-    if d > MARGIN then "#{d.round} pts AHEAD of pace (#{el}% of the week elapsed) -- burning fast"
-    elsif d < -MARGIN then "#{(-d).round} pts under pace (#{el}% of the week elapsed) -- banked headroom"
-    else "on pace (~#{el}% used and #{el}% elapsed)"
+    frame = Profile.scheduled? ? "of your work-rhythm pace" : "of the week elapsed" # agree with check/warn
+    if d > MARGIN then "#{d.round} pts AHEAD of pace (#{el}% #{frame}) -- burning fast"
+    elsif d < -MARGIN then "#{(-d).round} pts under pace (#{el}% #{frame}) -- banked headroom"
+    else "on pace (~#{el}% #{frame})"
     end
   end
 

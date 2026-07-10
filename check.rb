@@ -120,8 +120,8 @@ module Check
     days_left = [(reset - now).to_f / 86_400, 0.0001].max
     remaining = [100 - used, 0.0].max
     today_cap = [remaining, remaining / days_left].min.clamp(0, 100) # even-burn daily share
-    even = Profile::NAME == "even"
-    word = even ? "even-burn pace" : "your #{Profile::NAME} pace"
+    even = Profile.uniform?
+    word = even ? "even-burn pace" : "your work-rhythm pace"
     note =
       if p[:delta].abs < 2 then "on #{word}"
       elsif p[:delta].positive? then format("%dpts AHEAD of %s (burning fast)", p[:delta].round, word)
