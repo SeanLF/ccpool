@@ -8,6 +8,8 @@ tool (
 	mvdan.cc/gofumpt
 )
 
+require pgregory.net/rapid v1.3.0
+
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
 	golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678 // indirect
