@@ -4,6 +4,7 @@
 # statusline snapshots, and compute pace vs the fraction of the 7-day window elapsed.
 # This is the one thing ccusage can't see (it never gets rate_limits) -- our floor.
 require "json"
+require_relative "profile"
 
 module Pool
   CACHE = File.expand_path(ENV["USAGE_CACHE"] || "~/.claude/usage-cache.json")
@@ -66,11 +67,12 @@ module Pool
     w&.merge(age: data_age(s, now))
   end
 
-  # LINEAR pace: allowance = the fraction of the 7-day window elapsed (not ceil'd days --
-  # that front-loads and reads too rosy). delta>0 = ahead of pace (burning fast).
+  # Pace = used% vs the fraction of the window's ACTIVITY WEIGHT elapsed (Profile). With the
+  # default `even` profile that's the plain elapsed fraction (old linear behaviour); a schedule
+  # profile (weekdays/workhours/custom) weights by your wall-clock rhythm so a Mon-Fri user
+  # isn't flagged "ahead" every Friday. delta>0 = ahead of pace (burning fast).
   def pace(used, reset, now = Time.now.to_i)
-    elapsed = (now - (reset - WEEK)).clamp(0, WEEK)
-    frac = elapsed.to_f / WEEK
-    { elapsed_pct: frac * 100, delta: used - frac * 100, to_reset: reset - now }
+    pct = Profile.elapsed_fraction(reset - WEEK, now, reset) * 100
+    { elapsed_pct: pct, delta: used - pct, to_reset: reset - now }
   end
 end

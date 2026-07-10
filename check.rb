@@ -120,12 +120,18 @@ module Check
     days_left = [(reset - now).to_f / 86_400, 0.0001].max
     remaining = [100 - used, 0.0].max
     today_cap = [remaining, remaining / days_left].min.clamp(0, 100) # even-burn daily share
+    even = Profile::NAME == "even"
+    word = even ? "even-burn pace" : "your #{Profile::NAME} pace"
     note =
-      if p[:delta].abs < 2 then "on even-burn pace"
-      elsif p[:delta].positive? then format("%dpts AHEAD of even-burn pace (burning fast)", p[:delta].round)
-      else format("%dpts UNDER even-burn pace -- expected unless you run 24/7 (idle/sleep counts as elapsed)", (-p[:delta]).round)
+      if p[:delta].abs < 2 then "on #{word}"
+      elsif p[:delta].positive? then format("%dpts AHEAD of %s (burning fast)", p[:delta].round, word)
+      else
+        # the 24/7 caveat only applies to `even`; a schedule profile already accounts for idle.
+        tail = even ? " -- expected unless you run 24/7 (idle/sleep counts as elapsed)" : ""
+        format("%dpts UNDER %s%s", (-p[:delta]).round, word, tail)
       end
-    lines << format("         %d%% of week elapsed -> %s", p[:elapsed_pct].round, note)
+    label = even ? "of week elapsed" : "of #{word}"
+    lines << format("         %d%% %s -> %s", p[:elapsed_pct].round, label, note)
     lines << format("         pace guide: ~%d%%/day spends the rest evenly to reset (not a hard cap)", today_cap.round)
 
     if (proj = Burn.project(wk_hist))

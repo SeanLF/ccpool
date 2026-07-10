@@ -75,6 +75,33 @@ ok("Pool.pace linear: ahead-of-pace (delta>0) at true elapsed fraction", pc[:del
 ok("Pool.pace linear: under-pace (delta<0)", Pool.pace(5, NOW + 4 * 86_400, NOW)[:delta] < 0)
 ok("Pool.pace near-reset exposes to_reset", Pool.pace(50, NOW + 3_600, NOW)[:to_reset] == 3_600)
 
+# ---- Profile (activity-weight pace) -----------------------------------------------
+ok("Profile.int_set parses a range", Profile.int_set("1-5", []) == [1, 2, 3, 4, 5])
+ok("Profile.int_set parses a list", Profile.int_set("1,3,5", []) == [1, 3, 5])
+ok("Profile.int_set all-garbage -> default (not empty)", Profile.int_set("abc", [1, 2, 3]) == [1, 2, 3])
+ok("Profile.weights parses + pads to size", Profile.weights("1,0.5", 4) == [1.0, 0.5, 1.0, 1.0])
+ok("Profile.weights garbled -> all 1.0", Profile.weights("x,y", 3) == [1.0, 1.0, 1.0])
+ok("Profile.hours parses a range", Profile.hours("8-16", [9, 17]) == [8, 16])
+ok("Profile.hours no-dash -> default (must not crash workhours)", Profile.hours("9", [9, 17]) == [9, 17])
+ok("Profile.hours blank/garbled -> default", Profile.hours("", [9, 17]) == [9, 17] && Profile.hours("x-y", [9, 17]) == [9, 17])
+
+ok("Profile even == plain time fraction (3/7 of the window)",
+   (Profile.elapsed_fraction(NOW - 3 * 86_400, NOW, NOW + 4 * 86_400, "even") - 3.0 / 7).abs < 0.001)
+
+# Anchor a window to a real local Monday 00:00 so day-of-week weighting is deterministic.
+base = Time.local(2026, 3, 2, 0, 0, 0)
+mon  = base + ((1 - base.wday) % 7) * 86_400
+mon  = Time.local(mon.year, mon.month, mon.day, 0, 0, 0)
+wstart = mon.to_i
+wreset = wstart + 7 * 86_400
+fri_end = wstart + 5 * 86_400 # ~Fri 24:00 local: all weekday mass elapsed, weekend still ahead
+ev = Profile.elapsed_fraction(wstart, fri_end, wreset, "even")     # ~0.714
+wd = Profile.elapsed_fraction(wstart, fri_end, wreset, "weekdays") # ~0.94 (weekend deferred)
+ok("Profile weekdays: end-of-Friday reads further along than even", wd > ev + 0.1)
+ok("Profile: 0 at window start, 1 at reset (weekdays)",
+   Profile.elapsed_fraction(wstart, wstart, wreset, "weekdays") == 0.0 &&
+   (Profile.elapsed_fraction(wstart, wreset, wreset, "weekdays") - 1.0).abs < 1e-9)
+
 # ---- Calibration ------------------------------------------------------------------
 BND = NOW + 500_000
 File.open(ENV["CCPOOL_HISTORY"], "w") { |f| [[NOW - 7_200, 5], [NOW - 3_600, 12], [NOW, 20]].each { |t, w| f.puts JSON.generate("t" => t, "wk" => w, "wk_reset" => BND) } }

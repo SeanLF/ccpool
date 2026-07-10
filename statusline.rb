@@ -150,7 +150,7 @@ module Statusline
       dollars = dpp ? " #{DIM}#{left >= 1000 ? "$#{(left / 1000).round(1)}k" : "$#{left.round}"}#{RESET}" : ""
       if sd["resets_at"].is_a?(Numeric)
         reset = sd["resets_at"]
-        pace = ((now - (reset - WEEK)).to_f / WEEK).clamp(0.0, 1.0)
+        pace = Profile.elapsed_fraction(reset - WEEK, now, reset) # same weighting as Pool.pace -> bar agrees with verdict
         days_left = [(reset - now).to_f / 86_400, 0.0001].max
         day = [100 - used, (100 - used) / days_left].min.clamp(0, 100) # burnable %/remaining-day
         wk_grp << "wk #{meter(used / 100.0, pace, width)} #{wknum}#{dollars} #{fmt_dur(reset - now)} #{DIM}day #{day.round}%#{RESET}"

@@ -69,8 +69,9 @@ module Warn
   end
 
   def pace_text(used, p)
+    against = Profile::NAME == "even" ? "of the week elapsed" : "of your #{Profile::NAME} pace"
     format(
-      "[usage-pace] WEEKLY pace: %d%% used vs ~%d%% of the week elapsed (~%dpts ahead; resets in %s). " \
+      "[usage-pace] WEEKLY pace: %d%% used vs ~%d%% #{against} (~%dpts ahead; resets in %s). " \
       "A PACE signal, NOT a stop order. If finishing the current task is cheaper than a clean handover, " \
       "push through -- a cold restart pays to rebuild context. If you stop, checkpoint properly: update " \
       "the relevant docs and leave a handover note so the next session resumes cheaply, don't just drop " \

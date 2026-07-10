@@ -13,6 +13,11 @@ does, in one CLI:
   which actually take effect on spawned subagents.
 - **`ccpool review [days]`** — retrospective: **did you use the right model for the work?**
   Flags expensive-model turns that did trivial work (candidates to downshift). First-of-kind.
+- **`ccpool check`** — time + budget + a keep-going/stop **verdict** for long or autonomous
+  loops (`KEEP GOING` / `PACE DOWN` / `SESSION-LIMITED` / `WIND DOWN` / `COAST` / `BURN DOWN`),
+  distinguishing a temporary 5h throttle from a real "stop for the week."
+- **`ccpool warn`** — a Claude Code hook (wire at `UserPromptSubmit`/`PostToolUse`) that warns
+  the agent mid-turn when it's over pace, near the 5h cap, or near context auto-compaction.
 
 It delegates every dollar to `ccusage` (never hand-rolls pricing) and reads the `rate_limits`
 % that ccusage structurally can't. Fails **open** on any missing/stale data — it never blocks
@@ -44,18 +49,38 @@ it — no statusLine change needed.
 
 ```sh
 ccpool status                    # full readout
+ccpool check                     # keep-going/stop verdict (long / autonomous loops)
 ccpool run -- claude -p "..."    # or wrap a fan-out script; downshifts when ahead of pace
 ccpool review 7                  # provisioning review, last 7 days
 ```
+
+## Pace profiles (env)
+
+Pace is `used%` vs how far through the week you *should* be. By default that's the plain
+elapsed fraction of the rolling 7-day window (`even` — assumes uniform 24/7 burn). But the
+window's start is arbitrary (Anthropic-controlled) and few people burn evenly, so a Mon–Fri
+worker looks "ahead of pace" every Friday for no real reason. Set a profile to weight pace by
+your **wall-clock** rhythm instead:
+
+| `CCPOOL_PACE_PROFILE` | pace target |
+|---|---|
+| `even` (default) | uniform 24/7 — also the honest choice for a random schedule |
+| `weekdays` | Mon–Fri full weight, weekends down to the floor |
+| `workhours` | `CCPOOL_WORK_DAYS` (`1-5`) ∩ `CCPOOL_WORK_HOURS` (`9-17`) full, else floor |
+| `custom` | `CCPOOL_PACE_WEIGHTS` (7, Sun–Sat) × `CCPOOL_PACE_HOUR_WEIGHTS` (24), literal |
+
+`CCPOOL_PACE_FLOOR` (default `0.15`) is the off-schedule residual so working one evening
+isn't read as infinitely ahead of pace. This one setting steers `status`, `check`, `warn`,
+`run`'s downshift, and the statusline bar together — they can't disagree.
 
 ## Config (env)
 
 | var | default | meaning |
 |---|---|---|
-| `CCPOOL_PACE_MARGIN` | `3` | pts over pace before `run` downshifts |
+| `CCPOOL_PACE_MARGIN` | `3` | pts over pace before `run` downshifts / `warn` nags |
 | `CCPOOL_DOWNSHIFT_MODEL` / `_EFFORT` | `haiku` / `low` | what to downshift subagents to |
 | `CCPOOL_CALIB_TTL` | `21600` | seconds to cache the `$/1%` calibration |
-| `CCPOOL_CCUSAGE_CMD` | `npx -y ccusage@latest` | how to invoke ccusage |
+| `CCPOOL_CCUSAGE_CMD` | `npx -y ccusage@20` | how to invoke ccusage (pinned major — see calibration.rb) |
 | `USAGE_CACHE`, `CCPOOL_HISTORY`, `CCPOOL_CALIB_CACHE` | `~/.claude/...` | data paths (test isolation) |
 
 ## Honest limitations
@@ -75,5 +100,5 @@ ccpool review 7                  # provisioning review, last 7 days
 ## Tests
 
 ```sh
-ruby test_ccpool.rb   # 22 hermetic cases, no real ~/.claude access
+ruby test_ccpool.rb   # 56 hermetic cases, no real ~/.claude access
 ```
