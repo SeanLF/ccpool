@@ -1,0 +1,138 @@
+[
+  {
+    "name": "pace_userprompt",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "hook_event_name": "UserPromptSubmit", "session_id": "s1" },
+    "snaps": [
+      { "session_id": "s1", "captured_at": 1719999940, "rate_limits": { "seven_day": { "used_percentage": 50, "resets_at": 1720345600 } } }
+    ]
+  },
+  {
+    "name": "pace_posttooluse_fires",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "hook_event_name": "PostToolUse", "session_id": "s1" },
+    "snaps": [
+      { "session_id": "s1", "captured_at": 1719999940, "rate_limits": { "seven_day": { "used_percentage": 50, "resets_at": 1720345600 } } }
+    ]
+  },
+  {
+    "name": "pace_posttooluse_throttled",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "hook_event_name": "PostToolUse", "session_id": "s1" },
+    "markers": { "pace": 1719999900 },
+    "snaps": [
+      { "session_id": "s1", "captured_at": 1719999940, "rate_limits": { "seven_day": { "used_percentage": 50, "resets_at": 1720345600 } } }
+    ]
+  },
+  {
+    "name": "session_warn",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "hook_event_name": "UserPromptSubmit", "session_id": "s1" },
+    "snaps": [
+      { "session_id": "s1", "captured_at": 1719999940, "rate_limits": { "five_hour": { "used_percentage": 90, "resets_at": 1720003600 } } }
+    ]
+  },
+  {
+    "name": "ctx_warn_with_size",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "hook_event_name": "UserPromptSubmit", "session_id": "s1" },
+    "snaps": [
+      { "session_id": "s1", "captured_at": 1719999940, "context_window": { "used_percentage": 95, "context_window_size": 200000 } }
+    ]
+  },
+  {
+    "name": "ctx_warn_no_size",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "hook_event_name": "UserPromptSubmit", "session_id": "s1" },
+    "snaps": [
+      { "session_id": "s1", "captured_at": 1719999940, "context_window": { "used_percentage": 90 } }
+    ]
+  },
+  {
+    "name": "multi_signal_userprompt",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "hook_event_name": "UserPromptSubmit", "session_id": "s1" },
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999940,
+        "context_window": { "used_percentage": 95, "context_window_size": 200000 },
+        "rate_limits": {
+          "seven_day": { "used_percentage": 50, "resets_at": 1720345600 },
+          "five_hour": { "used_percentage": 90, "resets_at": 1720003600 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "multi_signal_posttooluse_ctx_only",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "hook_event_name": "PostToolUse", "session_id": "s1" },
+    "markers": { "pace": 1719999900, "session": 1719999900 },
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999940,
+        "context_window": { "used_percentage": 95, "context_window_size": 200000 },
+        "rate_limits": {
+          "seven_day": { "used_percentage": 50, "resets_at": 1720345600 },
+          "five_hour": { "used_percentage": 90, "resets_at": 1720003600 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "stale_no_signal",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "hook_event_name": "UserPromptSubmit", "session_id": "s1" },
+    "snaps": [
+      { "session_id": "s1", "captured_at": 1719990000, "rate_limits": { "seven_day": { "used_percentage": 50, "resets_at": 1720345600 } } }
+    ]
+  },
+  {
+    "name": "under_pace_no_signal",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "hook_event_name": "UserPromptSubmit", "session_id": "s1" },
+    "snaps": [
+      { "session_id": "s1", "captured_at": 1719999940, "rate_limits": { "seven_day": { "used_percentage": 10, "resets_at": 1720345600 } } }
+    ]
+  },
+  {
+    "name": "coast_no_pace_nag",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "hook_event_name": "UserPromptSubmit", "session_id": "s1" },
+    "snaps": [
+      { "session_id": "s1", "captured_at": 1719999940, "rate_limits": { "seven_day": { "used_percentage": 50, "resets_at": 1720003600 } } }
+    ]
+  },
+  {
+    "name": "no_session_global_marker_throttle",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "hook_event_name": "PostToolUse" },
+    "markers": { "pace": 1719999900 },
+    "snaps": [
+      { "session_id": "s1", "captured_at": 1719999940, "rate_limits": { "seven_day": { "used_percentage": 50, "resets_at": 1720345600 } } }
+    ]
+  },
+  {
+    "name": "scheduled_profile_pace_wording",
+    "now": 1720000000,
+    "env": { "CCPOOL_PACE_PROFILE": "workhours", "TZ": "UTC" },
+    "payload": { "hook_event_name": "UserPromptSubmit", "session_id": "s1" },
+    "snaps": [
+      { "session_id": "s1", "captured_at": 1719999940, "rate_limits": { "seven_day": { "used_percentage": 50, "resets_at": 1720345600 } } }
+    ]
+  }
+]

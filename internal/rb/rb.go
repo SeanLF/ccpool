@@ -39,6 +39,18 @@ func ParseObject(b []byte) map[string]any {
 	return m
 }
 
+// Num reads a value decoded by ParseObject back as a float64, reporting whether it was a JSON
+// number. The companion to ParseObject's UseNumber: the canonical way the port reads a numeric
+// field (a non-number, including nil, reports false). An out-of-range magnitude reports false too.
+func Num(v any) (float64, bool) {
+	n, ok := v.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	f, err := n.Float64()
+	return f, err == nil
+}
+
 // RoundToInt mirrors Ruby Float#round to an integer: half away from zero (2.5 -> 3, -2.5 -> -3),
 // which is exactly what math.Round does.
 func RoundToInt(f float64) int { return int(math.Round(f)) }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/statusline"
+	"github.com/SeanLF/ccpool/internal/warn"
 )
 
 // Build metadata, injected at release time by GoReleaser via -ldflags -X.
@@ -42,6 +43,9 @@ func run(args []string) int {
 		return 0
 	case "__warm-calib": // internal: detached background $/1% warm-up (see statusline warm)
 		statusline.WarmCalib(time.Now().Unix())
+		return 0
+	case "warn":
+		warn.Hook(time.Now().Unix())
 		return 0
 	case "version", "--version", "-v":
 		fmt.Printf("ccpool %s (%s, built %s)\n", version, commit, date)

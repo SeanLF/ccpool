@@ -182,7 +182,7 @@ func ccusageBlocks(now int64) ([]block, bool) {
 			endStr = str(b["endTime"])
 		}
 		e, ok2 := parseTime(endStr)
-		c, ok3 := num(b["costUSD"])
+		c, ok3 := rb.Num(b["costUSD"])
 		if !ok1 || !ok2 || !ok3 || e <= s {
 			continue
 		}
@@ -291,9 +291,9 @@ func wkRuns() []wkRun {
 		if r == nil {
 			continue
 		}
-		wk, ok1 := num(r["wk"])
-		bnd, ok2 := num(r["wk_reset"])
-		tv, ok3 := num(r["t"])
+		wk, ok1 := rb.Num(r["wk"])
+		bnd, ok2 := rb.Num(r["wk_reset"])
+		tv, ok3 := rb.Num(r["t"])
 		if !ok1 || !ok2 || !ok3 {
 			continue
 		}
@@ -361,18 +361,9 @@ func sortedPoints(mins map[int64]float64) []wkPoint {
 
 // --- small helpers ---
 
-func num(v any) (float64, bool) {
-	n, ok := v.(json.Number)
-	if !ok {
-		return 0, false
-	}
-	f, err := n.Float64()
-	return f, err == nil
-}
+func numField(m map[string]any, key string) (float64, bool) { return rb.Num(m[key]) }
 
-func numField(m map[string]any, key string) (float64, bool) { return num(m[key]) }
-
-func cachedDPP(m map[string]any) (float64, bool) { return num(m["dpp"]) }
+func cachedDPP(m map[string]any) (float64, bool) { return rb.Num(m["dpp"]) }
 
 func str(v any) string {
 	s, _ := v.(string)

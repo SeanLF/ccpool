@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/SeanLF/ccpool/internal/calib"
+	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/history"
 	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/rb"
@@ -198,7 +199,7 @@ func preview(now int64, embed bool) {
 	} else {
 		line = Render(data, now)
 	}
-	fmt.Fprintf(os.Stderr, "[preview from a %s-old snapshot -- ctx/cache may be stale; live values come from Claude Code]\n", dur(age))
+	fmt.Fprintf(os.Stderr, "[preview from a %s-old snapshot -- ctx/cache may be stale; live values come from Claude Code]\n", fmtx.Dur(age))
 	if line != "" {
 		fmt.Println(line)
 	}
@@ -258,20 +259,6 @@ func pruneCaches(now int64) int {
 		}
 	}
 	return removed
-}
-
-// dur formats a countdown for the preview caveat ("5d 10h" / "3h 20m" / "now"). This mirrors the
-// CCPool.dur helper, not statusline's fmt_dur (durations here read coarser).
-func dur(secs int64) string {
-	if secs <= 0 {
-		return "now"
-	}
-	d := secs / 86400
-	r := secs % 86400
-	if d > 0 {
-		return fmt.Sprintf("%dd %dh", d, r/3600)
-	}
-	return fmt.Sprintf("%dh %dm", r/3600, (r%3600)/60)
 }
 
 func isTTY(f *os.File) bool {

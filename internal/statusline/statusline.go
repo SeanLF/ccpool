@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/calib"
+	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/profile"
 	"github.com/SeanLF/ccpool/internal/rb"
 )
@@ -232,20 +233,12 @@ func fmtDur(secs int64) string {
 	return fmt.Sprintf("%dm", m)
 }
 
-// fmtSize renders a token count as "1M"/"200k"; "" unless the value is a positive number.
+// fmtSize renders a token count as "1M"/"200k"; "" unless the value is a positive JSON number.
 func fmtSize(v any) string {
-	n, ok := v.(json.Number)
-	if !ok {
-		return ""
+	if f, ok := rb.Num(v); ok {
+		return fmtx.Size(f)
 	}
-	f, err := n.Float64()
-	if err != nil || f <= 0 {
-		return ""
-	}
-	if f >= 1_000_000 {
-		return fmt.Sprintf("%dM", rb.RoundToInt(f/1_000_000.0))
-	}
-	return fmt.Sprintf("%dk", rb.RoundToInt(f/1000.0))
+	return ""
 }
 
 // fmtDollars is the $-left readout: "$1.2k" past a grand, else "$47".
