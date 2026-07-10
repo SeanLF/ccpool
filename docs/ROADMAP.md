@@ -47,6 +47,20 @@ confirms the current parsers already hold this.)
 
 ## Sprint A — hardening + cleanup (the near-term plan; start here)
 
+**A0. FIX: burn/runway silently dead from `resets_at` jitter (correctness bug — do first).**
+Diagnosed 2026-07-10 against real history. Anthropic's reported weekly `resets_at` wobbles by a few
+SECONDS between renders (real data had `wk_reset` = 1784163600, 1784163604, 1784163562, … within one
+week). `Burn.envelope` picks the strict `max(wk_reset)` as "the current window," so it lands on a
+1-sample outlier (`1784163604`, wk 11) instead of the real window (`1784163600`: 5,868 rows / 45.7h /
+wk 0→27) → no run → `Burn.project` returns nil → no burn/runway line on `check`/`status`. (The purged
+`bench` sentinel was just the first instance of this.) **Fix:** in `internal/burn` bucket `wk_reset`
+within a jitter tolerance of the max (validated: 60s tolerance restores the 5,870-row window and burn
+fires; make it a named const, e.g. `RESET_JITTER = 300`). Then re-check `pool.GetWindow`
+(reconcile picks max reset + max used on it) and `resolve_weekly` for the same strict-max
+susceptibility — apply the same tolerance if present. Add conformance fixtures with jittered `wk_reset`
+(a few-second spread + a 1-row outlier at the max) so this can't regress; re-baseline the check/status
+goldens (burn line returns). Verify against the real machine: `./ccpool check` shows a Burn + Runway line.
+
 **A4. Test hardening (started — highest value / lowest risk).** Fuzz targets exist + pass (above).
 Remaining: `pgregory.net/rapid` property tests on the math (pace `elapsed_fraction ∈ [0,1]`, runway
 monotonic in burn rate, burn ≥ 0, reconcile = newest-reset/max-used); `testscript` `.txtar` CLI e2e
