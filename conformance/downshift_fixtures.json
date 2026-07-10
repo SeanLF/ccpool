@@ -1,0 +1,110 @@
+[
+  {
+    "name": "5h-hot-downshift",
+    "now": 1700000000,
+    "env": {},
+    "snaps": [
+      {
+        "captured_at": 1700000000,
+        "session_id": "s1",
+        "rate_limits": {
+          "seven_day": { "used_percentage": 50, "resets_at": 1700302400 },
+          "five_hour": { "used_percentage": 90, "resets_at": 1700003600 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "5h-hot-but-ahead-pace-wins",
+    "now": 1700000000,
+    "env": {},
+    "snaps": [
+      {
+        "captured_at": 1700000000,
+        "session_id": "s1",
+        "rate_limits": {
+          "seven_day": { "used_percentage": 60, "resets_at": 1700432000 },
+          "five_hour": { "used_percentage": 90, "resets_at": 1700003600 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "coast-no-downshift",
+    "now": 1700000000,
+    "env": {},
+    "snaps": [
+      {
+        "captured_at": 1700000000,
+        "session_id": "s1",
+        "rate_limits": {
+          "seven_day": { "used_percentage": 80, "resets_at": 1700003600 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "pace-over-margin-downshift",
+    "now": 1700000000,
+    "env": {},
+    "snaps": [
+      {
+        "captured_at": 1700000000,
+        "session_id": "s1",
+        "rate_limits": {
+          "seven_day": { "used_percentage": 60, "resets_at": 1700432000 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "on-pace-no-downshift",
+    "now": 1700000000,
+    "env": {},
+    "snaps": [
+      {
+        "captured_at": 1700000000,
+        "session_id": "s1",
+        "rate_limits": {
+          "seven_day": { "used_percentage": 50, "resets_at": 1700302400 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "no-data-fail-open",
+    "now": 1700000000,
+    "env": {},
+    "snaps": []
+  },
+  {
+    "name": "stale-no-calib-fail-open",
+    "now": 1700000000,
+    "env": {},
+    "snaps": [
+      {
+        "captured_at": 1699996400,
+        "session_id": "s1",
+        "rate_limits": {
+          "seven_day": { "used_percentage": 50, "resets_at": 1700302400 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "estimated-tier-tag",
+    "now": 1700000000,
+    "env": {},
+    "calib": "{\"dpp\":2.0,\"at\":1700000000}",
+    "blocks": "{\"blocks\":[]}",
+    "snaps": [
+      {
+        "captured_at": 1699996400,
+        "session_id": "s1",
+        "rate_limits": {
+          "seven_day": { "used_percentage": 50, "resets_at": 1700432000 }
+        }
+      }
+    ]
+  }
+]

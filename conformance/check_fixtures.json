@@ -1,0 +1,169 @@
+[
+  {
+    "name": "no-data-absent",
+    "now": 1720000000,
+    "snaps": []
+  },
+  {
+    "name": "corrupt-unreadable",
+    "now": 1720000000,
+    "raw_snaps": ["{ this is not valid json", "also broken \""]
+  },
+  {
+    "name": "keep-going-fresh",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999990,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 50, "resets_at": 1720259200 },
+          "five_hour": { "used_percentage": 30, "resets_at": 1720003600 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "session-limited",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999990,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 40, "resets_at": 1720259200 },
+          "five_hour": { "used_percentage": 95, "resets_at": 1720003600 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "coast",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999990,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 95, "resets_at": 1720030000 },
+          "five_hour": { "used_percentage": 30, "resets_at": 1720003600 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "wind-down",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999990,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 95, "resets_at": 1720086400 },
+          "five_hour": { "used_percentage": 30, "resets_at": 1720003600 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "burn-down-session-nil-old-freshness",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999700,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 20, "resets_at": 1720086400 },
+          "five_hour": { "used_percentage": 30, "resets_at": 1719999900 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "unknown-both-expired",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999990,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 40, "resets_at": 1719999900 },
+          "five_hour": { "used_percentage": 30, "resets_at": 1719999900 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "pace-down",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999990,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 70, "resets_at": 1720432000 },
+          "five_hour": { "used_percentage": 30, "resets_at": 1720003600 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "stale-freshness",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719998000,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 50, "resets_at": 1720259200 },
+          "five_hour": { "used_percentage": 30, "resets_at": 1720003600 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "full-burn-and-session-projection",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999990,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 40, "resets_at": 1720259200 },
+          "five_hour": { "used_percentage": 56, "resets_at": 1720003600 }
+        }
+      }
+    ],
+    "hist": "{\"t\":1719989200,\"wk\":30,\"wk_reset\":1720259200,\"ses\":5,\"ses_reset\":1720003600}\n{\"t\":1719992800,\"wk\":34,\"wk_reset\":1720259200,\"ses\":15,\"ses_reset\":1720003600}\n{\"t\":1719996400,\"wk\":38,\"wk_reset\":1720259200,\"ses\":25,\"ses_reset\":1720003600}\n{\"t\":1719998500,\"wk\":40,\"wk_reset\":1720259200,\"ses\":40,\"ses_reset\":1720003600}\n{\"t\":1719999100,\"wk\":41,\"wk_reset\":1720259200,\"ses\":48,\"ses_reset\":1720003600}\n{\"t\":1719999700,\"wk\":42,\"wk_reset\":1720259200,\"ses\":56,\"ses_reset\":1720003600}\n"
+  },
+  {
+    "name": "weekly-burn-resets-first",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999990,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 40, "resets_at": 1720030000 },
+          "five_hour": { "used_percentage": 30, "resets_at": 1720003600 }
+        }
+      }
+    ],
+    "hist": "{\"t\":1719982000,\"wk\":36,\"wk_reset\":1720030000,\"ses\":10,\"ses_reset\":1720003600}\n{\"t\":1719991000,\"wk\":42,\"wk_reset\":1720030000,\"ses\":20,\"ses_reset\":1720003600}\n{\"t\":1719999400,\"wk\":48,\"wk_reset\":1720030000,\"ses\":30,\"ses_reset\":1720003600}\n"
+  },
+  {
+    "name": "history-unreadable",
+    "now": 1720000000,
+    "hist": "garbage not json\nmore garbage\n",
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999990,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 50, "resets_at": 1720259200 },
+          "five_hour": { "used_percentage": 30, "resets_at": 1720003600 }
+        }
+      }
+    ]
+  }
+]

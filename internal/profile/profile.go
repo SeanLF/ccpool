@@ -105,9 +105,9 @@ func (c Config) weightAt(epoch int64) float64 {
 	return c.weight(int(lt.Weekday()), lt.Hour())
 }
 
-// integral of weight dt over [a, b], stepping on hour boundaries (weight is constant within an
-// hour). ~168 steps for a full window.
-func (c Config) integral(a, b int64) float64 {
+// Integral of weight dt over [a, b], stepping on hour boundaries (weight is constant within an
+// hour). ~168 steps for a full window. Exported so runway can measure a burn run in working hours.
+func (c Config) Integral(a, b int64) float64 {
 	if b <= a {
 		return 0.0
 	}
@@ -136,11 +136,11 @@ func (c Config) ElapsedFraction(windowStart, now, reset int64) float64 {
 	if c.Uniform() {
 		return linear
 	}
-	denom := c.integral(windowStart, reset)
+	denom := c.Integral(windowStart, reset)
 	if denom <= 0 {
 		return linear
 	}
-	return clamp(c.integral(windowStart, now)/denom, 0.0, 1.0)
+	return clamp(c.Integral(windowStart, now)/denom, 0.0, 1.0)
 }
 
 // --- env parsers (all fail open to a default) ---

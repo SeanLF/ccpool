@@ -1,16 +1,22 @@
 // Command ccpool helps get the most out of a fixed Claude subscription pool.
 //
 // This is the Go port of the original Ruby implementation (see docs/GO-MIGRATION.md).
-// Subcommands are added phase by phase; the on-disk contract in docs/GO-MIGRATION.md is
-// the durable interop boundary with any Ruby still running during the transition.
+// The on-disk contract in docs/GO-MIGRATION.md is the durable interop boundary.
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"time"
 
+	"github.com/SeanLF/ccpool/internal/analyzer"
+	"github.com/SeanLF/ccpool/internal/initcmd"
+	"github.com/SeanLF/ccpool/internal/rb"
+	"github.com/SeanLF/ccpool/internal/rhythm"
+	"github.com/SeanLF/ccpool/internal/run"
+	"github.com/SeanLF/ccpool/internal/status"
 	"github.com/SeanLF/ccpool/internal/statusline"
 	"github.com/SeanLF/ccpool/internal/warn"
 )
@@ -24,29 +30,65 @@ var (
 )
 
 func main() {
-	os.Exit(run(os.Args[1:]))
+	os.Exit(dispatch(os.Args[1:]))
 }
 
-// run is the dispatch core, kept separate from main so it is testable and returns
-// an exit code rather than calling os.Exit. On-demand commands fail LOUD (non-zero);
-// the hot-path hooks (statusline, warn) will fail OPEN via recover when they land.
-func run(args []string) int {
-	if len(args) == 0 {
-		usage(os.Stderr)
-		return 2
+// dispatch is the command core, kept separate from main so it is testable and returns an exit code.
+// Hot-path hooks (statusline, warn) fail OPEN via recover; on-demand commands fail LOUD (non-zero).
+func dispatch(args []string) int {
+	now := time.Now().Unix()
+
+	// Bare invocation -> status (Ruby `when "status", nil`).
+	cmd := ""
+	if len(args) > 0 {
+		cmd = args[0]
 	}
 
-	switch args[0] {
+	switch cmd {
+	case "", "status":
+		printLines(os.Stdout, status.Status(now))
+		return 0
+	case "check":
+		lines, code := status.Report(now)
+		w := os.Stdout
+		if code != 0 {
+			w = os.Stderr
+		}
+		printLines(w, lines)
+		return code
 	case "statusline":
 		embed := hasFlag(args[1:], "--embed") || hasFlag(args[1:], "--compact")
-		statusline.Command(time.Now().Unix(), embed)
+		statusline.Command(now, embed)
 		return 0
 	case "__warm-calib": // internal: detached background $/1% warm-up (see statusline warm)
-		statusline.WarmCalib(time.Now().Unix())
+		statusline.WarmCalib(now)
 		return 0
 	case "warn":
-		warn.Hook(time.Now().Unix())
+		warn.Hook(now)
 		return 0
+	case "run":
+		if err := run.Run(args[1:], now); err != nil {
+			if errors.Is(err, run.ErrUsage) {
+				return 2 // usage already printed to stderr
+			}
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0 // unreachable on success: Run exec's the child
+	case "review":
+		analyzer.ReviewCommand(args[1:], now)
+		return 0
+	case "rhythm":
+		printLines(os.Stdout, rhythm.Report(now))
+		return 0
+	case "init":
+		if err := initcmd.Run(args[1:], now); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	case "prune":
+		return prune(args[1:], now)
 	case "version", "--version", "-v":
 		fmt.Printf("ccpool %s (%s, built %s)\n", version, commit, date)
 		return 0
@@ -54,9 +96,30 @@ func run(args []string) int {
 		usage(os.Stdout)
 		return 0
 	default:
-		fmt.Fprintf(os.Stderr, "ccpool: unknown command %q\n\n", args[0])
-		usage(os.Stderr)
+		fmt.Fprintf(os.Stderr, "ccpool: unknown command %q. Run `ccpool help` for usage.\n", cmd)
 		return 2
+	}
+}
+
+// prune deletes stale snapshots, and with --history compacts the history log too.
+func prune(args []string, now int64) int {
+	n := statusline.PruneCaches(now)
+	msg := fmt.Sprintf("pruned %d stale snapshot(s)", n)
+	if hasFlag(args, "--history") {
+		keep := 30.0
+		if v, ok := os.LookupEnv("CCPOOL_HISTORY_KEEP_DAYS"); ok {
+			keep = rb.ToF(v)
+		}
+		removed, _ := initcmd.PruneHistory(now, keep)
+		msg += fmt.Sprintf("; compacted %d old history row(s)", removed)
+	}
+	fmt.Printf("ccpool: %s\n", msg)
+	return 0
+}
+
+func printLines(w io.Writer, lines []string) {
+	for _, l := range lines {
+		fmt.Fprintln(w, l)
 	}
 }
 
@@ -70,15 +133,27 @@ func hasFlag(args []string, flag string) bool {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprint(w, `ccpool - get the most out of a fixed Claude subscription pool
+	fmt.Fprint(w, `ccpool -- get the most out of your fixed Claude subscription pool.
 
-Usage: ccpool <command> [args]
+Usage: ccpool <command> [args]        (no command -> status)
 
 Commands:
-  version    Print version, commit, and build date
-  help       Show this help
+  init [--apply]     wire ccpool into Claude Code (dry-run diff by default; --apply writes).
+  status             % used, ~$ API-equiv left, and pace vs how far through the week you are.
+  check              time + budget + a keep-going/stop VERDICT, for long or autonomous loops.
+  rhythm             your circadian work rhythm + a suggested pace profile (read-only).
+  run -- <cmd...>    run <cmd>, downshifting subagent model/effort when you're ahead of pace.
+  review [days]      retrospective: did you use the right model for the work? (default 7d)
+  statusline         render the Claude Code statusLine; bare in a terminal shows a preview.
+  statusline --embed compact $-left + pace only, to embed in another statusline (e.g. a
+                     ccstatusline custom-command widget). Keep your line, add ccpool's gauge.
+  warn               Claude Code hook: warn mid-turn on pace / 5h / context (stdin = payload).
+  prune [--history]  delete stale snapshots (add --history to also compact the history file).
+  version            print version, commit, and build date.
+  help               this message (also -h, --help).
 
-More commands (statusline, warn, status, check, run, review, rhythm, init,
-prune) are being ported from the Ruby reference; see docs/GO-MIGRATION.md.
+Pace knobs:  CCPOOL_PACE_PROFILE=even|weekdays|workhours|custom · CCPOOL_WORK_DAYS=0-6 ·
+             CCPOOL_WAKE_HOURS=9-17 · CCPOOL_CLOCK=24|12|auto
+Full reference + env vars: see the README.
 `)
 }

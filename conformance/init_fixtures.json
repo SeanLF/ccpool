@@ -1,0 +1,80 @@
+[
+  {
+    "name": "fresh-dry-run",
+    "now": 1710000000,
+    "argv": [],
+    "env": { "CCPOOL_CCUSAGE_CMD": "ccpool-no-such-cmd-zzz" },
+    "kind": "fresh"
+  },
+  {
+    "name": "fresh-apply",
+    "now": 1710000000,
+    "argv": ["--apply"],
+    "env": { "CCPOOL_CCUSAGE_CMD": "sh" },
+    "kind": "fresh"
+  },
+  {
+    "name": "existing-merge-apply",
+    "now": 1710000000,
+    "argv": ["--apply"],
+    "env": { "CCPOOL_CCUSAGE_CMD": "ccpool-no-such-cmd-zzz" },
+    "kind": "regular",
+    "settings": "{\"permissions\":{\"defaultMode\":\"auto\"},\"hooks\":{\"PostToolUse\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"~/.claude/hooks/review.sh\"}]}]}}"
+  },
+  {
+    "name": "already-ours-idempotent",
+    "now": 1710000000,
+    "argv": ["--apply"],
+    "env": { "CCPOOL_CCUSAGE_CMD": "ccpool-no-such-cmd-zzz" },
+    "kind": "regular",
+    "settings": "{\"statusLine\":{\"command\":\"/d/bin/ccpool statusline\"},\"hooks\":{\"UserPromptSubmit\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"/d/bin/ccpool warn\"}]}],\"PostToolUse\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"~/.claude/hooks/other.sh\"}]},{\"hooks\":[{\"type\":\"command\",\"command\":\"/d/bin/ccpool warn\"}]}]}}"
+  },
+  {
+    "name": "symlink-through-apply",
+    "now": 1710000000,
+    "argv": ["--apply"],
+    "env": { "CCPOOL_CCUSAGE_CMD": "ccpool-no-such-cmd-zzz" },
+    "kind": "symlink",
+    "settings": "{\"theme\":\"auto\"}"
+  },
+  {
+    "name": "dangling-symlink-abort",
+    "now": 1710000000,
+    "argv": ["--apply"],
+    "env": { "CCPOOL_CCUSAGE_CMD": "ccpool-no-such-cmd-zzz" },
+    "kind": "symlink",
+    "dangling": true
+  },
+  {
+    "name": "foreign-conflict-hooks-wired",
+    "now": 1710000000,
+    "argv": [],
+    "env": { "CCPOOL_CCUSAGE_CMD": "ccpool-no-such-cmd-zzz" },
+    "kind": "regular",
+    "settings": "{\"statusLine\":{\"command\":\"starship\"},\"hooks\":{\"UserPromptSubmit\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"/d/bin/ccpool warn\"}]}],\"PostToolUse\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"/d/bin/ccpool warn\"}]}]}}"
+  },
+  {
+    "name": "foreign-replace-apply",
+    "now": 1710000000,
+    "argv": ["--apply", "--replace-statusline"],
+    "env": { "CCPOOL_CCUSAGE_CMD": "ccpool-no-such-cmd-zzz" },
+    "kind": "regular",
+    "settings": "{\"statusLine\":{\"command\":\"my-custom-statusline\"}}"
+  },
+  {
+    "name": "ccstatusline-compose",
+    "now": 1710000000,
+    "argv": [],
+    "env": { "CCPOOL_CCUSAGE_CMD": "ccpool-no-such-cmd-zzz" },
+    "kind": "regular",
+    "settings": "{\"statusLine\":{\"command\":\"npx ccstatusline\"},\"hooks\":{\"UserPromptSubmit\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"/d/bin/ccpool warn\"}]}],\"PostToolUse\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"/d/bin/ccpool warn\"}]}]}}"
+  },
+  {
+    "name": "unreadable-abort",
+    "now": 1710000000,
+    "argv": ["--apply"],
+    "env": { "CCPOOL_CCUSAGE_CMD": "ccpool-no-such-cmd-zzz" },
+    "kind": "regular",
+    "settings": "{ this is not json"
+  }
+]

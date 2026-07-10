@@ -1,0 +1,63 @@
+[
+  {
+    "name": "strong-daytime-utc",
+    "now": 1783684800,
+    "tz": "UTC",
+    "files": [
+      {
+        "path": "rh/r.jsonl",
+        "events": [
+          { "day_from": 0, "day_to": 6, "hours": [13, 14, 15, 16], "count": 20 }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "weekday-pattern-utc",
+    "now": 1783684800,
+    "tz": "UTC",
+    "files": [
+      {
+        "path": "work/a.jsonl",
+        "events": [
+          { "day_from": 0, "day_to": 4, "hours": [9, 10, 11, 12, 13, 14, 15, 16], "count": 10 }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "weak-continuous-utc",
+    "now": 1783684800,
+    "tz": "UTC",
+    "files": [
+      {
+        "path": "loop/l.jsonl",
+        "events": [
+          {
+            "day_from": 0,
+            "day_to": 0,
+            "hours": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
+            "count": 8
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "no-activity",
+    "now": 1783684800,
+    "tz": "UTC",
+    "files": []
+  },
+  {
+    "name": "rollover-neg-tz",
+    "now": 1783735200,
+    "tz": "Etc/GMT+4",
+    "files": [
+      {
+        "path": "rh/rollover.jsonl",
+        "raw": [{ "timestamp": "2026-07-11T02:30:00Z", "count": 50 }]
+      }
+    ]
+  }
+]

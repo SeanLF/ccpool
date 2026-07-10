@@ -1,0 +1,38 @@
+[
+  {
+    "name": "drop-old-keep-recent",
+    "now": 1710000000,
+    "keep_days": "30",
+    "hist": "{\"t\":1700000000,\"wk\":10,\"wk_reset\":1700500000,\"ses\":null,\"ses_reset\":null,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"a\"}\n{\"t\":1709000000,\"wk\":20,\"wk_reset\":1709500000,\"ses\":5,\"ses_reset\":1709600000,\"tier\":\"max_20x\",\"cost\":1.5,\"session\":\"b\"}\n{\"t\":1709999000,\"wk\":30,\"wk_reset\":1710500000,\"ses\":null,\"ses_reset\":null,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"c\"}\n"
+  },
+  {
+    "name": "nothing-to-remove",
+    "now": 1710000000,
+    "keep_days": "30",
+    "hist": "{\"t\":1709000000,\"wk\":20,\"wk_reset\":1709500000,\"ses\":null,\"ses_reset\":null,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"b\"}\n{\"t\":1709999000,\"wk\":30,\"wk_reset\":1710500000,\"ses\":null,\"ses_reset\":null,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"c\"}\n"
+  },
+  {
+    "name": "keep-zero-keeps-everything",
+    "now": 1710000000,
+    "keep_days": "0",
+    "hist": "{\"t\":1000000000,\"wk\":1,\"wk_reset\":1000500000,\"ses\":null,\"ses_reset\":null,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"a\"}\n"
+  },
+  {
+    "name": "torn-line-dropped",
+    "now": 1710000000,
+    "keep_days": "30",
+    "hist": "this is not json at all\n{\"t\":1709999000,\"wk\":30,\"wk_reset\":1710500000,\"ses\":null,\"ses_reset\":null,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"c\"}\n"
+  },
+  {
+    "name": "empty-file",
+    "now": 1710000000,
+    "keep_days": "30",
+    "hist": ""
+  },
+  {
+    "name": "no-trailing-newline",
+    "now": 1710000000,
+    "keep_days": "30",
+    "hist": "{\"t\":1700000000,\"wk\":10,\"wk_reset\":1700500000,\"ses\":null,\"ses_reset\":null,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"a\"}\n{\"t\":1709999000,\"wk\":30,\"wk_reset\":1710500000,\"ses\":null,\"ses_reset\":null,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"c\"}"
+  }
+]

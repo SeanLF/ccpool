@@ -46,6 +46,12 @@ func StatuslineLog() string {
 	return resolve("CCPOOL_STATUSLINE_LOG", "~/.claude/statusline.log")
 }
 
+// Projects is the base dir of Claude Code transcripts the analyzer scans
+// (CCPOOL_PROJECTS || ~/.claude/projects); mirrors Ruby Analyzer::PROJECTS.
+func Projects() string {
+	return resolve("CCPOOL_PROJECTS", "~/.claude/projects")
+}
+
 // resolve reads an env override or expands the ~/-prefixed default, mirroring Ruby File.expand_path.
 func resolve(env, def string) string {
 	v := os.Getenv(env)

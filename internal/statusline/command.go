@@ -56,7 +56,7 @@ func Command(now int64, embed bool) {
 	})
 	bestEffort("warm", func() { warm(now) })
 	if os.Getenv("CCPOOL_PRUNE") == "1" { // opt-in only: deleting files is never silent-by-default
-		bestEffort("prune", func() { pruneCaches(now) })
+		bestEffort("prune", func() { PruneCaches(now) })
 	}
 
 	var line string
@@ -235,9 +235,9 @@ func snapshotAge(data map[string]any, path string) int64 {
 	return 0
 }
 
-// pruneCaches deletes stale per-session snapshots (and orphaned tmp files) older than the keep
+// PruneCaches deletes stale per-session snapshots (and orphaned tmp files) older than the keep
 // window. Opt-in (CCPOOL_PRUNE=1); returns the count removed.
-func pruneCaches(now int64) int {
+func PruneCaches(now int64) int {
 	keep := int64(3600)
 	if v, ok := os.LookupEnv("CCPOOL_CACHE_KEEP_SECS"); ok {
 		keep = int64(rb.ToI(v))
