@@ -31,12 +31,21 @@ Claude Code.
 ```sh
 chmod +x bin/ccpool
 export PATH="$PWD/bin:$PATH"     # or symlink bin/ccpool onto your PATH
-ccpool status
+ccpool init                      # dry-run: shows exactly what it would wire, writes nothing
+ccpool init --apply              # wires it in (timestamped backup first) -- zero config needed
 ```
 
+`ccpool init` is the whole setup: it adds the `statusLine` command plus the mid-turn `warn`
+hooks to `~/.claude/settings.json`. It's **dry-run by default** (prints a diff so you see the
+exact change first), **idempotent** (re-run it anytime — it says "already set up" instead of
+duplicating), **never-clobber** (merges alongside your other hooks/permissions, never replaces
+them), and **symlink-aware** (if `settings.json` is a symlink to a dotfiles source it edits the
+real target and leaves the link intact). `--apply` takes a `settings.json.bak.<ts>` backup
+before writing. No env vars required — good defaults are the point.
+
 **Data source.** ccpool reads per-session `~/.claude/usage-cache-*.json` snapshots for the
-`rate_limits` %. On a fresh machine those don't exist (vanilla Claude Code doesn't write them),
-so wire ccpool as your statusLine to self-populate:
+`rate_limits` %. On a fresh machine those don't exist (vanilla Claude Code doesn't write them) —
+the `statusLine` command `ccpool init` wires is what self-populates them. Doing it by hand instead:
 
 ```jsonc
 // ~/.claude/settings.json
@@ -46,13 +55,15 @@ so wire ccpool as your statusLine to self-populate:
 `ccpool statusline` captures `rate_limits` from CC's payload, seeds the history the `$`
 calibration needs, and renders a compact line (`pool 9% · $2.3k left · pace -20↓`). If you
 *already* run a statusline that writes those snapshots (e.g. a custom one), ccpool just reads
-it — no statusLine change needed. Run **`ccpool statusline` bare in a terminal** to preview what
-the line looks like (it renders from the freshest snapshot instead of hanging on stdin), and
-**`ccpool help`** for the full command list.
+it — no statusLine change needed (`init` detects it and flags the conflict rather than
+clobbering; re-run with `--replace-statusline` to take it over). Run **`ccpool statusline` bare
+in a terminal** to preview what the line looks like (it renders from the freshest snapshot
+instead of hanging on stdin), and **`ccpool help`** for the full command list.
 
 ## Usage
 
 ```sh
+ccpool init --apply              # one-time: wire ccpool into Claude Code (dry-run without --apply)
 ccpool status                    # full readout
 ccpool check                     # keep-going/stop verdict (long / autonomous loops)
 ccpool run -- claude -p "..."    # or wrap a fan-out script; downshifts when ahead of pace
@@ -130,5 +141,5 @@ bar together — they can't disagree.
 ## Tests
 
 ```sh
-ruby test_ccpool.rb   # 56 hermetic cases, no real ~/.claude access
+ruby test_ccpool.rb   # 142 hermetic cases, no real ~/.claude access
 ```

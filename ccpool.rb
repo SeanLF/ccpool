@@ -3,6 +3,7 @@
 
 # ccpool -- get the most out of your fixed Claude subscription pool.
 #
+#   ccpool init              wire ccpool into Claude Code (dry-run diff; --apply to write).
 #   ccpool statusline        (wire as your Claude Code statusLine command) -- captures
 #                            rate_limits from CC's payload, seeds history, renders a line.
 #                            This populates ccpool's data on a fresh install.
@@ -26,6 +27,7 @@ require_relative "check"
 require_relative "runway"
 require_relative "rhythm"
 require_relative "clock"
+require_relative "init"
 
 module CCPool
   MARGIN  = (ENV["CCPOOL_PACE_MARGIN"] || "3").to_f
@@ -373,6 +375,7 @@ module CCPool
       Usage: ccpool <command> [args]        (no command -> status)
 
       Commands:
+        init [--apply]     wire ccpool into Claude Code (dry-run diff by default; --apply writes).
         status             % used, ~$ API-equiv left, and pace vs how far through the week you are.
         check              time + budget + a keep-going/stop VERDICT, for long or autonomous loops.
         rhythm             your circadian work rhythm + a suggested pace profile (read-only).
@@ -399,6 +402,7 @@ if $PROGRAM_NAME == __FILE__
   when "run" then CCPool.run(ARGV)
   when "review" then CCPool.review(ARGV)
   when "rhythm" then CCPool.rhythm
+  when "init" then Init.run(ARGV)
   when "help", "-h", "--help" then CCPool.help
   when "prune"
     now = Time.now.to_i

@@ -16,6 +16,7 @@ ENV["CCPOOL_CALIB_CACHE"] = "#{TMP}/calib.json"
 ENV["CCPOOL_PROJECTS"]    = "#{TMP}/projects"
 ENV["TMPDIR"]             = TMP # keep `warn`'s throttle markers hermetic
 ENV["CCPOOL_STATUSLINE_LOG"] = "#{TMP}/statusline.log"
+ENV["CCPOOL_SETTINGS"] = "#{TMP}/settings.json"
 require_relative "ccpool"
 
 NOW = Time.now.to_i
@@ -473,6 +474,115 @@ clear_snaps
 snap("a", five: 50) # 5h live + healthy, but NO weekly window -> must not claim weekly "healthy"
 v = verdict_of
 ok("check: weekly window absent -> KEEP GOING flags it unknown, not 'healthy'", v.start_with?("KEEP GOING") && v.include?("weekly unknown"))
+
+# ---- Init (wire ccpool into Claude Code) ------------------------------------------
+SET = ENV.fetch("CCPOOL_SETTINGS", nil)
+# removes SET, its .bak.* siblings, and any symlink sitting at SET
+def rm_settings = Dir.glob("#{SET}*").each { File.delete(_1) }
+def write_settings_file(hash, path = SET) = File.write(path, JSON.generate(hash))
+def warn_group(cmd) = { "hooks" => [{ "type" => "command", "command" => cmd }] }
+
+# detection primitives
+ours = { "statusLine" => { "command" => "/x/bin/ccpool statusline" } }
+ok("statusline_state: ccpool -> :ours", Init.statusline_state(ours) == :ours)
+ok("statusline_state: none -> :absent", Init.statusline_state({}) == :absent)
+ok("statusline_state: other cmd -> :foreign", Init.statusline_state({ "statusLine" => { "command" => "starship" } }) == :foreign)
+# both invocation forms count as wired (hand-wired `ruby .../ccpool.rb warn` and `bin/ccpool warn`)
+ruby_form = { "hooks" => { "UserPromptSubmit" => [warn_group("ruby /d/ccpool.rb warn")] } }
+ok("warn_wired?: detects `ruby ccpool.rb warn`", Init.warn_wired?(ruby_form, "UserPromptSubmit"))
+ok("warn_wired?: false when the event has other hooks only",
+   !Init.warn_wired?({ "hooks" => { "PostToolUse" => [warn_group("some-other-hook")] } }, "PostToolUse"))
+
+# plan on a fresh install: add statusline + both warn hooks
+fresh_plan = Init.plan({})
+ok("plan(fresh): adds statusLine", fresh_plan[:add_statusline])
+ok("plan(fresh): adds both warn hooks", fresh_plan[:add_hooks].sort == %w[PostToolUse UserPromptSubmit])
+ok("plan(fresh): changes? true", Init.changes?(fresh_plan))
+
+# plan on a fully-wired setup (Sean's shape): idempotent -> no changes
+wired = {
+  "statusLine" => { "command" => "/d/bin/ccpool statusline" },
+  "hooks" => { "UserPromptSubmit" => [warn_group("/d/bin/ccpool warn")],
+               "PostToolUse" => [warn_group("~/.claude/hooks/other.sh"), warn_group("/d/bin/ccpool warn")] }
+}
+wired_plan = Init.plan(wired)
+ok("plan(wired): no changes (idempotent)", !Init.changes?(wired_plan))
+ok("plan(wired): both hooks seen as present", wired_plan[:hooks].values.all? { _1 == :present })
+
+# foreign statusLine: conflict, not clobbered -- unless --replace-statusline
+foreign = { "statusLine" => { "command" => "my-custom-statusline" } }
+ok("plan(foreign): conflict flagged, statusLine NOT added by default",
+   Init.plan(foreign)[:conflict] && !Init.plan(foreign)[:add_statusline])
+ok("plan(foreign, replace): statusLine added, no conflict",
+   Init.plan(foreign, replace_statusline: true)[:add_statusline] && !Init.plan(foreign, replace_statusline: true)[:conflict])
+
+# apply_plan! is never-clobber: preserves foreign hooks + unrelated keys, appends ccpool
+existing = {
+  "permissions" => { "defaultMode" => "auto" },
+  "hooks" => { "PostToolUse" => [warn_group("~/.claude/hooks/review.sh")] }
+}
+merged = Init.apply_plan!(JSON.parse(JSON.generate(existing)), Init.plan(existing))
+ok("apply: preserves unrelated keys", merged["permissions"]["defaultMode"] == "auto")
+ok("apply: preserves a pre-existing foreign hook", merged["hooks"]["PostToolUse"].any? { _1["hooks"][0]["command"].include?("review.sh") })
+ok("apply: appends the ccpool warn hook alongside it", Init.warn_wired?(merged, "PostToolUse") && Init.warn_wired?(merged, "UserPromptSubmit"))
+ok("apply: adds the statusLine", Init.statusline_state(merged) == :ours)
+
+# load_settings: unreadable file is refused (not clobbered)
+rm_settings
+File.write(SET, "{ this is not json")
+ok("load_settings: unparseable -> :unreadable (refuse to touch)", Init.load_settings(SET) == :unreadable)
+File.write(SET, JSON.generate([1, 2])) # valid JSON but not an object
+ok("load_settings: non-object JSON -> :unreadable", Init.load_settings(SET) == :unreadable)
+
+# full run, dry-run by default: prints a diff, writes NOTHING
+rm_settings
+dry = capture { Init.run([], NOW) }
+ok("init dry-run: prints the plan + DRY RUN, writes nothing",
+   dry.include?("DRY RUN") && dry.include?("statusLine") && !File.exist?(SET))
+
+# full run --apply on a fresh install: creates the file, wires everything, idempotent after
+rm_settings
+applied = capture { Init.run(["--apply"], NOW) }
+ok("init --apply: creates settings + reports success", applied.include?("You're set up") && File.exist?(SET))
+got = JSON.parse(File.read(SET))
+ok("init --apply: statusLine + both warn hooks now present",
+   Init.statusline_state(got) == :ours && Init.warn_wired?(got, "UserPromptSubmit") && Init.warn_wired?(got, "PostToolUse"))
+again = capture { Init.run(["--apply"], NOW) }
+ok("init --apply again: idempotent (already set up, no duplication)", again.include?("Already set up"))
+ok("init --apply again: didn't duplicate the UserPromptSubmit hook",
+   JSON.parse(File.read(SET)).dig("hooks", "UserPromptSubmit").size == 1)
+
+# --apply backs up the prior file before writing
+rm_settings
+write_settings_file({ "permissions" => { "defaultMode" => "auto" } })
+capture { Init.run(["--apply"], NOW) }
+bak = Dir.glob("#{SET}.bak.*").first
+ok("init --apply: takes a timestamped backup before writing", bak && JSON.parse(File.read(bak))["permissions"])
+ok("init --apply: merged into the backed-up file (kept permissions, added statusLine)",
+   JSON.parse(File.read(SET)).dig("permissions", "defaultMode") == "auto" && Init.statusline_state(JSON.parse(File.read(SET))) == :ours)
+
+# symlink case: ~/.claude/settings.json -> dotfiles source. Edit the REAL target, keep the link.
+rm_settings
+realf = "#{TMP}/dotfiles-settings.json"
+write_settings_file({ "theme" => "auto" }, realf)
+File.symlink(realf, SET)
+capture { Init.run(["--apply"], NOW) }
+ok("init --apply: leaves the symlink intact (edits the real target)", File.symlink?(SET))
+ok("init --apply: wrote through to the real dotfiles target", Init.statusline_state(JSON.parse(File.read(realf))) == :ours && JSON.parse(File.read(realf))["theme"] == "auto")
+
+# DANGLING symlink (dotfiles linked but target missing): must NOT rename over the link and
+# convert it to a regular file (the clobber the reviewers caught). Abort loudly instead.
+rm_settings
+File.symlink("#{TMP}/no-such-target.json", SET)
+ok("dangling_symlink?: true when the link target is missing", Init.dangling_symlink?(SET))
+begin
+  capture { Init.run(["--apply"], NOW) }
+rescue SystemExit
+  # expected: init aborts rather than clobbering the link
+end
+ok("init --apply: dangling symlink -> aborts, link intact, no regular file written",
+   File.symlink?(SET) && !File.exist?(SET))
+rm_settings
 
 puts($fail.zero? ? "\nAll green." : "\n#{$fail} FAILED.")
 exit($fail.zero? ? 0 : 1)
