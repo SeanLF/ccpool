@@ -7,6 +7,8 @@
 #                            rate_limits from CC's payload, seeds history, renders a line.
 #                            This populates ccpool's data on a fresh install.
 #   ccpool status            % used, ~$ API-equiv left, pace vs the week elapsed.
+#   ccpool check             time + budget + a keep-going/stop VERDICT (for long/auto loops).
+#   ccpool warn              hook: warn the agent mid-turn about pace / 5h / context (stdin=payload).
 #   ccpool run -- <cmd...>   run <cmd>, downshifting subagent model/effort when ahead of pace.
 #   ccpool review [days]     retrospective: did you use the right model for the work?
 #
@@ -18,6 +20,8 @@ require_relative "calibration"
 require_relative "analyzer"
 require_relative "burn"
 require_relative "statusline"
+require_relative "warn"
+require_relative "check"
 
 module CCPool
   MARGIN  = (ENV["CCPOOL_PACE_MARGIN"] || "3").to_f
@@ -167,6 +171,23 @@ module CCPool
     nil
   end
 
+  # -- situational-awareness hook (stdin = hook payload) --------------------------------
+  def warn_hook(now = Time.now.to_i)
+    payload = (JSON.parse($stdin.read) rescue {})
+    payload = {} unless payload.is_a?(Hash)
+    out = Warn.run(payload, now)
+    puts out unless out.to_s.empty?
+  rescue StandardError
+    # a hook must NEVER break Claude Code
+  end
+
+  # -- keep-going/stop verdict ---------------------------------------------------------
+  def check(now = Time.now.to_i)
+    lines, code = Check.report(now)
+    (code.zero? ? $stdout : $stderr).puts(lines)
+    exit code
+  end
+
   # -- pace-aware downshift launcher ---------------------------------------------------
   def downshift_env(now = Time.now.to_i)
     wk = resolve_weekly(now)
@@ -233,11 +254,13 @@ if $PROGRAM_NAME == __FILE__
   case ARGV.shift
   when "statusline" then CCPool.statusline
   when "status", nil then CCPool.status
+  when "check" then CCPool.check
+  when "warn" then CCPool.warn_hook
   when "run" then CCPool.run(ARGV)
   when "review" then CCPool.review(ARGV)
   when "prune" then puts "ccpool: pruned #{CCPool.prune_caches(Time.now.to_i)} stale snapshot(s)"
   else
-    warn "usage: ccpool [statusline|status|run -- <cmd...>|review [days]|prune]"
+    warn "usage: ccpool [statusline|status|check|warn|run -- <cmd...>|review [days]|prune]"
     exit 2
   end
 end

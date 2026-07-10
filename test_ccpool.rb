@@ -14,6 +14,7 @@ ENV["USAGE_CACHE"]        = "#{TMP}/usage-cache.json"
 ENV["CCPOOL_HISTORY"]     = "#{TMP}/hist.jsonl"
 ENV["CCPOOL_CALIB_CACHE"] = "#{TMP}/calib.json"
 ENV["CCPOOL_PROJECTS"]    = "#{TMP}/projects"
+ENV["TMPDIR"]             = TMP # keep `warn`'s throttle markers hermetic
 require_relative "ccpool"
 
 NOW = Time.now.to_i
@@ -183,6 +184,85 @@ clear_snaps
 snap("a", week: 20, reset_in: 400_000)
 Calibration.define_singleton_method(:dollar_per_pct) { |*| 10.0 }
 ok("status shows a burn projection from a clean run", capture { CCPool.status(NOW) }.include?("Burn"))
+
+# ---- Warn (situational-awareness hook) --------------------------------------------
+clear_snaps
+snap("a", week: 60, reset_in: 4 * 86_400) # 60% used, ~43% elapsed -> ahead of pace
+ok("warn: ahead of pace -> pace signal", Warn.signals(Pool.load_snapshots, nil, NOW).any? { _1.key == "pace" })
+
+clear_snaps
+snap("a", week: 5, reset_in: 4 * 86_400)
+ok("warn: under pace -> no pace signal", Warn.signals(Pool.load_snapshots, nil, NOW).none? { _1.key == "pace" })
+
+clear_snaps
+snap("a", week: 5, five: 90, reset_in: 4 * 86_400) # weekly fine, but 5h at 90%
+ok("warn: 5h near full -> session signal", Warn.signals(Pool.load_snapshots, nil, NOW).any? { _1.key == "session" })
+
+clear_snaps
+snap("a", week: 98, reset_in: 40_000) # ahead, but reset < COAST -> use-it-or-lose-it, don't nag
+ok("warn: ahead but near reset (coast) -> no pace signal", Warn.signals(Pool.load_snapshots, nil, NOW).none? { _1.key == "pace" })
+
+clear_snaps
+snap("a", week: 60, reset_in: 4 * 86_400, captured: NOW - 99_999) # ahead but stale
+ok("warn: stale data -> silent (fail open)", Warn.signals(Pool.load_snapshots, nil, NOW).empty?)
+
+clear_snaps
+File.write(ENV["USAGE_CACHE"].sub(/\.json\z/, "-me.json"),
+           JSON.generate("captured_at" => NOW, "session_id" => "me",
+                         "context_window" => { "used_percentage" => 90, "context_window_size" => 200_000 },
+                         "rate_limits" => {}))
+csig = Warn.signals(Pool.load_snapshots, "me", NOW)
+ok("warn: own context near compaction -> ctx signal", csig.any? { _1.key == "ctx" })
+ok("warn: context is session-local (ignored for another session)", Warn.signals(Pool.load_snapshots, "other", NOW).none? { _1.key == "ctx" })
+
+sig = [Warn::Sig.new("pace", Warn::THROTTLE, "TXT")]
+ok("warn.emit: UserPromptSubmit emits plain text", Warn.emit(sig, "UserPromptSubmit", "u", NOW) == "TXT")
+first = Warn.emit(sig, "PostToolUse", "s", NOW) # distinct session -> own marker
+ok("warn.emit: PostToolUse emits additionalContext JSON", first && JSON.parse(first).dig("hookSpecificOutput", "additionalContext") == "TXT")
+ok("warn.emit: PostToolUse throttles a repeat within the window", Warn.emit(sig, "PostToolUse", "s", NOW).nil?)
+
+clear_snaps
+ok("warn.run: no data -> nil (fail open)", Warn.run({ "hook_event_name" => "UserPromptSubmit" }, NOW).nil?)
+
+# ---- Check (keep-going/stop verdict) ----------------------------------------------
+File.write(ENV["CCPOOL_HISTORY"], "")
+def verdict_of(now = NOW)
+  lines, = Check.report(now)
+  (lines.grep(/^VERDICT/).first || "").sub("VERDICT  ", "")
+end
+
+clear_snaps
+lines, code = Check.report(NOW)
+ok("check: no data -> exit 2 + guidance", code == 2 && lines.join.include?("No usage snapshots"))
+
+clear_snaps
+snap("a", week: 45) # ~50% elapsed default, 45% used -> healthy, near pace
+ok("check: healthy weekly -> KEEP GOING", verdict_of.start_with?("KEEP GOING"))
+
+clear_snaps
+snap("a", week: 95) # far from reset (default ~3.5d)
+ok("check: weekly nearly spent, far from reset -> WIND DOWN", verdict_of.start_with?("WIND DOWN"))
+
+clear_snaps
+snap("a", week: 95, reset_in: 6 * 3_600) # nearly spent but resets soon
+ok("check: weekly nearly spent, near reset -> COAST", verdict_of.start_with?("COAST"))
+
+clear_snaps
+snap("a", week: 50, five: 95) # 5h almost full, weekly has room
+ok("check: 5h full, weekly has room -> SESSION-LIMITED", verdict_of.start_with?("SESSION-LIMITED"))
+
+clear_snaps
+snap("a", week: 60, reset_in: 4 * 86_400) # ahead of linear pace, not near reset, little forfeit
+ok("check: ahead of pace -> PACE DOWN", verdict_of.start_with?("PACE DOWN"))
+
+clear_snaps
+snap("a", week: 20) # lots unspent with days left -> burn-down nudge
+ok("check: large unspent surplus -> BURN DOWN", verdict_of.start_with?("BURN DOWN"))
+
+clear_snaps
+snap("a", five: 50) # 5h live + healthy, but NO weekly window -> must not claim weekly "healthy"
+v = verdict_of
+ok("check: weekly window absent -> KEEP GOING flags it unknown, not 'healthy'", v.start_with?("KEEP GOING") && v.include?("weekly unknown"))
 
 puts($fail.zero? ? "\nAll green." : "\n#{$fail} FAILED.")
 exit($fail.zero? ? 0 : 1)
