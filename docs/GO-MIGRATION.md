@@ -1,5 +1,12 @@
 # Go migration — execution playbook & handover
 
+> **STATUS (2026-07-10): Phases 0, 1, 2 DONE** — committed on `main`, each verified byte-identical to
+> Ruby (statusline render+command, calibration, history, warn, pool). The hot path + release pipeline
+> ship in Go. **Phase 3 remains** (on-demand commands `status`/`check`/`run`/`review`/`rhythm`/`init`/
+> `prune`, then retire Ruby). The Go hot path and the Ruby on-demand commands interoperate today via
+> the byte-compatible on-disk contract, so Phase 3 can proceed command-by-command. Migration decisions
+> are recorded in `docs/DECISIONS.md`.
+
 **Start-here doc for the Ruby → Go migration** (committed for v1). This is the *execution* plan; do
 it in a fresh session with a clean context. Read alongside:
 
