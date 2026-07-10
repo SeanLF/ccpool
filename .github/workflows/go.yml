@@ -25,6 +25,9 @@ jobs:
         with:
           go-version-file: go.mod # single source of truth for the Go version
           check-latest: true
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0" # the conformance test diffs Go render output against the Ruby oracle
       - name: format (gofumpt)
         run: |
           out="$(go tool gofumpt -l .)"
