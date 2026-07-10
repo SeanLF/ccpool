@@ -156,8 +156,8 @@ module CCPool
   # -- statusLine command: capture + seed + render (cached $ only; must stay fast) ------
   # Direct in a terminal there's no CC payload on stdin (reading it would just hang), so PREVIEW
   # from the newest snapshot instead. Piped/redirected stdin (incl. Claude Code) -> the real path.
-  def statusline(now = Time.now.to_i)
-    return preview_statusline(now) if $stdin.tty?
+  def statusline(now = Time.now.to_i, embed: false)
+    return preview_statusline(now, embed: embed) if $stdin.tty?
 
     payload = JSON.parse($stdin.read) rescue {}
     return unless payload.is_a?(Hash)
@@ -169,9 +169,11 @@ module CCPool
        File.rename(tmp, path)) rescue nil # atomic
     end
     seed_history(payload, now)
+    warm_calibration(now) # keep the $ populated even for a statusLine-only / embedded user (bg, never blocks)
     prune_caches(now) if ENV["CCPOOL_PRUNE"] == "1" # opt-in only: deleting files is never silent-by-default
 
-    line = Statusline.render(payload, now) # rich: ctx · cache · 5h · weekly meter (coloured) + $
+    # embed: compact $-left + pace only, for a host statusline (e.g. a ccstatusline widget).
+    line = embed ? Statusline.render_compact(payload, now) : Statusline.render(payload, now)
     print line unless line.to_s.empty?
   rescue StandardError => e
     Statusline.log("error", "#{e.class}: #{e.message} @ #{e.backtrace&.first}")
@@ -182,7 +184,7 @@ module CCPool
   # statusLine has captured, so you can see what the line looks like without Claude Code. The
   # rate_limits % is account-global, so an old snapshot's % is still current; only the ctx/cache
   # segments (session-local) may be stale -- hence the "preview" caveat on stderr.
-  def preview_statusline(now = Time.now.to_i)
+  def preview_statusline(now = Time.now.to_i, embed: false)
     newest = Dir.glob(Pool::GLOB).max_by { |f| File.mtime(f) rescue 0 }
     unless newest
       warn "ccpool: no statusline snapshot yet. Wire `ccpool statusline` as your Claude Code statusLine first (see README), then it self-populates."
@@ -190,7 +192,7 @@ module CCPool
     end
     data = JSON.parse(File.read(newest))
     age  = now - (data["captured_at"] || File.mtime(newest).to_i)
-    line = Statusline.render(data, now)
+    line = embed ? Statusline.render_compact(data, now) : Statusline.render(data, now)
     warn "[preview from a #{dur(age)}-old snapshot -- ctx/cache may be stale; live values come from Claude Code]"
     puts line unless line.to_s.empty?
   rescue StandardError
@@ -277,6 +279,30 @@ module CCPool
     end
   rescue StandardError => e
     Statusline.log("warn", "history append failed: #{e.class}: #{e.message}")
+  end
+
+  # The $-value only shows once the ccusage calibration ($/1%) is computed -- but that compute
+  # spawns ccusage (slow), so a render must NEVER do it inline. For a user whose ONLY ccpool
+  # touchpoint is the statusline (e.g. ccpool embedded as a widget, never running `status`), the
+  # calibration would otherwise stay cold and the $ blank. So when it's stale, kick off a DETACHED
+  # background recompute: it can't block or break the render, and the cache warms within a cycle.
+  # Throttled (one attempt / 5 min) so a burst of renders can't fork a herd. Fail-open throughout.
+  def warm_calibration(now)
+    return unless $PROGRAM_NAME == __FILE__ # only the real CLI forks; a required lib (tests) never does
+    return unless Calibration.stale?(now)
+
+    mark = "#{Calibration::CACHE}.warming"
+    # non-atomic check-then-write: two sessions ticking in the same instant can each fork once
+    # (bounded by session count, each detached + backed by ccusage's own 120s cache -- not a herd).
+    return if File.exist?(mark) && (now - File.mtime(mark).to_i) < 300
+
+    File.write(mark, now.to_s)
+    # stderr -> the persistent anomaly log (NOT /dev/null): this is the ONLY path a statusline-only
+    # user has, so a ccusage schema-drift "fail LOUD" warning must leave a trace. ccusage's own
+    # stderr is already suppressed in ccusage_raw, so only ccpool's diagnostics/crashes land here.
+    Process.detach(Process.spawn(RbConfig.ruby, __FILE__, "__warm-calib", out: File::NULL, err: [Statusline::LOG, "a"]))
+  rescue StandardError
+    nil # warming the $ is best-effort; never let it touch the render
   end
 
   # -- situational-awareness hook (stdin = hook payload) --------------------------------
@@ -382,6 +408,8 @@ module CCPool
         run -- <cmd...>    run <cmd>, downshifting subagent model/effort when you're ahead of pace.
         review [days]      retrospective: did you use the right model for the work? (default 7d)
         statusline         render the Claude Code statusLine; bare in a terminal shows a preview.
+        statusline --embed compact $-left + pace only, to embed in another statusline (e.g. a
+                           ccstatusline custom-command widget). Keep your line, add ccpool's gauge.
         warn               Claude Code hook: warn mid-turn on pace / 5h / context (stdin = payload).
         prune [--history]  delete stale snapshots (add --history to also compact the history file).
         help               this message (also -h, --help).
@@ -395,7 +423,8 @@ end
 
 if $PROGRAM_NAME == __FILE__
   case cmd = ARGV.shift
-  when "statusline" then CCPool.statusline
+  when "statusline" then CCPool.statusline(embed: ARGV.include?("--embed") || ARGV.include?("--compact"))
+  when "__warm-calib" then Calibration.dollar_per_pct(Time.now.to_i) # internal: background $/1% warmup (see warm_calibration)
   when "status", nil then CCPool.status
   when "check" then CCPool.check
   when "warn" then CCPool.warn_hook

@@ -50,14 +50,22 @@ module Init
     ccpool_cmd?(sl["command"], "statusline") ? :ours : :foreign
   end
 
+  # ccstatusline forwards Claude's FULL payload (incl. rate_limits) to its custom-command widgets
+  # (verified empirically), so ccpool can COMPOSE into it rather than replace it. Detect that host
+  # to offer the widget recipe instead of a clobbering replace.
+  def ccstatusline_host?(settings) = settings.dig("statusLine", "command").to_s.include?("ccstatusline")
+
   # -- plan (pure: settings hash -> what would change) ---------------------------------
   def plan(settings, replace_statusline: false)
     sl    = statusline_state(settings)
     hooks = WARN_EVENTS.to_h { |e| [e, warn_wired?(settings, e) ? :present : :missing] }
+    compose = sl == :foreign && ccstatusline_host?(settings) # host can embed ccpool -> don't clobber
     {
       statusline: sl,
       statusline_existing: (settings.dig("statusLine", "command") if sl == :foreign),
-      add_statusline: sl == :absent || (sl == :foreign && replace_statusline),
+      compose_host: compose,
+      # never replace a ccstatusline host even with --replace: composing is strictly better
+      add_statusline: sl == :absent || (sl == :foreign && replace_statusline && !compose),
       # a foreign statusLine we're leaving alone -- capture won't work until it's resolved
       conflict: sl == :foreign && !replace_statusline,
       hooks: hooks,
@@ -156,7 +164,10 @@ module Init
     when :ours
       lines << mark("=", "statusLine", "already wired to ccpool")
     when :foreign
-      lines << if pl[:add_statusline]
+      lines << if pl[:compose_host]
+                 mark("*", "statusLine", "keep ccstatusline -- compose, don't replace",
+                      "add ccpool as a ccstatusline widget (recipe below) -- it keeps your line + adds the pool gauge")
+               elsif pl[:add_statusline]
                  mark("~", "statusLine", "REPLACE with ccpool", "was: #{pl[:statusline_existing]}")
                else
                  mark("!", "statusLine", "left as-is (a non-ccpool command is set)",
@@ -177,6 +188,17 @@ module Init
     puts
     puts "Statusline preview:"
     CCPool.preview_statusline
+  end
+
+  # The one manual step for a ccstatusline host: add ccpool as a custom-command widget. init can't
+  # edit ccstatusline's own config (separate file + schema), so it prints the recipe.
+  def compose_recipe
+    puts
+    puts "ccstatusline detected -- COMPOSE, don't replace. To add ccpool's pool gauge to your line:"
+    puts "  1. open ccstatusline's config  (e.g. `npx ccstatusline`)"
+    puts "  2. add a 'Custom Command' widget with command:"
+    puts "       #{STATUSLINE_CMD} --embed"
+    puts "  ccstatusline forwards Claude's full payload, so ccpool renders its $-left + pace inside your line."
   end
 
   # -- orchestration ---------------------------------------------------------------------
@@ -204,10 +226,13 @@ module Init
     puts render_plan(pl)
     puts
     puts ccusage_line
+    compose_recipe if pl[:compose_host]
 
     unless changes?(pl)
       puts
-      if pl[:conflict]
+      if pl[:compose_host]
+        puts "settings.json is already fine -- just add the widget above and ccpool renders in your line."
+      elsif pl[:conflict]
         puts "Your warn hooks are wired, but the statusLine points at a non-ccpool command, so"
         puts "ccpool can't capture rate_limits. Re-run `ccpool init --apply --replace-statusline`"
         puts "to take it over (your current one is backed up first)."
@@ -231,7 +256,11 @@ module Init
 
     puts
     puts "You're set up. #{backup ? "Backup: #{backup}" : '(no prior settings to back up)'}"
-    puts "ccpool is now wired -- open Claude Code and it starts capturing your pool usage."
+    if pl[:compose_host]
+      puts "warn hooks wired. Add the ccstatusline widget above and ccpool renders inside your line."
+    else
+      puts "ccpool is now wired -- open Claude Code and it starts capturing your pool usage."
+    end
     preview
   end
 end

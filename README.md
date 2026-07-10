@@ -60,6 +60,27 @@ clobbering; re-run with `--replace-statusline` to take it over). Run **`ccpool s
 in a terminal** to preview what the line looks like (it renders from the freshest snapshot
 instead of hanging on stdin), and **`ccpool help`** for the full command list.
 
+### Keep your statusline — compose, don't replace
+
+ccpool is a *specialized pool gauge*, not a general statusline (it deliberately shows no
+model/git/dir — that's your host statusline's job). So if you already run one, add ccpool
+*inside* it instead of switching. [ccstatusline](https://github.com/sirmalloc/ccstatusline)
+forwards Claude's full payload (incl. `rate_limits`) to its **Custom Command** widgets
+(verified), so ccpool renders natively as a widget:
+
+```
+# in ccstatusline's config, add a Custom Command widget with command:
+ccpool statusline --embed
+```
+
+`--embed` prints just ccpool's differentiator — `pool 45% $1.4k +2↑` (weekly % · $-of-pool
+left · pace) — and leaves ctx/5h/model/git to the host. `ccpool init` auto-detects a
+ccstatusline statusLine and prints this recipe instead of offering to replace it. The `$`
+self-populates even if ccpool is *only* ever a widget: each render kicks off a throttled
+background calibration warm-up (never blocking the line). (claude-powerline and CCometixLine
+don't forward the payload / don't take external commands, so there ccpool has to be the
+statusLine — `ccpool init --replace-statusline`.)
+
 ## Usage
 
 ```sh
@@ -141,5 +162,5 @@ bar together — they can't disagree.
 ## Tests
 
 ```sh
-ruby test_ccpool.rb   # 142 hermetic cases, no real ~/.claude access
+ruby test_ccpool.rb   # 160 hermetic cases, no real ~/.claude access
 ```

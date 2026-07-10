@@ -32,8 +32,20 @@ module Calibration
     dpp || cached&.dig("dpp")
   end
 
-  def read_cache = JSON.parse(File.read(CACHE)) rescue nil
+  # Only ever hand back a Hash. A corrupt cache that parses to an array/number/string would make
+  # callers (stale?/dollar_per_pct/render) crash on []-indexing -- and because the warmup that
+  # would overwrite it crashes too, a bad cache self-perpetuates ($ blank forever). Hash-or-nil
+  # turns that into "stale" -> recompute -> overwrite: the cache self-heals.
+  def read_cache = (c = JSON.parse(File.read(CACHE)) rescue nil).is_a?(Hash) ? c : nil
   def write_cache(dpp, at) = File.write(CACHE, JSON.generate("dpp" => dpp, "at" => at)) rescue nil
+
+  # Would dollar_per_pct recompute (spawn ccusage) right now? True when there's no usable cached
+  # $/1% or it's aged past TTL. Callers use this to warm the cache out-of-band (see CCPool
+  # .warm_calibration) so a render never has to block on the compute.
+  def stale?(now = Time.now.to_i)
+    c = read_cache
+    c.nil? || c["dpp"].nil? || (now - c["at"].to_i) >= TTL
+  end
 
   def compute
     runs = wk_runs

@@ -584,5 +584,55 @@ ok("init --apply: dangling symlink -> aborts, link intact, no regular file writt
    File.symlink?(SET) && !File.exist?(SET))
 rm_settings
 
+# ---- Embed / composition (ccpool as a host-statusline widget) ---------------------
+CALIB = ENV.fetch("CCPOOL_CALIB_CACHE", nil)
+wk_data = ->(used) { { "rate_limits" => { "seven_day" => { "used_percentage" => used, "resets_at" => NOW + (4 * 86_400) } } } }
+
+# compact render shows ONLY ccpool's differentiator: pool% + $ + pace (no ctx/5h/meter)
+File.write(CALIB, JSON.generate("dpp" => 20.0, "at" => NOW))
+cmp = Statusline.render_compact(wk_data.call(45), NOW)
+ok("render_compact: pool% + $ (the moat), no full meter", cmp.include?("pool 45%") && cmp.include?("$") && !cmp.include?("wk "))
+# 45% used at ~3/7 (43%) elapsed -> OVER pace -> up-arrow; 5% used -> UNDER pace -> down-arrow
+ok("render_compact: over-pace -> up arrow", Statusline.render_compact(wk_data.call(45), NOW).include?("↑"))
+ok("render_compact: under-pace -> down arrow", Statusline.render_compact(wk_data.call(5), NOW).include?("↓"))
+File.delete(CALIB)
+ok("render_compact: degrades without calibration (pool% + pace, no $)",
+   Statusline.render_compact(wk_data.call(45), NOW).then { |s| s.include?("pool 45%") && !s.include?("$") })
+ok("render_compact: '' when no weekly window", Statusline.render_compact({ "rate_limits" => {} }, NOW) == "")
+
+# statusline --embed dispatch renders the compact segment (not the full line)
+File.write(CALIB, JSON.generate("dpp" => 20.0, "at" => NOW))
+clear_snaps
+emb = capture(JSON.generate("session_id" => "emb", "rate_limits" => { "seven_day" => { "used_percentage" => 45, "resets_at" => NOW + (4 * 86_400) } })) { CCPool.statusline(NOW, embed: true) }
+ok("statusline(embed:) renders compact, not the full meter", emb.include?("pool 45%") && !emb.include?("wk "))
+
+# calibration warmup keeps the $ alive for a statusline-only / embedded user
+ok("Calibration.stale?: fresh cache -> not stale", !Calibration.stale?(NOW))
+File.write(CALIB, JSON.generate("dpp" => 10.0, "at" => NOW - 999_999))
+ok("Calibration.stale?: old cache -> stale", Calibration.stale?(NOW))
+File.write(CALIB, JSON.generate("dpp" => nil, "at" => NOW))
+ok("Calibration.stale?: no dpp -> stale", Calibration.stale?(NOW))
+File.delete(CALIB)
+ok("Calibration.stale?: missing cache -> stale", Calibration.stale?(NOW))
+# hermetic guard: warm_calibration must NEVER fork when ccpool is required as a lib (only the real CLI does)
+FileUtils.rm_f("#{CALIB}.warming")
+CCPool.warm_calibration(NOW) # stale cache above, but $PROGRAM_NAME != ccpool.rb here
+ok("warm_calibration: no fork/marker when not the main CLI (tests stay hermetic)", !File.exist?("#{CALIB}.warming"))
+
+# init composes into ccstatusline (which forwards the full payload) instead of clobbering it
+ccsl = { "statusLine" => { "command" => "npx ccstatusline" } }
+ok("ccstatusline_host?: detects the composable host", Init.ccstatusline_host?(ccsl))
+ok("ccstatusline_host?: false for a non-composing statusline", !Init.ccstatusline_host?({ "statusLine" => { "command" => "starship" } }))
+cp = Init.plan(ccsl)
+ok("plan(ccstatusline): compose_host set, statusLine NOT added", cp[:compose_host] && !cp[:add_statusline])
+ok("plan(ccstatusline): won't replace even with --replace-statusline (compose wins)",
+   !Init.plan(ccsl, replace_statusline: true)[:add_statusline])
+rm_settings
+write_settings_file(ccsl)
+comp = capture { Init.run([], NOW) }
+ok("init: ccstatusline host -> prints the widget recipe (--embed command)",
+   comp.include?("ccstatusline detected") && comp.include?("statusline --embed"))
+rm_settings
+
 puts($fail.zero? ? "\nAll green." : "\n#{$fail} FAILED.")
 exit($fail.zero? ? 0 : 1)

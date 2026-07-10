@@ -88,6 +88,9 @@ module Statusline
     n >= 1_000_000 ? "#{(n / 1_000_000.0).round}M" : "#{(n / 1000.0).round}k"
   end
 
+  # $-left readout, shared by both weekly renderers: "$1.2k" past a grand, else "$47".
+  def fmt_dollars(n) = n >= 1000 ? "$#{(n / 1000).round(1)}k" : "$#{n.round}"
+
   # COLOURED meter: on-pace used cells solid (plain), over-pace used cells RED, partial
   # leading edge in eighths, remaining dim. The red tail IS the "burning too fast" signal.
   def meter(used_frac, pace_frac, width)
@@ -188,11 +191,7 @@ module Statusline
       width = (cols - 82).clamp(14, 40)
       wknum = sev("#{used.round}%", used.round, warn: 75, crit: 90)
       left = (100 - used) * (dpp || 0)
-      dollars = if dpp
-                  " #{DIM}#{left >= 1000 ? "$#{(left / 1000).round(1)}k" : "$#{left.round}"}#{RESET}"
-                else
-                  ""
-                end
+      dollars = dpp ? " #{DIM}#{fmt_dollars(left)}#{RESET}" : ""
       if typed?(sd, "resets_at", Numeric, "seven_day.resets_at")
         reset = sd["resets_at"]
         pace = Profile.elapsed_fraction(reset - WEEK, now, reset) # same weighting as Pool.pace -> bar agrees with verdict
@@ -207,4 +206,32 @@ module Statusline
     [now_grp, ses_grp, wk_grp].reject(&:empty?).map { |g| g.join("  ") }.join(SEP)
   end
   # rubocop:enable Metrics/AbcSize
+
+  # Compact one-segment render for EMBEDDING inside another statusline (e.g. as a ccstatusline
+  # custom-command widget, which forwards the full payload incl. rate_limits -- verified). Shows
+  # ONLY ccpool's differentiator -- pool $-left + pace -- and leaves ctx/5h/model/git to the host,
+  # so we don't duplicate what it already renders. "" when there's no weekly window to speak to.
+  def render_compact(data, now = Time.now.to_i)
+    rl = typed?(data, "rate_limits", Hash) ? data["rate_limits"] : {}
+    sd = rl["seven_day"]
+    return "" unless typed?(rl, "seven_day", Hash) && typed?(sd, "used_percentage", Numeric, "seven_day.used_percentage")
+
+    used = sd["used_percentage"].to_f
+    parts = ["pool #{sev("#{used.round}%", used.round, warn: 75, crit: 90)}"]
+
+    if (dpp = Calibration.read_cache&.dig("dpp")) # cache-only: NEVER spawn ccusage in a render path
+      left = (100 - used) * dpp
+      parts << "#{DIM}#{fmt_dollars(left)}#{RESET}"
+    end
+
+    # pace: over-pace (burning fast) is the red risk signal, under-pace is banked headroom (cyan) --
+    # same convention as the meter's red tail, so the compact line agrees with the full one.
+    if typed?(sd, "resets_at", Numeric, "seven_day.resets_at")
+      reset = sd["resets_at"]
+      d = (used - (Profile.elapsed_fraction(reset - WEEK, now, reset) * 100)).round
+      parts << (d.positive? ? "#{RED}+#{d}↑#{RESET}" : "#{BAR}#{d}↓#{RESET}") if d.abs >= 1
+    end
+
+    parts.join(" ")
+  end
 end
