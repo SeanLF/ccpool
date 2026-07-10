@@ -32,6 +32,8 @@ module CCPool
   COAST   = (ENV["CCPOOL_COAST_SECS"] || "43200").to_i # <12h to reset -> use-it-or-lose-it
   FIVE_H_CAP = (ENV["CCPOOL_5H_CAP"] || "85").to_f      # 5h window this full -> downshift too
   HIST    = File.expand_path(ENV["CCPOOL_HISTORY"] || "~/.claude/rate-limit-history.jsonl")
+  HIST_KEEP_DAYS = (ENV["CCPOOL_HISTORY_KEEP_DAYS"] || "30").to_f    # `prune --history` cutoff; 0 = keep raw forever
+  HIST_MIN_INT   = (ENV["CCPOOL_HISTORY_MIN_INTERVAL"] || "60").to_i # min secs between 5h-only writes (curbs growth)
 
   module_function
 
@@ -125,6 +127,10 @@ module CCPool
     if (n = stale_caches(now).size) >= 20 # surface, don't auto-delete
       puts "cleanup      ·  #{n} stale session snapshots accumulating -- run `ccpool prune` to clean"
     end
+    warn_mb = (ENV["CCPOOL_HISTORY_WARN_MB"] || "20").to_f
+    if HIST_KEEP_DAYS.positive? && (mb = (File.size(HIST) rescue 0) / 1_048_576.0) > warn_mb
+      puts "cleanup      ·  usage history is #{mb.round}MB -- `ccpool prune --history` compacts it to the last #{HIST_KEEP_DAYS.round}d"
+    end
   end
 
   # -- statusLine command: capture + seed + render (cached $ only; must stay fast) ------
@@ -160,6 +166,35 @@ module CCPool
     stale_caches(now).count { |f| File.delete(f) rescue next }
   end
 
+  # Compact the raw history to the last `keep` days (Burn ignores >14d; the $/1% summary lives in
+  # the calibration cache, so old raw is redundant). Opt-in only. keep<=0 -> keep raw forever.
+  # flock so a concurrent statusline append can't interleave with the rewrite. => rows removed.
+  def prune_history(now, keep = HIST_KEEP_DAYS)
+    return 0 if keep <= 0 || !File.exist?(HIST)
+
+    cutoff = now - keep * 86_400
+    removed = 0
+    File.open(HIST, File::RDWR) do |f|
+      f.flock(File::LOCK_EX)
+      lines = f.read.lines
+      kept = lines.select { |l| (JSON.parse(l)["t"] rescue 0) >= cutoff }
+      removed = lines.size - kept.size
+      if removed.positive?
+        # write-THEN-truncate (not truncate-first): a crash mid-op then leaves the kept rows plus a
+        # stale tail (readers skip torn lines), never an empty file. fsync so the kept rows are
+        # durable before we drop the tail. tmp+rename is wrong here -- it'd orphan a blocked
+        # appender's inode; both writers flock the same path, so in-place is the safe choice.
+        f.rewind
+        f.write(kept.join)
+        f.fsync
+        f.truncate(f.pos)
+      end
+    end
+    removed
+  rescue StandardError
+    0
+  end
+
   def seed_history(payload, now)
     sd = payload.dig("rate_limits", "seven_day")
     fh = payload.dig("rate_limits", "five_hour")
@@ -188,7 +223,10 @@ module CCPool
         last = e
         break
       end
-      next if last && last["wk"] == row["wk"] && last["wk_reset"] == row["wk_reset"] && last["ses"] == row["ses"]
+      if last && last["wk"] == row["wk"] && last["wk_reset"] == row["wk_reset"]
+        next if last["ses"] == row["ses"]                  # nothing moved
+        next if now - last["t"].to_i < HIST_MIN_INT        # only the 5h % moved -> throttle (curbs growth)
+      end
 
       f.seek(0, IO::SEEK_END)
       f.puts(JSON.generate(row))
@@ -289,9 +327,13 @@ if $PROGRAM_NAME == __FILE__
   when "warn" then CCPool.warn_hook
   when "run" then CCPool.run(ARGV)
   when "review" then CCPool.review(ARGV)
-  when "prune" then puts "ccpool: pruned #{CCPool.prune_caches(Time.now.to_i)} stale snapshot(s)"
+  when "prune"
+    now = Time.now.to_i
+    msg = "pruned #{CCPool.prune_caches(now)} stale snapshot(s)"
+    msg += "; compacted #{CCPool.prune_history(now)} old history row(s)" if ARGV.include?("--history")
+    puts "ccpool: #{msg}"
   else
-    warn "usage: ccpool [statusline|status|check|warn|run -- <cmd...>|review [days]|prune]"
+    warn "usage: ccpool [statusline|status|check|warn|run -- <cmd...>|review [days]|prune [--history]]"
     exit 2
   end
 end

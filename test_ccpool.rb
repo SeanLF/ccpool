@@ -234,6 +234,30 @@ ok("statusline renders the rich weekly line", out.include?("wk") && out.include?
 ok("statusline wrote a snapshot", File.exist?(ENV["USAGE_CACHE"].sub(/\.json\z/, "-t.json")))
 ok("statusline seeded history", File.read(ENV["CCPOOL_HISTORY"]).include?('"wk":10'))
 
+# history write-throttle: 5h-only moves are rate-limited; weekly moves always land.
+clear_snaps
+File.write(ENV["CCPOOL_HISTORY"], "")
+pa = JSON.generate("session_id" => "tw", "rate_limits" => { "seven_day" => { "used_percentage" => 10, "resets_at" => NOW + 300_000 }, "five_hour" => { "used_percentage" => 20, "resets_at" => NOW + 7_200 } })
+pb = JSON.generate("session_id" => "tw", "rate_limits" => { "seven_day" => { "used_percentage" => 10, "resets_at" => NOW + 300_000 }, "five_hour" => { "used_percentage" => 30, "resets_at" => NOW + 7_200 } }) # 5h moved
+pc = JSON.generate("session_id" => "tw", "rate_limits" => { "seven_day" => { "used_percentage" => 11, "resets_at" => NOW + 300_000 }, "five_hour" => { "used_percentage" => 30, "resets_at" => NOW + 7_200 } }) # weekly moved
+capture(pa) { CCPool.statusline(NOW) }
+capture(pb) { CCPool.statusline(NOW + 10) }  # 5h move 10s later (< 60s) -> throttled
+ok("history throttles a 5h-only write inside the interval", File.readlines(ENV["CCPOOL_HISTORY"]).size == 1)
+capture(pb) { CCPool.statusline(NOW + 120) } # 5h move past the interval -> lands
+ok("history records the 5h move once the interval passes", File.readlines(ENV["CCPOOL_HISTORY"]).size == 2)
+capture(pc) { CCPool.statusline(NOW + 125) } # weekly moved 5s later -> always lands
+ok("history always records a weekly move regardless of throttle", File.readlines(ENV["CCPOOL_HISTORY"]).size == 3)
+
+# opt-in history prune: drop rows older than KEEP_DAYS, keep raw when keep<=0.
+File.open(ENV["CCPOOL_HISTORY"], "w") do |f|
+  f.puts JSON.generate("t" => NOW - 40 * 86_400, "wk" => 5)  # 40d old -> prunable (>30d default)
+  f.puts JSON.generate("t" => NOW - 5 * 86_400, "wk" => 10)  # recent -> kept
+  f.puts JSON.generate("t" => NOW, "wk" => 15)
+end
+ok("prune_history keeps raw forever when keep<=0", CCPool.prune_history(NOW, 0) == 0 && File.readlines(ENV["CCPOOL_HISTORY"]).size == 3)
+ok("prune_history drops rows older than keep-days, keeps recent",
+   CCPool.prune_history(NOW, 30) == 1 && File.readlines(ENV["CCPOOL_HISTORY"]).size == 2)
+
 clear_snaps
 snap("old", week: 5)
 snap("new", week: 5)
@@ -259,7 +283,7 @@ h2 = JSON.generate("session_id" => "h", "rate_limits" => { "seven_day" => { "use
 capture(h1) { CCPool.statusline(NOW) }
 capture(h1) { CCPool.statusline(NOW) } # identical -> deduped
 ok("history dedups an identical wk+ses render", File.readlines(ENV["CCPOOL_HISTORY"]).size == 1)
-capture(h2) { CCPool.statusline(NOW) } # 5h-only move -> must record despite flat wk
+capture(h2) { CCPool.statusline(NOW + 120) } # 5h-only move past the throttle -> must record despite flat wk
 ok("history records a 5h-only move (dedup keyed on ses, not just wk)", File.readlines(ENV["CCPOOL_HISTORY"]).size == 2)
 
 # Burn projection integration: a clean monotonic run in history -> a Burn line in status.

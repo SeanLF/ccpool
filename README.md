@@ -90,6 +90,8 @@ bar together — they can't disagree.
 | `CCPOOL_DOWNSHIFT_MODEL` / `_EFFORT` | `haiku` / `low` | what to downshift subagents to |
 | `CCPOOL_CALIB_TTL` | `21600` | seconds to cache the `$/1%` calibration |
 | `CCPOOL_CCUSAGE_CMD` | `npx -y ccusage@20` | how to invoke ccusage (pinned major — see calibration.rb) |
+| `CCPOOL_HISTORY_KEEP_DAYS` | `30` | `prune --history` cutoff; `0` = keep raw forever (some prefer the full ~20 MB/mo) |
+| `CCPOOL_HISTORY_MIN_INTERVAL` | `60` | min seconds between 5h-only history writes (curbs file growth) |
 | `USAGE_CACHE`, `CCPOOL_HISTORY`, `CCPOOL_CALIB_CACHE` | `~/.claude/...` | data paths (test isolation) |
 
 ## Honest limitations
