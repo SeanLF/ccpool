@@ -340,3 +340,31 @@ bug we hit today; the current file+flock approach is correct.
 land first, re-baseline goldens. (2) cobra. (3) the SQLite storage rework behind a one-time history
 importer, verified against the golden suite. None of this is required for a shippable v1 — the
 current Go binary is complete — it's the "built like it belongs in Go" pass.
+
+## Post-v1 spike results + scope update (2026-07-10, later same day)
+
+The "Post-v1 architecture" options above were then de-risked with spikes and the scope was clarified.
+Full plan: `docs/ROADMAP.md`.
+
+- **Scope:** single user today, but **releasing to outside users is the goal after the v2 pass** — so
+  it's release-prep. No legacy user base to migrate (reformat the store freely now); adoption UX (cobra)
+  and a robust store (SQLite) are on the release path, not optional.
+- **A1 lipgloss/termenv — VIABLE (spiked).** Forcing `termenv.TrueColor` emits colour on Claude Code's
+  non-tty pipe (beats termenv's auto-strip); 256/16 degradation is a one-constant swap; no panic on
+  degenerate input. Required gate: forcing bypasses NO_COLOR, so branch on `out.EnvNoColor()`. Honest
+  value: a non-tty hook can't auto-detect the target terminal, so A1 buys cleaner rendering + proper
+  NO_COLOR + *opt-in* degradation (via `CCPOOL_COLOR`/`COLORTERM`), not an automatic 16-colour fix.
+- **Fail-open — VERIFIED (fuzz).** 7 stdlib fuzz targets over the parsers (`rb`, statusline render,
+  calib blocks, history seed), ~60M execs, zero panics. Committed (`internal/*/*_fuzz_test.go`).
+- **SQLite storage — envelope→SQL CONFIRMED, with a load-bearing condition (spiked on real 56k-row
+  history).** `Burn.envelope` reduces to `max(wk) OVER (ORDER BY t, rowid ROWS BETWEEN UNBOUNDED
+  PRECEDING AND CURRENT ROW)` — the DEFAULT `RANGE` frame lumps tied timestamps and diverges, and the
+  real history is 76% tied timestamps. Requires arrival-order inserts for the `rowid` tie-break. The
+  history importer is a **one-off script (not Go/product code)** — outside users install fresh.
+- **ccusage clarified:** `ccusage@20` via npm IS the Rust binary (npm `latest` == 20.0.17); its schema
+  is `blocks`/`startTime`/`isGap` and our parser matches. No multi-schema adapter needed. The
+  ccusage.com docs' `data`/`blockStart` schema is a newer/other surface we don't hit. Node-runtime
+  lever if wanted: `cargo install ccusage` (same schema) + `CCPOOL_CCUSAGE_CMD`.
+- **Live data-hygiene fix applied:** purged a synthetic `session="bench"` / `wk_reset=9999999999`
+  sentinel row from `rate-limit-history.jsonl` that was collapsing the weekly burn envelope to one
+  sample.
