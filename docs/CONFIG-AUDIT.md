@@ -12,8 +12,10 @@ a working default. ~45 vars exist, but they split cleanly:
 - **8 path/data vars** — invisible plumbing (test isolation + data location). Not "config."
 - **~15 documented user choices** — genuine user-shape diversity (pace rhythm, downshift policy,
   clock, colour). These earn their keep; they're *why* ccpool fits more than one operator.
-- **~22 undocumented threshold knobs** — each a one-line `ENV["X"] || "default"` escape hatch on
+- **~12 undocumented threshold knobs** — each a one-line `ENV["X"] || "default"` escape hatch on
   an internal constant. A user never sees them. Low-cost; not sprawl that hurts onboarding.
+  (Down from ~22: 10 pure-internal fit/cache constants were demoted to plain constants on
+  2026-07-10 with owner sign-off — see "Demoted" below.)
 
 The red-team fear ("~30 env vars overwhelm a new user") doesn't land: the undocumented thresholds
 aren't in the README, so a new user never meets them, and the documented ones are real choices, not
@@ -79,25 +81,31 @@ hatch. The defaults are all calibrated and sane.
 - **runway band:** `CCPOOL_RUNWAY_FAST` (1.5), `CCPOOL_RUNWAY_SLOW` (0.7),
   `CCPOOL_RUNWAY_MIN_DENSITY` (0.5).
 - **review / rhythm internals:** `CCPOOL_LOW_OUTPUT` (500), `CCPOOL_RHYTHM_PEAK` (0.25).
-- **burn-fit internals (`USAGE_*`):** `USAGE_BURN_DROP_RESET` (5), `USAGE_BURN_MIN_SPAN_H` (2),
-  `USAGE_BURN_MIN_DELTA` (3), `USAGE_SES_WINDOW_SECS` (1800), `USAGE_SES_MIN_SPAN_H` (0.08),
-  `USAGE_SES_MIN_DELTA` (2), `USAGE_CACHE_TTL_SECS` (3600), `USAGE_CACHE_WARN_SECS` (900),
-  `USAGE_CACHE_CRIT_SECS` (180).
-- **misc:** `CCPOOL_BLOCKS_TTL` (120), `CCPOOL_BAR_COLOR` (truecolour cyan), `CCPOOL_PRUNE` (opt-in
-  delete flag), `CCPOOL_PACE_MARGIN` (3 — shared by status/check/warn/run; borderline documentable).
+- **misc:** `CCPOOL_BAR_COLOR` (truecolour cyan), `CCPOOL_PRUNE` (opt-in delete flag),
+  `CCPOOL_PACE_MARGIN` (3 — shared by status/check/warn/run; borderline documentable).
 
 **Verdict: KEEP as-is, leave undocumented.** They don't burden onboarding (invisible), they're
 cheap, and they make the thresholds testable. Do NOT add them to the README env table — that's how
-"sensible defaults" would decay into "config-everything."
+"sensible defaults" would decay into "config-everything." (Note: the `CCPOOL_CHECK_*`, `CCPOOL_WARN_*`
+and `CCPOOL_RUNWAY_*` families are kept as env overrides deliberately — they encode judgment calls
+a power user might legitimately contest, so the pressure valve earns its line.)
 
-## Candidate-to-demote (proposal only — needs sign-off)
+## Demoted to constants (2026-07-10, owner sign-off)
 
-If shrinking *code* surface (not user surface) is ever wanted, the purest never-user-tuned
-internals could become plain constants, keeping the env override only where a test actually pins
-it: the `USAGE_BURN_*` / `USAGE_SES_*` fit parameters (6), `CCPOOL_BLOCKS_TTL`, and the
-`USAGE_CACHE_*_SECS` trio. Savings are marginal and each removal drops a tuning escape hatch, so
-this is a "nice, not needed" — **do not action without owner sign-off.** Nothing here is
-config-for-config's-sake badly enough to rip out unprompted.
+The purest never-user-tuned internals — pure numeric fit/cache parameters with no plausible
+per-user tuning story and no test pinning them — were converted from `ENV["X"] || "default"` to
+plain constants, dropping 10 lines of env surface while keeping the explanatory comments (the
+valuable part). Removed knobs:
+
+- **burn-fit params** (`burn.rb`): `USAGE_BURN_DROP_RESET`, `USAGE_BURN_MIN_SPAN_H`,
+  `USAGE_BURN_MIN_DELTA`, `USAGE_SES_WINDOW_SECS`, `USAGE_SES_MIN_SPAN_H`, `USAGE_SES_MIN_DELTA`.
+- **statusline staleness tiers** (`statusline.rb`): `USAGE_CACHE_TTL_SECS`, `USAGE_CACHE_WARN_SECS`,
+  `USAGE_CACHE_CRIT_SECS`.
+- **ccusage blocks cache TTL** (`calibration.rb`): `CCPOOL_BLOCKS_TTL`.
+
+These were the only ones where the escape hatch bought nothing (no calibration story, no test use,
+no user who'd ever touch them). Everything else in Bucket 3 kept its override because it either
+encodes a contestable judgment call (`CHECK_*`/`WARN_*`) or has a real tuning/testing story.
 
 ## Bottom line
 

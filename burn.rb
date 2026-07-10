@@ -22,16 +22,16 @@ module Burn
 
   # Noise guards. Weekly % is a coarse integer, so it wiggles +-1 between renders;
   # without these a 1-point blip over two minutes extrapolates to an absurd rate.
-  DROP_RESET = (ENV["USAGE_BURN_DROP_RESET"] || "5").to_f   # a wk fall bigger than this = a real reset, not noise
-  MIN_SPAN_H = (ENV["USAGE_BURN_MIN_SPAN_H"] || "2").to_f   # need this many hours of run before a slope is trustworthy
-  MIN_DELTA  = (ENV["USAGE_BURN_MIN_DELTA"]  || "3").to_f   # and this much net climb (else it's within rounding noise)
+  DROP_RESET = 5.0   # a wk fall bigger than this = a real reset, not noise
+  MIN_SPAN_H = 2.0   # need this many hours of run before a slope is trustworthy
+  MIN_DELTA  = 3.0   # and this much net climb (else it's within rounding noise)
 
   # Short-horizon (5h SESSION) rate. The weekly two-point slope is too coarse for a
   # window that moves in minutes, so we fit a line by least-squares over a trailing
   # window: every sample pins the fit, so a lone +-1 integer wiggle can't swing it.
-  RECENT_SECS       = (ENV["USAGE_SES_WINDOW_SECS"] || "1800").to_f # trailing window to fit (30 min)
-  RECENT_MIN_SPAN_H = (ENV["USAGE_SES_MIN_SPAN_H"]  || "0.08").to_f # ~5 min of run before a slope is trustworthy
-  RECENT_MIN_DELTA  = (ENV["USAGE_SES_MIN_DELTA"]   || "2").to_f    # and this much climb (past integer noise)
+  RECENT_SECS       = 1800.0 # trailing window to fit (30 min)
+  RECENT_MIN_SPAN_H = 0.08   # ~5 min of run before a slope is trustworthy
+  RECENT_MIN_DELTA  = 2.0    # and this much climb (past integer noise)
 
   # => Array of recent, well-formed samples (chronological); [] when there's no
   # history yet; nil when the file exists with content but nothing parses (schema

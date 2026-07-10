@@ -32,9 +32,9 @@ module Statusline
   BOLD  = ansi("\e[1m")
   SEP   = " #{DIM}·#{RESET} ".freeze # interpolated -> not auto-frozen by the magic comment
   WEEK  = 7 * 86_400
-  CACHE_TTL  = (ENV["USAGE_CACHE_TTL_SECS"] || "3600").to_i
-  CACHE_WARN = (ENV["USAGE_CACHE_WARN_SECS"] || "900").to_i
-  CACHE_CRIT = (ENV["USAGE_CACHE_CRIT_SECS"] || "180").to_i
+  CACHE_TTL  = 3600 # statusline staleness display tiers (secs): fresh past this
+  CACHE_WARN = 900  # ...dim/warn past this
+  CACHE_CRIT = 180  # ...and flag as critically stale past this
   TIER = ENV["USAGE_TIER"] || "max_20x"
   LOG  = File.expand_path(ENV["CCPOOL_STATUSLINE_LOG"] || "~/.claude/statusline.log")
 

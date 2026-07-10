@@ -17,7 +17,7 @@ module Calibration
   # failure) and fresh-rewrite regressions. @20 gets pricing/patch updates without those.
   CCUSAGE = ENV["CCPOOL_CCUSAGE_CMD"] || "npx -y ccusage@20"
   BLOCKS_CACHE = File.expand_path(ENV["CCPOOL_BLOCKS_CACHE"] || "~/.claude/ccpool-blocks-cache.json")
-  BLOCKS_TTL   = (ENV["CCPOOL_BLOCKS_TTL"] || "120").to_i # don't re-spawn ccusage on every idle read
+  BLOCKS_TTL   = 120 # don't re-spawn ccusage on every idle read
 
   module_function
 
