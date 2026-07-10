@@ -1,0 +1,36 @@
+name: CI
+
+# Lint + hermetic test suite. Deliberately lean and single-Ruby: ccpool migrates to Go before v1
+# (docs/RUST-REIMPL.md), so a multi-Ruby-version matrix would be scaffolding for code that's about
+# to be rewritten. Replace this with the Go toolchain at the migration.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 1 * *" # monthly: catch Ruby/rubocop/toolchain drift on a dormant repo
+  workflow_dispatch:
+
+permissions:
+  contents: read # least privilege
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+      - run: gem install rubocop -v 1.88.2 # pinned to match local; bump deliberately, not via @latest
+      - run: rubocop
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+      - run: ruby test_ccpool.rb # hermetic, zero deps, fakes ~/.claude via CCPOOL_* env

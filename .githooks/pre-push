@@ -1,0 +1,15 @@
+#!/bin/sh
+# Local gate: run the hermetic tests + rubocop before every push. Enable once with:
+#   git config core.hooksPath .githooks
+# Skip a one-off push with `git push --no-verify`. (Swap the commands for the Go toolchain at the
+# Ruby -> Go migration.)
+set -e
+
+here="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$here"
+
+echo "pre-push: ruby test_ccpool.rb"
+ruby test_ccpool.rb
+
+echo "pre-push: rubocop"
+rubocop

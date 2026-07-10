@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # GitHub Actions used by the workflows. Grouped: action major bumps are usually just runner/Node
+  # updates, not breaking to us, so one PR instead of N.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # No bundler ecosystem yet: ccpool is a zero-dependency Ruby script (rubocop is the only dev tool
+  # and it's pinned in CI, not a Gemfile). Add a `gomod` ecosystem block when the Go port lands.
