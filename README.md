@@ -35,11 +35,17 @@ It delegates every dollar to `ccusage` (never hand-rolls pricing) and reads the 
 % that ccusage structurally can't. Fails **open** on any missing/stale data — it never blocks
 Claude Code.
 
-## Install (dogfood)
+## Install
+
+ccpool is a single static Go binary (no runtime deps beyond optional `ccusage` for the `$`).
 
 ```sh
-chmod +x bin/ccpool
-export PATH="$PWD/bin:$PATH"     # or symlink bin/ccpool onto your PATH
+brew install SeanLF/tap/ccpool        # once released; then `brew upgrade` tracks new versions
+# or from source:
+go install github.com/SeanLF/ccpool@latest
+# or build locally:
+make build && export PATH="$PWD:$PATH"
+
 ccpool init                      # dry-run: shows exactly what it would wire, writes nothing
 ccpool init --apply              # wires it in (timestamped backup first) -- zero config needed
 ```
@@ -143,7 +149,7 @@ bar together — they can't disagree.
 | `CCPOOL_DOWNSHIFT` | `auto` | `auto` (enforce) · `advise` (print, don't apply — like the native tab) · `off` |
 | `CCPOOL_DOWNSHIFT_MODEL` / `_EFFORT` | `haiku` / `low` | what to downshift subagents to |
 | `CCPOOL_CALIB_TTL` | `21600` | seconds to cache the `$/1%` calibration |
-| `CCPOOL_CCUSAGE_CMD` | `npx -y ccusage@20` | how to invoke ccusage (pinned major — see calibration.rb) |
+| `CCPOOL_CCUSAGE_CMD` | `npx -y ccusage@20` | how to invoke ccusage (pinned major — see internal/calib) |
 | `CCPOOL_HISTORY_KEEP_DAYS` | `30` | `prune --history` cutoff; `0` = keep raw forever (some prefer the full ~20 MB/mo) |
 | `CCPOOL_HISTORY_MIN_INTERVAL` | `60` | min seconds between 5h-only history writes (curbs file growth) |
 | `CCPOOL_CLOCK` | `24` | wall-clock time format everywhere: `24` · `12` · `auto` (best-effort OS detect, macOS-only, falls back to 24) |
@@ -173,5 +179,8 @@ bar together — they can't disagree.
 ## Tests
 
 ```sh
-ruby test_ccpool.rb   # 160 hermetic cases, no real ~/.claude access
+make check    # gofumpt + vet + staticcheck + govulncheck + go test ./...
 ```
+
+Conformance suites diff every command's output against committed golden files (no `~/.claude`
+access; hermetic `CCPOOL_*` env). ccusage is mocked in tests via `CCPOOL_CCUSAGE_CMD`.

@@ -1,9 +1,8 @@
 name: Go
 
-# Go toolchain gate: the v1 target (docs/GO-MIGRATION.md). Runs alongside the Ruby CI during the
-# migration; when Ruby is retired at v1, delete ci.yml and this becomes the sole gate.
-# Tools (gofumpt, staticcheck, govulncheck) are pinned via `tool` directives in go.mod, so
-# `go tool <x>` is reproducible without global installs.
+# The build/test gate. ccpool is a single static Go binary; the conformance suite runs against
+# committed golden files (no Ruby needed — see internal/golden). Tools (gofumpt, staticcheck,
+# govulncheck) are pinned via `tool` directives in go.mod, so `go tool <x>` is reproducible.
 on:
   push:
     branches: [main]
@@ -25,9 +24,6 @@ jobs:
         with:
           go-version-file: go.mod # single source of truth for the Go version
           check-latest: true
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "4.0" # the conformance test diffs Go render output against the Ruby oracle
       - name: format (gofumpt)
         run: |
           out="$(go tool gofumpt -l .)"

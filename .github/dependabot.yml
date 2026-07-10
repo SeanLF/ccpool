@@ -10,9 +10,6 @@ updates:
       actions:
         patterns: ["*"]
 
-  # No bundler ecosystem: ccpool is a zero-dependency Ruby script (rubocop is the only dev tool
-  # and it's pinned in CI, not a Gemfile). Ruby is retired at v1 (docs/GO-MIGRATION.md).
-
   # Go modules. The shipped binary is ~zero-dep; entries here are the pinned dev tools
   # (gofumpt/staticcheck/govulncheck) tracked via go.mod `tool` directives.
   - package-ecosystem: gomod

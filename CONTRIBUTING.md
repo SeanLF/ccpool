@@ -18,7 +18,7 @@ also applies to you.
   version, compatibility, or output asserted from memory. For anything on the fail-open path
   (`warn`, `statusline`), confirm it still can't raise — that path must never break Claude Code.
 - **Reproducible** — bug reports include steps that don't depend on your machine, plus the ccpool
-  and `ruby -v` versions and the exact command/output.
+  and `go version` and the exact command/output.
 - **Prior art** — you checked how the authoritative tool or spec handles it before hand-rolling a
   heuristic (this is how ccpool avoids re-inventing ccusage's pricing, Anthropic's reset cadence,
   etc.).
@@ -27,13 +27,14 @@ also applies to you.
 ## Running it
 
 ```sh
-ruby test_ccpool.rb   # hermetic test suite, no deps — must be all-green
-rubocop               # lint — must be clean
-ruby ccpool.rb <cmd>  # or bin/ccpool <cmd>
+make check           # gofumpt + vet + staticcheck + govulncheck + go test ./... — must be green
+go run . <cmd>       # or: make build && ./ccpool <cmd>
 ```
 
-Both must pass before you open a PR. Tests are hermetic (they fake `~/.claude` via `CCPOOL_*`
-env), so they never touch your real usage data — use the same pattern to stage fixtures.
+`make check` must pass before you open a PR. Conformance suites diff each command against committed
+golden files and fake `~/.claude` via `CCPOOL_*` env, so they never touch your real usage data — use
+the same pattern to stage fixtures. Refresh goldens after an intentional change with
+`CCPOOL_UPDATE_GOLDEN=1 go test ./...`.
 
 ## Style
 

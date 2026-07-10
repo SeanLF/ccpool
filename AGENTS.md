@@ -12,45 +12,42 @@ a dollar value + pace verdict, warns mid-turn via Claude Code hooks, downshifts 
 model/effort when ahead of pace, and renders a statusline. It reads local `~/.claude` data and
 delegates every dollar to `ccusage`.
 
-## ⚠ Language migration: Ruby now → Go before v1
+## Implementation: Go (single static binary)
 
-The current implementation is **Ruby** (`*.rb`, one concern per file). **Before v1 ships, the hot
-path — and likely the whole tool — migrates to Go** (a single static binary; distribution is the
-driver, see `docs/RUST-REIMPL.md`). Consequences for you:
-
-- **Don't over-invest in Ruby-specific cleverness** that a rewrite throws away. Favour changes that
-  translate cleanly to Go.
-- **The DESIGN INVARIANTS below are language-agnostic and carry across the migration.** They are
-  the durable contract; the Ruby idioms are not.
-- Don't start the Go port unprompted — it's a scoped, sequenced piece of work, not a side effect
-  of a feature. When it's time: `docs/standards/go.md` is the how (idioms, fail-open-via-recover,
-  single-binary build, GoReleaser + Homebrew release path); `docs/RUST-REIMPL.md` is the scope.
+ccpool is **Go** — one static binary, no runtime deps beyond optional `ccusage` for the `$`. The
+Ruby original was reimplemented in idiomatic Go and retired; `docs/GO-MIGRATION.md` records the
+phased port and `docs/standards/go.md` the idioms (fail-open via `recover`, near-stdlib, the
+GoReleaser + Homebrew release path). Package layout is lean `internal/*` (one concern per package:
+`pool`, `calib`, `statusline`, `warn`, `report`, …); `main.go` dispatches on `os.Args[1]`.
 
 ## Commands
 
-- **Test:** `ruby test_ccpool.rb` — one hermetic file, no deps, redirects `~/.claude` to a tempdir
-  via `CCPOOL_*` env before requiring the modules. Must be all-green before any commit.
-- **Lint:** `rubocop` — config in `.rubocop.yml` (Ruby 4.0). Must be clean before any commit.
-- **Run:** `ruby ccpool.rb <cmd>` or `bin/ccpool <cmd>` (launcher: PATH ruby, falls back to mise).
-- Preview the statusline without Claude Code: `ruby ccpool.rb statusline` (bare → renders the
-  freshest snapshot). Drive real commands with the hermetic `CCPOOL_*` env to stage fixtures.
+- **Test / gate:** `make check` (gofumpt + vet + staticcheck + govulncheck + `go test ./...`). Must
+  be green before any commit. Prefix go commands with `unset GOROOT` if a stale GOROOT is exported.
+- **Conformance:** the `internal/*/conformance_test.go` suites diff Go output against committed
+  **golden files** (`conformance/golden/`), seeded from the original Ruby and now Go-defined. After
+  an intentional output change, refresh with `CCPOOL_UPDATE_GOLDEN=1 go test ./...` and review the diff.
+- **Run:** `go run . <cmd>` or `make build && ./ccpool <cmd>`. Bare `ccpool` → `status`.
+- Preview the statusline without Claude Code: `./ccpool statusline` in a terminal (renders the
+  freshest snapshot). Drive real commands with the hermetic `CCPOOL_*`/`USAGE_*` env to stage fixtures.
 
 ## Design invariants — deliberate choices, defended (don't "fix" these)
 
 These look arbitrary or smell like problems to an agent doing a reflexive cleanup. They are
 intentional. Changing one needs a reason in `docs/DECISIONS.md`, not a tidy-up.
 
-- **Fail OPEN, everywhere on the hot path.** Hooks (`warn`) and the statusline must NEVER raise —
-  a crash there breaks Claude Code itself. A `rescue StandardError` that swallows and continues, or
-  a best-effort helper that returns `nil` on any error, is **correct here** — do not "improve" it
-  into a raise or a narrower rescue that lets something escape. On-demand commands (`status`,
+- **Fail OPEN, everywhere on the hot path.** Hooks (`warn`) and the statusline must NEVER panic out
+  — a crash there breaks Claude Code itself. A top-level `defer func(){ recover() }()` at each hook
+  entry, plus best-effort helpers that return a zero value on any error, are **correct here** — do
+  not "improve" them into a propagated panic that could escape. On-demand commands (`status`,
   `check`, `init`) are the opposite: they fail LOUD (see `init` aborting rather than clobbering).
-- **One concern per file, flat in the repo root.** No `lib/`, no nesting. `pool.rb`,
-  `calibration.rb`, `warn.rb`, etc. Don't reorganize into a gem layout — the flat layout is
-  deliberate and the Go port won't inherit it anyway.
-- **A single hermetic `test_ccpool.rb`.** Not a `test/` tree, not per-file specs. It sets `CCPOOL_*`
-  paths to a tempdir *before* `require`, so nothing touches real `~/.claude`. Don't split it or add
-  a framework (no minitest/rspec) — plain asserts, one file, fast.
+- **Lean `internal/*` packages, one concern each.** `internal/pool`, `internal/calib`,
+  `internal/warn`, etc. Resist over-structuring (no DI, no interface-per-struct) — it's a small CLI.
+  Near-stdlib and ~zero shipped deps by design; don't pull cobra/viper for a `switch` on `os.Args[1]`.
+- **Conformance is golden-file, not a framework.** `internal/*/conformance_test.go` stage the shared
+  `conformance/*_fixtures.json`, run the Go code, and byte-diff against `conformance/golden/` (via
+  `internal/golden`). Ruby-semantics shims live in `internal/rb`; `json.Number` preserves the
+  int/float distinction the on-disk contract depends on.
 - **Delegate every dollar to `ccusage`; never hand-roll pricing.** The `$` is ccusage's number,
   self-calibrated per your usage. Don't add a pricing table.
 - **Trust the reported `rate_limits` number; never model/reverse-engineer the reset cadence.** The
@@ -60,13 +57,14 @@ intentional. Changing one needs a reason in `docs/DECISIONS.md`, not a tidy-up.
   add a new `CCPOOL_*` when a good default would do. (See `docs/CONFIG-AUDIT.md`.)
 - **ccusage pinned `@20`** with a fail-loud schema probe. Don't float `@latest`.
 
-## House style (Ruby, current)
+## House style (Go)
 
-- Idioms in use and welcome: `it`/`_1`, shorthand hash, `then`/`tap` chaining, endless `def x = …`,
-  guard clauses, `rescue`-modifier one-liners on best-effort reads. Avoid metaprogramming.
+- Idiomatic Go per `docs/standards/go.md`: errors as values (`%w`, `errors.Is`), typed constants for
+  the `fresh/estimated/stale`-style tiers, comma-ok on every type assertion (adversarial payloads
+  must not panic), small concrete types over interfaces. Read env fresh per call (honours test env).
 - Terse WHY-comments over what-comments. Explain the non-obvious decision, not the syntax.
-- Match the surrounding file's density and naming; single-letter math/time locals (`h`, `t`, `n`,
-  `r`) are conventional here.
+- Match the surrounding file's density and naming; short math/time locals (`h`, `t`, `n`, `r`) are
+  conventional. `gofumpt` + `staticcheck` are the gate — keep both clean.
 
 ## Prose, docs, commits
 
@@ -82,8 +80,8 @@ intentional. Changing one needs a reason in `docs/DECISIONS.md`, not a tidy-up.
 - **Verified**: you ran it the way a user would and observed the behaviour — not asserted a
   version, compatibility, or output from memory. For anything on the fail-open path, confirm it
   still can't raise.
-- **Reproducible**: bug repros don't depend on your machine; include ccpool + `ruby -v` (post-Go:
-  `go version`) and the exact command.
+- **Reproducible**: bug repros don't depend on your machine; include ccpool + `go version` and the
+  exact command.
 - **Prior art**: you checked the authoritative tool/spec before hand-rolling a heuristic.
 - A PoC that shows the behaviour or the bug is the fastest path to merge.
 

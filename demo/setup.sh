@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stage deterministic fixture data for the demo GIFs, so they render FIXED numbers and never touch
 # (or leak) your real ~/.claude usage. Source it -- it exports the hermetic CCPOOL_* env and puts
-# bin/ccpool on PATH. Regenerate the GIFs with `make demo`.
+# ccpool on PATH. Regenerate the GIFs with `make demo`.
 set -eu
 here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"

@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-# ccpool launcher -- runs the Ruby CLI with whatever ruby is available (PATH, then mise).
-set -euo pipefail
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-rb="$(command -v ruby || true)"
-[ -z "$rb" ] && rb="$(ls "$HOME"/.local/share/mise/installs/ruby/*/bin/ruby 2>/dev/null | tail -1 || true)"
-[ -z "$rb" ] && { echo "ccpool: no ruby found on PATH or in mise" >&2; exit 1; }
-exec "$rb" "$here/../ccpool.rb" "$@"

@@ -1,7 +1,7 @@
 name: CodeQL
 
-# Static security analysis for a public repo. Cheap insurance. Switch `language` from ruby to go
-# at the Go migration (docs/RUST-REIMPL.md).
+# Static security analysis for a public repo. Cheap insurance. (govulncheck in go.yml covers
+# dependency CVEs; CodeQL covers our own code.)
 on:
   push:
     branches: [main]
@@ -19,7 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - uses: github/codeql-action/init@v3
         with:
-          languages: ruby
+          languages: go
       - uses: github/codeql-action/analyze@v3
