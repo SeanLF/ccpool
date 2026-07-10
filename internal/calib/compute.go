@@ -204,26 +204,16 @@ func allAnthropic(v any) bool {
 	return true
 }
 
-// blocksArray extracts the blocks list: the doc itself if an array, else doc["blocks"], else the
-// first array-valued field (keys sorted for determinism; real ccusage always uses "blocks").
+// blocksArray extracts the blocks list from ccusage's `blocks --json`: the doc itself if it is a bare
+// array, else doc["blocks"]. Nothing else -- no "first array-valued field" guess. ccusage@20 always
+// uses "blocks", so a rename should trip the caller's fail-LOUD probe (nil here) rather than silently
+// matching some unrelated array and misreading it as cost blocks.
 func blocksArray(doc any) []any {
 	if arr, ok := doc.([]any); ok {
 		return arr
 	}
-	m, ok := doc.(map[string]any)
-	if !ok {
-		return nil
-	}
-	if arr, ok := m["blocks"].([]any); ok {
-		return arr
-	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		if arr, ok := m[k].([]any); ok {
+	if m, ok := doc.(map[string]any); ok {
+		if arr, ok := m["blocks"].([]any); ok {
 			return arr
 		}
 	}
