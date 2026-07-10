@@ -18,8 +18,10 @@ module Statusline
   DIM   = "\e[2m"
   YELLOW = "\e[93m"
   RED   = "\e[91m" # bright, legible on dark backgrounds
-  BAR   = ENV["CCPOOL_BAR_COLOR"] || "\e[96m" # explicit calm cyan fill (default-fg renders gray in
-  #                                             many themes -> the old bar was invisible); over-pace red
+  # 24-bit truecolour teal-cyan: theme-INDEPENDENT. A 16-colour code (\e[96m) gets remapped by
+  # the terminal palette -- Ghostty rendered cyan as pink -- so we pin the actual RGB. Calm/cool
+  # when healthy; the over-pace tail overrides to red. Override via CCPOOL_BAR_COLOR.
+  BAR   = ENV["CCPOOL_BAR_COLOR"] || "\e[38;2;86;182;194m"
   BOLD  = "\e[1m"
   SEP   = " #{DIM}·#{RESET} "
   WEEK  = 7 * 86_400
