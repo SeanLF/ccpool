@@ -108,6 +108,9 @@ module CCPool
     if fh && (fh[:age] || 0) <= Pool::STALE && fh[:used] >= 70
       puts "5h window    ·  #{fh[:used].round}% used (resets #{dur(fh[:reset] - now)}) -- session throttle near"
     end
+    if (n = stale_caches(now).size) >= 20 # surface, don't auto-delete
+      puts "cleanup      ·  #{n} stale session snapshots accumulating -- run `ccpool prune` to clean"
+    end
   end
 
   # -- statusLine command: capture + seed + render (cached $ only; must stay fast) ------
@@ -121,7 +124,7 @@ module CCPool
       (File.write(tmp, JSON.generate(payload.merge("captured_at" => now))); File.rename(tmp, path)) rescue nil # atomic
     end
     seed_history(payload, now)
-    prune_caches(now)
+    prune_caches(now) if ENV["CCPOOL_PRUNE"] == "1" # opt-in only: deleting files is never silent-by-default
 
     line = Statusline.render(payload, now) # rich: ctx · cache · 5h · weekly meter (coloured) + $
     print line unless line.to_s.empty?
@@ -129,17 +132,17 @@ module CCPool
     # a statusline must NEVER break Claude Code
   end
 
-  # Delete per-session snapshots (+ crashed tmp files) older than KEEP -- so dead sessions'
-  # stale windows can't linger in reconciliation and the glob stays bounded to live sessions.
-  def prune_caches(now)
+  # Stale per-session snapshots older than KEEP (dead sessions). Non-destructive by default:
+  # returns the paths so status can SURFACE them; `ccpool prune` (or CCPOOL_PRUNE=1) deletes.
+  def stale_caches(now)
     keep = (ENV["CCPOOL_CACHE_KEEP_SECS"] || "3600").to_i
-    (Dir.glob(Pool::GLOB) + Dir.glob("#{Pool::GLOB}.*.tmp")).each do |f|
-      File.delete(f) if now - File.mtime(f).to_i > keep
-    rescue StandardError
-      nil
-    end
+    (Dir.glob(Pool::GLOB) + Dir.glob("#{Pool::GLOB}.*.tmp")).select { |f| now - File.mtime(f).to_i > keep rescue false }
   rescue StandardError
-    nil
+    []
+  end
+
+  def prune_caches(now)
+    stale_caches(now).count { |f| File.delete(f) rescue next }
   end
 
   def seed_history(payload, now)
@@ -149,6 +152,7 @@ module CCPool
 
     row = { "t" => now, "wk" => sd["used_percentage"], "wk_reset" => sd["resets_at"],
             "ses" => fh&.dig("used_percentage"), "ses_reset" => fh&.dig("resets_at"),
+            "tier" => (ENV["USAGE_TIER"] || "max_20x"), "cost" => payload.dig("cost", "total_cost_usd"),
             "session" => payload["session_id"] }
     # flock the read-check-append so concurrent sessions' statuslines can't interleave lines.
     File.open(HIST, File::RDWR | File::CREAT, 0o644) do |f|
@@ -231,8 +235,9 @@ if $PROGRAM_NAME == __FILE__
   when "status", nil then CCPool.status
   when "run" then CCPool.run(ARGV)
   when "review" then CCPool.review(ARGV)
+  when "prune" then puts "ccpool: pruned #{CCPool.prune_caches(Time.now.to_i)} stale snapshot(s)"
   else
-    warn "usage: ccpool [statusline|status|run -- <cmd...>|review [days]]"
+    warn "usage: ccpool [statusline|status|run -- <cmd...>|review [days]|prune]"
     exit 2
   end
 end
