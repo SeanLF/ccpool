@@ -1,0 +1,133 @@
+[
+  {
+    "name": "fresh_append",
+    "now": 1720000000,
+    "env": {},
+    "hist": "",
+    "payload": {
+      "session_id": "s1",
+      "rate_limits": {
+        "seven_day": { "used_percentage": 45, "resets_at": 1720345600 },
+        "five_hour": { "used_percentage": 30, "resets_at": 1720003600 }
+      }
+    }
+  },
+  {
+    "name": "same_state_skip",
+    "now": 1720000000,
+    "env": {},
+    "hist": "{\"t\":1719999970,\"wk\":45,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "payload": {
+      "session_id": "s1",
+      "rate_limits": {
+        "seven_day": { "used_percentage": 45, "resets_at": 1720345600 },
+        "five_hour": { "used_percentage": 30, "resets_at": 1720003600 }
+      }
+    }
+  },
+  {
+    "name": "wk_changed_append",
+    "now": 1720000000,
+    "env": {},
+    "hist": "{\"t\":1719999970,\"wk\":45,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "payload": {
+      "session_id": "s1",
+      "rate_limits": {
+        "seven_day": { "used_percentage": 46, "resets_at": 1720345600 },
+        "five_hour": { "used_percentage": 31, "resets_at": 1720003600 }
+      }
+    }
+  },
+  {
+    "name": "ses_moved_throttle",
+    "now": 1720000000,
+    "env": {},
+    "hist": "{\"t\":1719999970,\"wk\":45,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "payload": {
+      "session_id": "s1",
+      "rate_limits": {
+        "seven_day": { "used_percentage": 45, "resets_at": 1720345600 },
+        "five_hour": { "used_percentage": 31, "resets_at": 1720003600 }
+      }
+    }
+  },
+  {
+    "name": "ses_moved_append_past_interval",
+    "now": 1720000000,
+    "env": {},
+    "hist": "{\"t\":1719999880,\"wk\":45,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "payload": {
+      "session_id": "s1",
+      "rate_limits": {
+        "seven_day": { "used_percentage": 45, "resets_at": 1720345600 },
+        "five_hour": { "used_percentage": 31, "resets_at": 1720003600 }
+      }
+    }
+  },
+  {
+    "name": "no_session_matches_last",
+    "now": 1720000000,
+    "env": {},
+    "hist": "{\"t\":1719999970,\"wk\":45,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "payload": {
+      "rate_limits": {
+        "seven_day": { "used_percentage": 45, "resets_at": 1720345600 },
+        "five_hour": { "used_percentage": 30, "resets_at": 1720003600 }
+      }
+    }
+  },
+  {
+    "name": "no_seven_day_noop",
+    "now": 1720000000,
+    "env": {},
+    "hist": "{\"t\":1719999970,\"wk\":45,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "payload": { "session_id": "s1", "rate_limits": { "five_hour": { "used_percentage": 30 } } }
+  },
+  {
+    "name": "with_cost",
+    "now": 1720000000,
+    "env": {},
+    "hist": "",
+    "payload": {
+      "session_id": "s1",
+      "cost": { "total_cost_usd": 12.34 },
+      "rate_limits": {
+        "seven_day": { "used_percentage": 45, "resets_at": 1720345600 },
+        "five_hour": { "used_percentage": 30, "resets_at": 1720003600 }
+      }
+    }
+  },
+  {
+    "name": "float_used_and_no_five_hour",
+    "now": 1720000000,
+    "env": {},
+    "hist": "",
+    "payload": {
+      "session_id": "s1",
+      "rate_limits": { "seven_day": { "used_percentage": 45.5, "resets_at": 1720345600 } }
+    }
+  },
+  {
+    "name": "multi_session_per_session_dedup",
+    "now": 1720000000,
+    "env": {},
+    "hist": "{\"t\":1719999950,\"wk\":45,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s2\"}\n{\"t\":1719999970,\"wk\":45,\"wk_reset\":1720345600,\"ses\":50,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "payload": {
+      "session_id": "s2",
+      "rate_limits": {
+        "seven_day": { "used_percentage": 45, "resets_at": 1720345600 },
+        "five_hour": { "used_percentage": 30, "resets_at": 1720003600 }
+      }
+    }
+  },
+  {
+    "name": "custom_tier",
+    "now": 1720000000,
+    "env": { "USAGE_TIER": "max_5x" },
+    "hist": "",
+    "payload": {
+      "session_id": "s1",
+      "rate_limits": { "seven_day": { "used_percentage": 45, "resets_at": 1720345600 } }
+    }
+  }
+]

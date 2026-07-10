@@ -4,10 +4,10 @@
 package calib
 
 import (
-	"encoding/json"
 	"os"
 
 	"github.com/SeanLF/ccpool/internal/paths"
+	"github.com/SeanLF/ccpool/internal/rb"
 )
 
 // ReadCache returns the parsed calibration cache, or nil if it is missing, unreadable, corrupt, or
@@ -19,15 +19,9 @@ func ReadCache() map[string]any {
 	if err != nil {
 		return nil
 	}
-	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
-		return nil
-	}
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	return m
+	// UseNumber (via rb.ParseObject) so the whole package reads the cache as json.Number, matching
+	// compute.go's num()/cachedDPP() — decoding as float64 here would silently disable them.
+	return rb.ParseObject(b)
 }
 
 // DPP returns the cached $/1% and whether it is present and numeric. Value 0 still reports true
@@ -37,6 +31,5 @@ func DPP() (float64, bool) {
 	if c == nil {
 		return 0, false
 	}
-	f, ok := c["dpp"].(float64)
-	return f, ok
+	return cachedDPP(c)
 }

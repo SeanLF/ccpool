@@ -15,7 +15,7 @@ input = JSON.parse($stdin.read)
 now = input.fetch("now")
 payload = input.fetch("payload")
 
-STDOUT.binmode
-STDOUT.write(Statusline.render(payload, now))
-STDOUT.write("\0")
-STDOUT.write(Statusline.render_compact(payload, now))
+$stdout.binmode
+$stdout.write(Statusline.render(payload, now))
+$stdout.write("\0")
+$stdout.write(Statusline.render_compact(payload, now))

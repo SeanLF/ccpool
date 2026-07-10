@@ -6,11 +6,38 @@
 package rb
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"math"
 	"strconv"
 	"strings"
 )
+
+// ParseObject decodes one JSON object into map[string]any with numbers kept as json.Number, so the
+// int-vs-float distinction Ruby's JSON.parse preserves survives (it changes fmt_dur / history-row
+// output). Returns nil for invalid JSON, a non-object top-level value, OR trailing content after
+// the object — matching Ruby JSON.parse's strictness (it raises on trailing junk). This is the one
+// decode path the whole port shares.
+func ParseObject(b []byte) map[string]any {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	// Reject anything after the object (Ruby JSON.parse would raise). For newline-split log lines
+	// there is never trailing content, so this only tightens the whole-payload decode.
+	if _, err := dec.Token(); err != io.EOF {
+		return nil
+	}
+	return m
+}
 
 // RoundToInt mirrors Ruby Float#round to an integer: half away from zero (2.5 -> 3, -2.5 -> -3),
 // which is exactly what math.Round does.
@@ -19,6 +46,12 @@ func RoundToInt(f float64) int { return int(math.Round(f)) }
 // Round1 mirrors Ruby Float#round(1): round to one decimal, half away from zero (1.25 -> 1.3,
 // where strconv's default half-to-even would give 1.2).
 func Round1(f float64) float64 { return math.Round(f*10) / 10 }
+
+// RoundN mirrors Ruby Float#round(n): round to n decimals, half away from zero.
+func RoundN(f float64, n int) float64 {
+	p := math.Pow(10, float64(n))
+	return math.Round(f*p) / p
+}
 
 // Fmt1 formats a value the way Ruby prints `x.round(1)`: one decimal place, e.g. 2.0 -> "2.0",
 // 1.234 -> "1.2". Pre-rounds half-away-from-zero so it matches Ruby, not strconv's half-to-even.

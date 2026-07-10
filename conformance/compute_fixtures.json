@@ -1,0 +1,44 @@
+[
+  {
+    "name": "basic_pooled_dpp",
+    "now": 1720000000,
+    "hist": "{\"t\":1719992800,\"wk\":5,\"wk_reset\":1720345600,\"ses\":10,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n{\"t\":1719996400,\"wk\":12,\"wk_reset\":1720345600,\"ses\":20,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n{\"t\":1719999940,\"wk\":20,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "blocks": "{\"blocks\":[{\"startTime\":\"2024-07-03T07:46:40Z\",\"endTime\":\"2024-07-03T09:46:40Z\",\"costUSD\":150,\"models\":[\"claude-opus-4\"],\"isGap\":false}]}"
+  },
+  {
+    "name": "insufficient_history_nil",
+    "now": 1720000000,
+    "hist": "{\"t\":1719992800,\"wk\":5,\"wk_reset\":1720345600,\"ses\":10,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n{\"t\":1719999940,\"wk\":6,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "blocks": "{\"blocks\":[{\"startTime\":\"2024-07-03T07:46:40Z\",\"endTime\":\"2024-07-03T09:46:40Z\",\"costUSD\":150,\"models\":[\"claude-opus-4\"],\"isGap\":false}]}"
+  },
+  {
+    "name": "empty_history_nil",
+    "now": 1720000000,
+    "hist": "",
+    "blocks": "{\"blocks\":[{\"startTime\":\"2024-07-03T07:46:40Z\",\"endTime\":\"2024-07-03T09:46:40Z\",\"costUSD\":150,\"models\":[\"claude-opus-4\"],\"isGap\":false}]}"
+  },
+  {
+    "name": "non_anthropic_block_excluded",
+    "now": 1720000000,
+    "hist": "{\"t\":1719992800,\"wk\":5,\"wk_reset\":1720345600,\"ses\":10,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n{\"t\":1719996400,\"wk\":12,\"wk_reset\":1720345600,\"ses\":20,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n{\"t\":1719999940,\"wk\":20,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "blocks": "{\"blocks\":[{\"startTime\":\"2024-07-03T07:46:40Z\",\"endTime\":\"2024-07-03T09:46:40Z\",\"costUSD\":150,\"models\":[\"gpt-5.4\"],\"isGap\":false}]}"
+  },
+  {
+    "name": "gap_block_ignored_plus_valid",
+    "now": 1720000000,
+    "hist": "{\"t\":1719992800,\"wk\":5,\"wk_reset\":1720345600,\"ses\":10,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n{\"t\":1719996400,\"wk\":12,\"wk_reset\":1720345600,\"ses\":20,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n{\"t\":1719999940,\"wk\":20,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "blocks": "{\"blocks\":[{\"startTime\":\"2024-07-03T07:46:40Z\",\"endTime\":\"2024-07-03T09:46:40Z\",\"costUSD\":9999,\"isGap\":true},{\"startTime\":\"2024-07-03T07:46:40Z\",\"endTime\":\"2024-07-03T09:46:40Z\",\"costUSD\":150,\"models\":[\"claude-sonnet-5\"],\"isGap\":false}]}"
+  },
+  {
+    "name": "prefixed_claude_model_included",
+    "now": 1720000000,
+    "hist": "{\"t\":1719992800,\"wk\":5,\"wk_reset\":1720345600,\"ses\":10,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n{\"t\":1719996400,\"wk\":12,\"wk_reset\":1720345600,\"ses\":20,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n{\"t\":1719999940,\"wk\":20,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "blocks": "{\"blocks\":[{\"startTime\":\"2024-07-03T07:46:40Z\",\"endTime\":\"2024-07-03T09:46:40Z\",\"costUSD\":150,\"models\":[\"[pi] claude-opus-4\"],\"isGap\":false}]}"
+  },
+  {
+    "name": "ccusage_empty_nil",
+    "now": 1720000000,
+    "hist": "{\"t\":1719992800,\"wk\":5,\"wk_reset\":1720345600,\"ses\":10,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n{\"t\":1719996400,\"wk\":12,\"wk_reset\":1720345600,\"ses\":20,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n{\"t\":1719999940,\"wk\":20,\"wk_reset\":1720345600,\"ses\":30,\"ses_reset\":1720003600,\"tier\":\"max_20x\",\"cost\":null,\"session\":\"s1\"}\n",
+    "blocks": ""
+  }
+]

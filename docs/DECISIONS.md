@@ -253,3 +253,32 @@ Immediate next actions before the port: add a git remote + push (activates CI + 
 templates, which are dormant with no remote), and grab a real in-Claude-Code statusline screenshot
 for the README. Post-v1: revisit deferred items (per-model weekly buckets if the payload carries
 them, `--json` if a consumer appears) from the stable Go base.
+
+## Go migration — execution decisions (2026-07-10)
+
+Locked at the top of the migration session; see `docs/GO-MIGRATION.md` for the phased plan.
+
+- **Module `github.com/SeanLF/ccpool`; tap `SeanLF/homebrew-tap`; targets darwin+linux × arm64+amd64.**
+  Go 1.26.5, zero shipped deps; dev tools (gofumpt/staticcheck/govulncheck) pinned via go.mod `tool`
+  directives. v1 ships ALL commands in Go and retires Ruby (the distribution win per RUST-REIMPL).
+- **Homebrew via GoReleaser v2 `homebrew_casks`, NOT `brews`.** `brews` (formula) is deprecated in v2;
+  casks are the current path for a binary. Unsigned binary -> a `postflight` strips the Gatekeeper
+  quarantine xattr, and `skip_upload: "auto"` keeps prerelease (rc) tags out of the stable tap.
+- **Conformance is by EXECUTION, not by the Ruby test assertions.** The Ruby tests check substrings,
+  so they don't pin exact bytes. Instead a Ruby "oracle" renders each fixture through the real
+  statusline/seed_history/calibration and the Go test diffs against it: byte-identical for the
+  rendered line (ANSI included) and the history rows; equal-to-4-decimals for the $/1% math. ccusage
+  is mocked deterministically via `CCPOOL_CCUSAGE_CMD` (a fake script) so compute is testable without
+  npx. Ruby is wired into the Go CI job so the diff runs in CI too.
+- **Ruby's int-vs-float JSON distinction is preserved via `json.Number`.** `JSON.parse` keeps `45`
+  Integer vs `45.0` Float, which changes `fmt_dur`/history-row output; Go's default decode flattens
+  both to float64. Decoding with `json.Number` keeps the original literal. Ruby's `String#to_i/#to_f`
+  and `Float#round` semantics are reimplemented in `internal/rb` (unit-tested against Ruby values).
+- **Snapshot files: semantic-identical, byte-identical for realistic payloads — NOT guaranteed
+  byte-identical for exotic JSON literals.** Ruby writes `JSON.generate(parsed.merge("captured_at"))`,
+  which re-tokenizes numbers (`1e5` -> `100000.0`) and re-escapes strings. Go can't reproduce that
+  canonicalization without an ordered re-serializer (maps don't preserve key order), so instead we
+  `json.Compact` the raw payload and splice `captured_at` last — byte-identical when the payload uses
+  canonical tokens (every real Claude payload does; verified end-to-end against Ruby), differing only
+  on inputs that never occur. The snapshot is machine-read (never displayed), so semantic equality is
+  the true interop contract; this is a deliberate, bounded deviation from "byte-identical every file."

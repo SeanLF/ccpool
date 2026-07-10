@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
+
+	"github.com/SeanLF/ccpool/internal/statusline"
 )
 
 // Build metadata, injected at release time by GoReleaser via -ldflags -X.
@@ -33,6 +36,13 @@ func run(args []string) int {
 	}
 
 	switch args[0] {
+	case "statusline":
+		embed := hasFlag(args[1:], "--embed") || hasFlag(args[1:], "--compact")
+		statusline.Command(time.Now().Unix(), embed)
+		return 0
+	case "__warm-calib": // internal: detached background $/1% warm-up (see statusline warm)
+		statusline.WarmCalib(time.Now().Unix())
+		return 0
 	case "version", "--version", "-v":
 		fmt.Printf("ccpool %s (%s, built %s)\n", version, commit, date)
 		return 0
@@ -44,6 +54,15 @@ func run(args []string) int {
 		usage(os.Stderr)
 		return 2
 	}
+}
+
+func hasFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
 }
 
 func usage(w io.Writer) {

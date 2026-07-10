@@ -395,7 +395,7 @@ func cacheState(path string) *cacheInfo {
 
 	var entries []map[string]any
 	for _, l := range lines {
-		if m := parseObject(l); m != nil {
+		if m := rb.ParseObject(l); m != nil {
 			entries = append(entries, m)
 		}
 	}
@@ -449,20 +449,6 @@ func splitLines(b []byte) [][]byte {
 		out = append(out, append([]byte(nil), sc.Bytes()...))
 	}
 	return out
-}
-
-func parseObject(line []byte) map[string]any {
-	dec := json.NewDecoder(bytes.NewReader(line))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
-		return nil
-	}
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	return m
 }
 
 // parseTimestamp parses an ISO8601 transcript timestamp to unix seconds (Ruby Time.parse().to_i).
