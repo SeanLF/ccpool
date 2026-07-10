@@ -1,0 +1,227 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# ccpool -- get the most out of your fixed Claude subscription pool.
+#
+#   ccpool statusline        (wire as your Claude Code statusLine command) -- captures
+#                            rate_limits from CC's payload, seeds history, renders a line.
+#                            This populates ccpool's data on a fresh install.
+#   ccpool status            % used, ~$ API-equiv left, pace vs the week elapsed.
+#   ccpool run -- <cmd...>   run <cmd>, downshifting subagent model/effort when ahead of pace.
+#   ccpool review [days]     retrospective: did you use the right model for the work?
+#
+# Delegates cost to ccusage; reads the % ccusage can't see. Fails OPEN on missing data.
+require "json"
+require "time"
+require_relative "pool"
+require_relative "calibration"
+require_relative "analyzer"
+require_relative "burn"
+
+module CCPool
+  MARGIN  = (ENV["CCPOOL_PACE_MARGIN"] || "3").to_f
+  DMODEL  = ENV["CCPOOL_DOWNSHIFT_MODEL"] || "haiku"
+  DEFFORT = ENV["CCPOOL_DOWNSHIFT_EFFORT"] || "low"
+  COAST   = (ENV["CCPOOL_COAST_SECS"] || "43200").to_i # <12h to reset -> use-it-or-lose-it
+  FIVE_H_CAP = (ENV["CCPOOL_5H_CAP"] || "85").to_f      # 5h window this full -> downshift too
+  HIST    = File.expand_path(ENV["CCPOOL_HISTORY"] || "~/.claude/rate-limit-history.jsonl")
+
+  module_function
+
+  def usd(n) = "$#{n.round.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse}"
+  def usdk(n) = n >= 1000 ? "$#{(n / 1000.0).round(1)}k" : "$#{n.round}"
+
+  def dur(secs)
+    secs = secs.to_i
+    return "now" if secs <= 0
+
+    d, r = secs.divmod(86_400)
+    d.positive? ? "#{d}d #{r / 3_600}h" : "#{r / 3_600}h #{(r % 3_600) / 60}m"
+  end
+
+  def at(epoch) = Time.at(epoch).localtime.strftime("%a %m-%d %H:%M")
+
+  # 3-tier read: fresh official snapshot > stale-but-extrapolated-from-accrued-cost >
+  # stale-shown-with-warning. (No OAuth tier -- deliberately.) => window + :confidence.
+  def resolve_weekly(now = Time.now.to_i)
+    wk = Pool.weekly(now) or return nil
+    age = wk[:age] || 0
+    return wk.merge(confidence: :fresh) if age <= Pool::STALE
+
+    dpp = Calibration.dollar_per_pct(now)
+    accrued = dpp && Calibration.cost_since(now - age, now)
+    if dpp && accrued && accrued >= 0
+      wk.merge(used: (wk[:used] + accrued / dpp).clamp(0, 100), confidence: :estimated)
+    else
+      wk.merge(confidence: :stale)
+    end
+  end
+
+  def stamp(wk, now)
+    case wk[:confidence]
+    when :estimated then "  ·  ~estimated (snapshot #{dur(wk[:age])} old + accrued cost)"
+    when :stale then "  ·  ⚠ stale: snapshot #{dur(wk[:age])} old, may be behind (open Claude Code)"
+    else wk[:age] && wk[:age] > 300 ? "  ·  data #{wk[:age] / 60}m old" : ""
+    end
+  end
+
+  def pace_phrase(p)
+    return "reset in #{dur(p[:to_reset])} -- unspent budget is use-it-or-lose-it, burn freely" if p[:to_reset] < COAST
+
+    d = p[:delta]
+    el = p[:elapsed_pct].round
+    if d > MARGIN then "#{d.round} pts AHEAD of pace (#{el}% of the week elapsed) -- burning fast"
+    elsif d < -MARGIN then "#{(-d).round} pts under pace (#{el}% of the week elapsed) -- banked headroom"
+    else "on pace (~#{el}% used and #{el}% elapsed)"
+    end
+  end
+
+  # -- full readout --------------------------------------------------------------------
+  def status(now = Time.now.to_i)
+    wk = resolve_weekly(now)
+    unless wk
+      puts "weekly pool: no data yet. Wire `ccpool statusline` as your Claude Code"
+      puts "statusLine command (settings.json) so it can capture rate_limits, then use CC once."
+      return
+    end
+
+    used = wk[:used]
+    dpp = Calibration.dollar_per_pct(now)
+    dollars = dpp ? "  ·  ~#{usd((100 - used) * dpp)} left of ~#{usd(100 * dpp)} (API-equiv)" : "  ·  ($ value calibrating -- needs ccusage + a few days of history)"
+    puts "Weekly pool  ·  #{used.round}% used#{dollars}  ·  resets #{at(wk[:reset])} (#{dur(wk[:reset] - now)})#{stamp(wk, now)}"
+    puts "Pace         ·  #{pace_phrase(Pool.pace(used, wk[:reset], now))}"
+
+    # Burn projection (reset-robust, from the history log) -- will you throttle before reset?
+    # envelope() first: the raw log interleaves concurrent sessions, so project() needs the
+    # collapsed monotonic current-window series or it sees phantom resets.
+    entries = Burn.read(HIST, now)
+    env = entries && Burn.envelope(entries, "wk", "wk_reset")
+    if env && (pr = Burn.project(env))
+      dcap = pr[:hours_to_cap] / 24.0
+      dreset = (wk[:reset] - now) / 86_400.0
+      verdict = pr[:hours_to_cap] * 3_600 < (wk[:reset] - now) ? "⚠ ~#{(dreset - dcap).round(1)}d BEFORE reset -- you'll throttle early" : "resets first (in #{dreset.round(1)}d) -- you're clear"
+      puts "Burn         ·  ~#{pr[:burn_per_h].round(1)}%/h -> hits cap in ~#{dcap.round(1)}d; #{verdict}"
+    end
+
+    fh = Pool.five_hour(now)
+    if fh && (fh[:age] || 0) <= Pool::STALE && fh[:used] >= 70
+      puts "5h window    ·  #{fh[:used].round}% used (resets #{dur(fh[:reset] - now)}) -- session throttle near"
+    end
+  end
+
+  # -- statusLine command: capture + seed + render (cached $ only; must stay fast) ------
+  def statusline(now = Time.now.to_i)
+    payload = (JSON.parse($stdin.read) rescue {})
+    return unless payload.is_a?(Hash)
+
+    if (sid = payload["session_id"]).is_a?(String)
+      File.write(Pool::CACHE.sub(/\.json\z/, "-#{sid}.json"), JSON.generate(payload.merge("captured_at" => now))) rescue nil
+    end
+    seed_history(payload, now)
+
+    wk = Pool.weekly(now)
+    return puts("ccpool: warming up") unless wk
+
+    dpp = Calibration.read_cache&.dig("dpp") # cached only -- statusline must stay fast
+    left = dpp ? " · #{usdk((100 - wk[:used]) * dpp)} left" : ""
+    p = Pool.pace(wk[:used], wk[:reset], now)
+    tag = p[:to_reset] < COAST ? "reset<#{dur(p[:to_reset])}" : (p[:delta] > MARGIN ? "+#{p[:delta].round}↑" : "#{p[:delta].round}↓")
+    puts "pool #{wk[:used].round}%#{left} · pace #{tag}"
+  rescue StandardError
+    # a statusline must NEVER break Claude Code
+  end
+
+  def seed_history(payload, now)
+    sd = payload.dig("rate_limits", "seven_day")
+    fh = payload.dig("rate_limits", "five_hour")
+    return unless sd.is_a?(Hash) && sd["used_percentage"].is_a?(Numeric)
+
+    row = { "t" => now, "wk" => sd["used_percentage"], "wk_reset" => sd["resets_at"],
+            "ses" => fh&.dig("used_percentage"), "ses_reset" => fh&.dig("resets_at"),
+            "session" => payload["session_id"] }
+    # flock the read-check-append so concurrent sessions' statuslines can't interleave lines.
+    File.open(HIST, File::RDWR | File::CREAT, 0o644) do |f|
+      f.flock(File::LOCK_EX)
+      last = (JSON.parse(f.read.lines.last.to_s) rescue nil)
+      next if last.is_a?(Hash) && last["wk"] == row["wk"] && last["wk_reset"] == row["wk_reset"]
+
+      f.seek(0, IO::SEEK_END)
+      f.puts(JSON.generate(row))
+    end
+  rescue StandardError
+    nil
+  end
+
+  # -- pace-aware downshift launcher ---------------------------------------------------
+  def downshift_env(now = Time.now.to_i)
+    wk = resolve_weekly(now)
+    return [{}, "no usable usage data -> no downshift (fail open)"] if wk.nil? || wk[:confidence] == :stale
+
+    p = Pool.pace(wk[:used], wk[:reset], now)
+    fh = Pool.five_hour(now)
+    fh_hot = fh && (fh[:age] || 0) <= Pool::STALE && fh[:used] >= FIVE_H_CAP
+    tag = wk[:confidence] == :estimated ? " est" : ""
+    down = { "CLAUDE_CODE_SUBAGENT_MODEL" => DMODEL, "CLAUDE_CODE_EFFORT_LEVEL" => DEFFORT }
+
+    # 5h saturation throttles within minutes -> downshift first, regardless of weekly/coast.
+    if fh_hot && p[:delta] <= MARGIN
+      [down, "5h at #{fh[:used].round}% (#{wk[:used].round}% wk#{tag}) -> downshifting subagents to #{DMODEL}/#{DEFFORT}"]
+    elsif p[:to_reset] < COAST # near weekly reset: unspent is lost anyway, let it burn.
+      [{}, "#{wk[:used].round}% used#{tag}, reset in #{dur(p[:to_reset])} -> no downshift (burn it)"]
+    elsif p[:delta] > MARGIN
+      [down, "pace +#{p[:delta].round}pts (#{wk[:used].round}% used#{tag}) -> downshifting subagents to #{DMODEL}/#{DEFFORT}"]
+    else
+      [{}, "#{wk[:used].round}% used#{tag}, #{pace_phrase(p)} -> no downshift"]
+    end
+  end
+
+  def run(argv, now = Time.now.to_i)
+    sep = argv.index("--")
+    cmd = sep ? argv[(sep + 1)..] : argv
+    if cmd.nil? || cmd.empty?
+      warn "usage: ccpool run -- <command...>"
+      exit 2
+    end
+    # respect an explicit user choice -- don't override a model the user set themselves.
+    if ENV["CLAUDE_CODE_SUBAGENT_MODEL"]
+      warn "[ccpool] CLAUDE_CODE_SUBAGENT_MODEL already set -> leaving it"
+      exec(*cmd)
+    end
+    env, msg = downshift_env(now)
+    warn "[ccpool] #{msg}"
+    exec(env, *cmd)
+  end
+
+  # -- retrospective provisioning review -----------------------------------------------
+  def review(argv, now = Time.now.to_i)
+    days = (argv.first.to_i.positive? ? argv.first.to_i : 7)
+    r = Analyzer.review(days: days, now: now)
+    puts "Model provisioning review -- last #{days}d"
+    if r[:by_model].empty?
+      puts "  no Claude turns found in the window."
+      return
+    end
+    r[:by_model].first(6).each { |m, v| puts "  #{v[:turns].to_s.rjust(6)} turns  #{(v[:out] / 1000).to_s.rjust(6)}k out  #{m}" }
+    if r[:exp_turns].positive?
+      puts
+      puts "  Expensive-model turns (opus/fable): #{r[:exp_turns]}"
+      puts "  ...low-complexity (little output, no tools): #{r[:exp_trivial]} (#{r[:trivial_pct].round}%) -- candidates to downshift to sonnet/haiku"
+      puts "  ~#{r[:trivial_out_pct].round}% of your expensive-model output tokens went to that trivial work."
+    end
+    puts
+    puts "  caveat: effort isn't logged per-turn -- this proxies complexity from output volume +"
+    puts "  tool-calls; `ultrathink`/thinking inflate output invisibly, so treat as a hint, not a verdict."
+  end
+end
+
+if $PROGRAM_NAME == __FILE__
+  case ARGV.shift
+  when "statusline" then CCPool.statusline
+  when "status", nil then CCPool.status
+  when "run" then CCPool.run(ARGV)
+  when "review" then CCPool.review(ARGV)
+  else
+    warn "usage: ccpool [statusline|status|run -- <cmd...>|review [days]]"
+    exit 2
+  end
+end

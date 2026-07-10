@@ -1,0 +1,3 @@
+# ccpool writes its cache/history under ~/.claude, not here.
+*.gem
+.DS_Store
