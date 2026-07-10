@@ -163,6 +163,14 @@ ok("statusline wrote a snapshot", File.exist?(ENV["USAGE_CACHE"].sub(/\.json\z/,
 ok("statusline seeded history", File.read(ENV["CCPOOL_HISTORY"]).include?('"wk":10'))
 
 clear_snaps
+snap("old", week: 5)
+snap("new", week: 5)
+File.utime(NOW - 7_200, NOW - 7_200, ENV["USAGE_CACHE"].sub(/\.json\z/, "-old.json")) # 2h old > KEEP
+CCPool.prune_caches(NOW)
+ok("prune removes stale session snapshots, keeps fresh",
+   !File.exist?(ENV["USAGE_CACHE"].sub(/\.json\z/, "-old.json")) && File.exist?(ENV["USAGE_CACHE"].sub(/\.json\z/, "-new.json")))
+
+clear_snaps
 out = capture { CCPool.status(NOW) }
 ok("status with no data guides to wire the statusline", out.include?("no data yet"))
 

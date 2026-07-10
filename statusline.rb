@@ -18,6 +18,8 @@ module Statusline
   DIM   = "\e[2m"
   YELLOW = "\e[93m"
   RED   = "\e[91m" # bright, legible on dark backgrounds
+  BAR   = ENV["CCPOOL_BAR_COLOR"] || "\e[96m" # explicit calm cyan fill (default-fg renders gray in
+  #                                             many themes -> the old bar was invisible); over-pace red
   BOLD  = "\e[1m"
   SEP   = " #{DIM}·#{RESET} "
   WEEK  = 7 * 86_400
@@ -59,11 +61,12 @@ module Statusline
     pace_w = (pace_frac || 1.0) * width
     (0...width).map do |i|
       if i + 1 <= used_w
-        (i + 0.5) >= pace_w ? "#{RED}#{SOLID}#{RESET}" : SOLID
+        col = (i + 0.5) >= pace_w ? RED : BAR # over-pace tail red, on-pace fill cyan
+        "#{col}#{SOLID}#{RESET}"
       elsif i < used_w
-        EIGHTHS[[((used_w - i) * 8).round, 1].max]
+        "#{BAR}#{EIGHTHS[[((used_w - i) * 8).round, 1].max]}#{RESET}" # coloured partial edge
       else
-        "#{DIM}#{TRACK}#{RESET}"
+        "#{DIM}#{TRACK}#{RESET}" # dim remaining -> contrast with the fill
       end
     end.join
   end
@@ -139,13 +142,16 @@ module Statusline
     sd = rl["seven_day"]
     if sd.is_a?(Hash) && sd["used_percentage"].is_a?(Numeric)
       used = sd["used_percentage"].to_f
-      width = [[cols - 74, 40].min, 14].max
+      width = [[cols - 82, 40].min, 14].max
       wknum = sev("#{used.round}%", used.round, warn: 75, crit: 90)
-      dollars = dpp ? " #{DIM}#{(100 - used) * dpp >= 1000 ? "$#{(((100 - used) * dpp) / 1000).round(1)}k" : "$#{((100 - used) * dpp).round}"}#{RESET}" : ""
+      left = (100 - used) * (dpp || 0)
+      dollars = dpp ? " #{DIM}#{left >= 1000 ? "$#{(left / 1000).round(1)}k" : "$#{left.round}"}#{RESET}" : ""
       if sd["resets_at"].is_a?(Numeric)
         reset = sd["resets_at"]
         pace = ((now - (reset - WEEK)).to_f / WEEK).clamp(0.0, 1.0)
-        wk_grp << "wk #{meter(used / 100.0, pace, width)} #{wknum}#{dollars} #{fmt_dur(reset - now)}"
+        days_left = [(reset - now).to_f / 86_400, 0.0001].max
+        day = [100 - used, (100 - used) / days_left].min.clamp(0, 100) # burnable %/remaining-day
+        wk_grp << "wk #{meter(used / 100.0, pace, width)} #{wknum}#{dollars} #{fmt_dur(reset - now)} #{DIM}day #{day.round}%#{RESET}"
       else
         wk_grp << "wk #{meter(used / 100.0, nil, width)} #{wknum}#{dollars}"
       end

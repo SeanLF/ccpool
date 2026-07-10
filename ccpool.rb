@@ -116,14 +116,30 @@ module CCPool
     return unless payload.is_a?(Hash)
 
     if (sid = payload["session_id"]).is_a?(String)
-      File.write(Pool::CACHE.sub(/\.json\z/, "-#{sid}.json"), JSON.generate(payload.merge("captured_at" => now))) rescue nil
+      path = Pool::CACHE.sub(/\.json\z/, "-#{sid.gsub(/[^\w.-]/, '')}.json")
+      tmp = "#{path}.#{Process.pid}.tmp"
+      (File.write(tmp, JSON.generate(payload.merge("captured_at" => now))); File.rename(tmp, path)) rescue nil # atomic
     end
     seed_history(payload, now)
+    prune_caches(now)
 
     line = Statusline.render(payload, now) # rich: ctx · cache · 5h · weekly meter (coloured) + $
     print line unless line.to_s.empty?
   rescue StandardError
     # a statusline must NEVER break Claude Code
+  end
+
+  # Delete per-session snapshots (+ crashed tmp files) older than KEEP -- so dead sessions'
+  # stale windows can't linger in reconciliation and the glob stays bounded to live sessions.
+  def prune_caches(now)
+    keep = (ENV["CCPOOL_CACHE_KEEP_SECS"] || "3600").to_i
+    (Dir.glob(Pool::GLOB) + Dir.glob("#{Pool::GLOB}.*.tmp")).each do |f|
+      File.delete(f) if now - File.mtime(f).to_i > keep
+    rescue StandardError
+      nil
+    end
+  rescue StandardError
+    nil
   end
 
   def seed_history(payload, now)
