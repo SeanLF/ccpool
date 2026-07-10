@@ -1,8 +1,11 @@
 #!/bin/sh
-# Local gate: run the hermetic tests + rubocop before every push. Enable once with:
+# Local gate: run both language gates before every push. Enable once with:
 #   git config core.hooksPath .githooks
-# Skip a one-off push with `git push --no-verify`. (Swap the commands for the Go toolchain at the
-# Ruby -> Go migration.)
+# Skip a one-off push with `git push --no-verify`.
+#
+# Zero-dep by design: a committed POSIX hook needs nothing installed, matching ccpool's
+# resist-frameworks ethos (no lefthook). During the Ruby -> Go migration both gates run; drop the
+# Ruby block when Ruby is retired at v1 (docs/GO-MIGRATION.md).
 set -e
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,3 +16,9 @@ ruby test_ccpool.rb
 
 echo "pre-push: rubocop"
 rubocop
+
+# Go gate (skips cleanly until the module exists / on machines without Go).
+if [ -f go.mod ] && command -v go >/dev/null 2>&1; then
+	echo "pre-push: make go-check"
+	make go-check
+fi

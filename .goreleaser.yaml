@@ -1,0 +1,77 @@
+# GoReleaser v2 - cross-compile + archive + checksum + GitHub Release + Homebrew tap in one run.
+# Cutting a release: land the change, update CHANGELOG.md, then `git tag vX.Y.Z && git push --tags`.
+# The release.yml workflow does the rest. See docs/standards/go.md "Release engineering".
+version: 2
+
+project_name: ccpool
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: ccpool
+    main: .
+    binary: ccpool
+    env:
+      - CGO_ENABLED=0 # static binary, trivial cross-compile (the whole reason we chose Go)
+    flags:
+      - -trimpath
+    ldflags:
+      # Inject build metadata into main.{version,commit,date} (see main.go).
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    # mod_timestamp keeps builds reproducible (binary mtime = commit time, not build time).
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: ccpool
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  # Generate release notes from commit history; drop noise. Conventional-commit friendly.
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - Merge pull request
+      - Merge branch
+
+homebrew_casks:
+  - name: ccpool
+    # Don't push the cask for prerelease/snapshot tags: `prerelease: auto` flags the GitHub
+    # Release, but that flag does NOT gate the cask, so without this an rc tag would land in the
+    # stable tap and `brew upgrade` would serve it as if it were stable.
+    skip_upload: "auto"
+    binaries: [ccpool]
+    homepage: "https://github.com/SeanLF/ccpool"
+    description: "Get the most out of a fixed Claude subscription pool"
+    license: MIT
+    repository:
+      owner: SeanLF
+      name: homebrew-tap
+      branch: main
+      # A PAT with repo scope on the tap; the default GITHUB_TOKEN can't push cross-repo.
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    # Strip the Gatekeeper quarantine xattr: the binary is unsigned, so without this macOS
+    # refuses to run it. (Revisit with proper notarization if we ever sign releases.)
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ccpool"]
+          end
+
+release:
+  # Draft off; GoReleaser publishes the Release directly when the tag is pushed.
+  prerelease: auto # tags like v1.0.0-rc.1 land as pre-releases automatically

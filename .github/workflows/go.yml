@@ -1,0 +1,41 @@
+name: Go
+
+# Go toolchain gate: the v1 target (docs/GO-MIGRATION.md). Runs alongside the Ruby CI during the
+# migration; when Ruby is retired at v1, delete ci.yml and this becomes the sole gate.
+# Tools (gofumpt, staticcheck, govulncheck) are pinned via `tool` directives in go.mod, so
+# `go tool <x>` is reproducible without global installs.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 15 * *" # monthly: catch Go/toolchain/dep drift on a dormant repo
+  workflow_dispatch:
+
+permissions:
+  contents: read # least privilege
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod # single source of truth for the Go version
+          check-latest: true
+      - name: format (gofumpt)
+        run: |
+          out="$(go tool gofumpt -l .)"
+          if [ -n "$out" ]; then echo "::error::unformatted files:"; echo "$out"; exit 1; fi
+      - name: vet
+        run: go vet ./...
+      - name: staticcheck
+        run: go tool staticcheck ./...
+      - name: govulncheck
+        run: go tool govulncheck ./...
+      - name: test
+        run: go test ./...
+      - name: build (static binary)
+        run: CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /dev/null .
