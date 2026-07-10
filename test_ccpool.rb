@@ -113,6 +113,27 @@ ok("Profile: 0 at window start, 1 at reset (weekdays)",
    Profile.elapsed_fraction(wstart, wstart, wreset, weekdays) == 0.0 &&
    (Profile.elapsed_fraction(wstart, wreset, wreset, weekdays) - 1.0).abs < 1e-9)
 
+# ---- Runway (working-hours of pool left before weekly reset) -----------------------
+# even config (test default) -> active-hours == wall-hours. Run: 10% over 10h -> 1%/working-h.
+rproj = { dpct: 10.0, first_t: NOW - 36_000, last_t: NOW }
+rb = Runway.estimate(90, NOW + 40 * 3_600, rproj, NOW) # 10% left, ~40 working-h to reset -> budget binds
+ok("Runway budget-limited when budget < calendar", rb[:bind] == :budget && (rb[:budget_h] - 10).abs < 0.5)
+ok("Runway range brackets the estimate (fat-tail band)", rb[:low] < rb[:hours] && rb[:hours] <= rb[:high])
+rc = Runway.estimate(20, NOW + 40 * 3_600, rproj, NOW) # 80% left over ~40 working-h -> week wins
+ok("Runway calendar-limited when budget outlasts the week", rc[:bind] == :calendar)
+ok("Runway nil without a burn signal", Runway.estimate(50, NOW + 40 * 3_600, nil, NOW).nil?)
+ok("Runway.phrase budget-limited surfaces working-hours", Runway.phrase(rb, 40 * 3_600).include?("working-hours"))
+ok("Runway.phrase calendar-limited says burn freely", Runway.phrase(rc, 40 * 3_600).include?("burn freely"))
+# FLOOR-inflation guard: a 4h burst entirely in a workhours user's off-hours (1-5am) would
+# integrate to ~4h*FLOOR=0.6h; the density floor keeps active-hours >= 0.5*wall (2h), so the
+# per-active-hour rate can't be inflated ~6.7x into a false "throttle imminent".
+wh = Profile::Config.new((1..5).to_a, 9, 17, nil)
+night0 = Time.local(2026, 3, 3, 1, 0, 0).to_i # Tue 1am local, off-hours for 9-17
+ok("Runway.active_hours floors an off-schedule burst at 0.5*wall (not ~FLOOR)",
+   (Runway.active_hours(night0, night0 + 4 * 3_600, wh) - 2.0).abs < 0.05)
+ok("Runway.active_hours is a no-op for even (active == wall)",
+   (Runway.active_hours(night0, night0 + 4 * 3_600) - 4.0).abs < 0.05)
+
 # ---- Calibration ------------------------------------------------------------------
 BND = NOW + 500_000
 File.open(ENV["CCPOOL_HISTORY"], "w") { |f| [[NOW - 7_200, 5], [NOW - 3_600, 12], [NOW, 20]].each { |t, w| f.puts JSON.generate("t" => t, "wk" => w, "wk_reset" => BND) } }
@@ -249,7 +270,9 @@ end
 clear_snaps
 snap("a", week: 20, reset_in: 400_000)
 Calibration.define_singleton_method(:dollar_per_pct) { |*| 10.0 }
-ok("status shows a burn projection from a clean run", capture { CCPool.status(NOW) }.include?("Burn"))
+status_out = capture { CCPool.status(NOW) }
+ok("status shows a burn projection from a clean run", status_out.include?("Burn"))
+ok("status shows a working-hours runway from a clean run", status_out.include?("Runway"))
 
 # ---- Warn (situational-awareness hook) --------------------------------------------
 clear_snaps

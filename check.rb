@@ -16,6 +16,7 @@
 require "json"
 require_relative "pool"
 require_relative "burn"
+require_relative "runway"
 
 module Check
   SESSION_FULL  = (ENV["CCPOOL_CHECK_SES_FULL"]      || "92").to_f   # 5h window effectively spent
@@ -145,6 +146,9 @@ module Check
       end
     elsif history.nil?
       lines << "         burn: history unreadable -- projection unavailable (not a clear signal)"
+    end
+    if (r = Runway.estimate(used, reset, proj, now))
+      lines << "         runway: #{Runway.phrase(r, reset - now)}"
     end
     pace_warn
   end

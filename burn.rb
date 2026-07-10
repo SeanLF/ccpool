@@ -124,7 +124,10 @@ module Burn
     return nil if dt_h < MIN_SPAN_H || dpct < MIN_DELTA
 
     burn = dpct / dt_h
-    { burn_per_h: burn, hours_to_cap: (100.0 - last["wk"]) / burn, wk: last["wk"] }
+    # first_t/last_t/dpct let Runway re-measure the same run in WORKING hours (∫ Profile weight)
+    # rather than the wall-clock hours this slope is over.
+    { burn_per_h: burn, hours_to_cap: (100.0 - last["wk"]) / burn, wk: last["wk"],
+      first_t: first["t"], last_t: last["t"], dpct: dpct }
   end
 
   # The trailing run of a field since its last reset (a drop > DROP_RESET = the

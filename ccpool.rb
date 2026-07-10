@@ -22,9 +22,11 @@ require_relative "burn"
 require_relative "statusline"
 require_relative "warn"
 require_relative "check"
+require_relative "runway"
 
 module CCPool
   MARGIN  = (ENV["CCPOOL_PACE_MARGIN"] || "3").to_f
+  MODE    = (ENV["CCPOOL_DOWNSHIFT"] || "auto").downcase # auto (enforce) | advise (print, don't apply) | off
   DMODEL  = ENV["CCPOOL_DOWNSHIFT_MODEL"] || "haiku"
   DEFFORT = ENV["CCPOOL_DOWNSHIFT_EFFORT"] || "low"
   COAST   = (ENV["CCPOOL_COAST_SECS"] || "43200").to_i # <12h to reset -> use-it-or-lose-it
@@ -102,11 +104,18 @@ module CCPool
     # collapsed monotonic current-window series or it sees phantom resets.
     entries = Burn.read(HIST, now)
     env = entries && Burn.envelope(entries, "wk", "wk_reset")
-    if env && (pr = Burn.project(env))
-      dcap = pr[:hours_to_cap] / 24.0
+    pr = env && Burn.project(env)
+    if pr
+      # cap from the FRESH `used` (same basis Runway uses), not the last log sample -- else the
+      # Burn verdict and the Runway line can disagree when the cache is stale (:estimated tier).
+      cap_h = (100.0 - used) / pr[:burn_per_h]
+      dcap = cap_h / 24.0
       dreset = (wk[:reset] - now) / 86_400.0
-      verdict = pr[:hours_to_cap] * 3_600 < (wk[:reset] - now) ? "⚠ ~#{(dreset - dcap).round(1)}d BEFORE reset -- you'll throttle early" : "resets first (in #{dreset.round(1)}d) -- you're clear"
+      verdict = cap_h * 3_600 < (wk[:reset] - now) ? "⚠ ~#{(dreset - dcap).round(1)}d BEFORE reset -- you'll throttle early" : "resets first (in #{dreset.round(1)}d) -- you're clear"
       puts "Burn         ·  ~#{pr[:burn_per_h].round(1)}%/h -> hits cap in ~#{dcap.round(1)}d; #{verdict}"
+    end
+    if pr && (r = Runway.estimate(used, wk[:reset], pr, now))
+      puts "Runway       ·  #{Runway.phrase(r, wk[:reset] - now)}"
     end
 
     fh = Pool.five_hour(now)
@@ -235,12 +244,17 @@ module CCPool
       warn "usage: ccpool run -- <command...>"
       exit 2
     end
+    exec(*cmd) if MODE == "off" # pure passthrough -- never downshift
     # respect an explicit user choice -- don't override a model the user set themselves.
     if ENV["CLAUDE_CODE_SUBAGENT_MODEL"]
       warn "[ccpool] CLAUDE_CODE_SUBAGENT_MODEL already set -> leaving it"
       exec(*cmd)
     end
     env, msg = downshift_env(now)
+    if MODE == "advise" # print the recommendation, like the native tab -- but don't apply it
+      warn "[ccpool] #{msg}#{env.empty? ? '' : ' (advise mode -> not applied; CCPOOL_DOWNSHIFT=auto to enforce)'}"
+      exec(*cmd)
+    end
     warn "[ccpool] #{msg}"
     exec(env, *cmd)
   end

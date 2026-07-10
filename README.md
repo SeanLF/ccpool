@@ -15,7 +15,10 @@ does, in one CLI:
   Flags expensive-model turns that did trivial work (candidates to downshift). First-of-kind.
 - **`ccpool check`** — time + budget + a keep-going/stop **verdict** for long or autonomous
   loops (`KEEP GOING` / `PACE DOWN` / `SESSION-LIMITED` / `WIND DOWN` / `COAST` / `BURN DOWN`),
-  distinguishing a temporary 5h throttle from a real "stop for the week."
+  distinguishing a temporary 5h throttle from a real "stop for the week." Includes a **working-
+  hours runway** — *"~18–38 working-hours of pool left → you'd throttle before reset"* vs
+  *"budget outlasts the week → burn freely"* — the time-to-exhaustion reframe of "% left",
+  measured per *active* hour (so sleep doesn't dilute it) and bounded by which resource binds.
 - **`ccpool warn`** — a Claude Code hook (wire at `UserPromptSubmit`/`PostToolUse`) that warns
   the agent mid-turn when it's over pace, near the 5h cap, or near context auto-compaction.
 
@@ -83,6 +86,7 @@ bar together — they can't disagree.
 | var | default | meaning |
 |---|---|---|
 | `CCPOOL_PACE_MARGIN` | `3` | pts over pace before `run` downshifts / `warn` nags |
+| `CCPOOL_DOWNSHIFT` | `auto` | `auto` (enforce) · `advise` (print, don't apply — like the native tab) · `off` |
 | `CCPOOL_DOWNSHIFT_MODEL` / `_EFFORT` | `haiku` / `low` | what to downshift subagents to |
 | `CCPOOL_CALIB_TTL` | `21600` | seconds to cache the `$/1%` calibration |
 | `CCPOOL_CCUSAGE_CMD` | `npx -y ccusage@20` | how to invoke ccusage (pinned major — see calibration.rb) |
