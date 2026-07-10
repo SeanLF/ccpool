@@ -282,3 +282,61 @@ Locked at the top of the migration session; see `docs/GO-MIGRATION.md` for the p
   canonical tokens (every real Claude payload does; verified end-to-end against Ruby), differing only
   on inputs that never occur. The snapshot is machine-read (never displayed), so semantic equality is
   the true interop contract; this is a deliberate, bounded deviation from "byte-identical every file."
+
+## Post-v1 architecture — measured options (2026-07-10)
+
+With the Go migration complete, revisited "what makes this a *solid Go binary*, not just a faithful
+port." Two framing corrections drove the analysis (owner): **(a) byte-identity to Ruby was a
+migration constraint, not a product one** — now that Ruby is deleted, goldens are Go-defined and we
+can re-baseline freely; **(b) binary size and zero-dep are NOT sacred** — 1 MB vs 5 MB is noise to a
+`brew`/curl install, and runtime deps are acceptable. So decisions collapse to engineering merit:
+does a change fix a real problem, or is it polish? Two spikes measured the load-bearing unknowns
+(isolated throwaway modules; Go 1.26.5, M4 Pro; `CGO_ENABLED=0 -trimpath -s -w`).
+
+**Binary-size spike (delta vs 1.64 MB baseline):** termenv +0.41 MB (6 mods), lipgloss +1.30 (16),
+cobra +0.90 (7), cobra+fang +2.43 (**41 mods** — fang's supply-chain surface is the real cost, not
+bytes), kong +1.93 (4), urfave/cli/v3 +1.59 (5), **modernc.org/sqlite +4.72 (25)**. All build
+static/no-cgo and cross-compile to linux/arm64; modernc/sqlite confirmed genuinely pure-Go.
+
+**SQLite hot-path latency spike (cold fork+exec, n=50):** sqlite (WAL, busy_timeout) **6.6 ms
+median** vs json-files+flock **3.3 ms** vs bare-exec baseline 2.5 ms — i.e. ~+3.3 ms real DB work
+per invocation. Both storage models pass an 8-way concurrent-process integrity test cleanly (WAL
+absorbs contention; flock+tmp-rename has no torn appends). So SQLite does **not** fix a concurrency
+bug we hit today; the current file+flock approach is correct.
+
+**Verdicts (size no longer a counter-argument):**
+
+- **Terminal rendering → `lipgloss` + `termenv`: DO.** Fixes a *real latent bug*: the statusline
+  hardcodes 24-bit truecolor with no downgrade and gates only on `NO_COLOR`+`TERM=dumb`, so it
+  renders wrong on 256/16-colour terminals and misses `COLORTERM`/CI detection. termenv is the
+  colour-profile floor; lipgloss for styled layout. Highest leverage-per-risk. Re-baseline the
+  statusline goldens to lipgloss output.
+- **Storage → embedded SQLite (`modernc.org/sqlite`, pure-Go): DO, deliberately.** Verdict *flipped*
+  once size stopped counting. It doesn't fix a live bug, but it *dissolves a whole category of
+  bespoke, subtle code*: the 64 KB-tail dedup on concurrent history append, the glob-and-parse-every-
+  snapshot reconcile (O(sessions) file reads ~7x/turn), the write-then-truncate prune, and — the
+  big one — the interleaved-multi-session-log reconstruction (`Burn.envelope`) that exists *only*
+  because history is an append log; in SQL it's a query. Cost is +3.3 ms/invocation (imperceptible)
+  and a rewrite of a working subsystem — but the golden suite pins the *output*, so the storage swap
+  is verifiable against the current behaviour. Needs a one-time importer for the accumulated history
+  (snapshots/caches can start empty; they self-refresh). Use `sqlc` for typed SQL, not an ORM. This
+  is the biggest v2 rock.
+- **CLI → `cobra`: DO; `fang`: optional/defer.** cobra (+0.90 MB, 7 mods) buys shell completions,
+  consistent `--help`, man pages — real adoption UX for a tool meant to be shared, for a small dep
+  surface. fang (charm-pretty help) costs 41 transitive modules for cosmetics — skip until wanted.
+  (kong is the minimal-surface alternative at 4 mods if we don't want cobra's tree.)
+- **Testing → `pgregory.net/rapid` (property tests on pace/burn/runway invariants) + stdlib fuzzing
+  (JSON/transcript/number parsers — the real threat model) + `testscript` (CLI e2e): DO.** Test-only,
+  zero binary cost; the durable strategy vs fixture-matching. Keep goldens as regression.
+- **`log/slog` for diagnostics; drop the `rb.To[IF]` shims for *config* parsing (clean strconv +
+  validation), keeping `internal/rb` only for the on-disk `json.Number` data contract: DO.** Free
+  cleanups.
+- **ccusage: KEEP (do NOT reimplement cost natively).** Owning a churning pricing table is the
+  danger the "delegate every dollar" invariant exists to avoid (owner call, 2026-07-10). Reconfirmed.
+- **Not worth it:** a config framework (fights the zero-config-defaults product invariant), an ORM
+  over SQLite, `x/text` for comma-grouping.
+
+**Sequencing:** (1) lipgloss/termenv + slog + rb-shim cleanup + the Go-native test stack — low-risk,
+land first, re-baseline goldens. (2) cobra. (3) the SQLite storage rework behind a one-time history
+importer, verified against the golden suite. None of this is required for a shippable v1 — the
+current Go binary is complete — it's the "built like it belongs in Go" pass.
