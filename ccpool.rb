@@ -132,7 +132,8 @@ module CCPool
 
     line = Statusline.render(payload, now) # rich: ctx · cache · 5h · weekly meter (coloured) + $
     print line unless line.to_s.empty?
-  rescue StandardError
+  rescue StandardError => e
+    Statusline.log("error", "#{e.class}: #{e.message} @ #{e.backtrace&.first}")
     # a statusline must NEVER break Claude Code
   end
 
@@ -154,21 +155,36 @@ module CCPool
     fh = payload.dig("rate_limits", "five_hour")
     return unless sd.is_a?(Hash) && sd["used_percentage"].is_a?(Numeric)
 
+    sid = payload["session_id"]
     row = { "t" => now, "wk" => sd["used_percentage"], "wk_reset" => sd["resets_at"],
             "ses" => fh&.dig("used_percentage"), "ses_reset" => fh&.dig("resets_at"),
             "tier" => (ENV["USAGE_TIER"] || "max_20x"), "cost" => payload.dig("cost", "total_cost_usd"),
-            "session" => payload["session_id"] }
+            "session" => sid }
     # flock the read-check-append so concurrent sessions' statuslines can't interleave lines.
+    # Dedup PER SESSION (not the global last line: other sessions interleave, and wk is
+    # account-global so they all carry the same wk), and key on ses too -- else a 5h-only move
+    # (wk flat) is dropped and the session burn series starves.
     File.open(HIST, File::RDWR | File::CREAT, 0o644) do |f|
       f.flock(File::LOCK_EX)
-      last = (JSON.parse(f.read.lines.last.to_s) rescue nil)
-      next if last.is_a?(Hash) && last["wk"] == row["wk"] && last["wk_reset"] == row["wk_reset"]
+      # Only need THIS session's most recent line, which is near the tail (sessions render
+      # often), so scan the last 64KB, not the whole (unbounded) file -- this runs on every
+      # render under the lock. A missed older line just appends a harmless duplicate row.
+      f.seek([f.size - 65_536, 0].max)
+      last = nil
+      f.read.lines.reverse_each do |l|
+        e = (JSON.parse(l) rescue nil)
+        next unless e.is_a?(Hash) && (sid.nil? || e["session"] == sid)
+
+        last = e
+        break
+      end
+      next if last && last["wk"] == row["wk"] && last["wk_reset"] == row["wk_reset"] && last["ses"] == row["ses"]
 
       f.seek(0, IO::SEEK_END)
       f.puts(JSON.generate(row))
     end
-  rescue StandardError
-    nil
+  rescue StandardError => e
+    Statusline.log("warn", "history append failed: #{e.class}: #{e.message}")
   end
 
   # -- situational-awareness hook (stdin = hook payload) --------------------------------

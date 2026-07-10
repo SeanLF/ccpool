@@ -29,8 +29,32 @@ module Statusline
   CACHE_WARN = (ENV["USAGE_CACHE_WARN_SECS"] || "900").to_i
   CACHE_CRIT = (ENV["USAGE_CACHE_CRIT_SECS"] || "180").to_i
   TIER = ENV["USAGE_TIER"] || "max_20x"
+  LOG  = File.expand_path(ENV["CCPOOL_STATUSLINE_LOG"] || "~/.claude/statusline.log")
 
   module_function
+
+  # Best-effort anomaly log, capped to the last 200 lines. The happy path writes NOTHING --
+  # only a Claude Code payload-schema change or an unexpected error lands here, so a silent
+  # segment drop (below) still leaves a trail: `tail -f ~/.claude/statusline.log`. Never raises.
+  def log(level, msg)
+    msg  = msg.to_s.gsub(/\s*\n\s*/, " ").slice(0, 500) # one entry is always one line
+    prev = File.exist?(LOG) ? File.readlines(LOG) : []
+    prev << "#{Time.now.strftime('%F %T')} [#{level}] #{msg}\n"
+    File.write(LOG, prev.last(200).join)
+  rescue StandardError
+    nil
+  end
+
+  # True if hash[key] is the expected type. Present-but-wrong-type LOGS a warning (the signal a
+  # CC schema change silently dropped a segment); a missing key is silent + expected. Callers
+  # && these so a false result skips the segment without touching the wrong-typed value.
+  def typed?(hash, key, type, label = key) # label defaults to the key; pass a dotted path for nested fields
+    v = hash[key]
+    return true if v.is_a?(type)
+
+    log("warn", "#{label} is #{v.class}, expected #{type}") unless v.nil?
+    false
+  end
 
   def sev(text, pct, warn:, crit:)
     return "#{RED}#{text}#{RESET}" if pct >= crit
@@ -103,16 +127,16 @@ module Statusline
   # payload IS current). `dpp` = cached $/1% (fast; never spawn ccusage in the statusline).
   def render(data, now = Time.now.to_i)
     cols = (ENV["COLUMNS"] || "120").to_i
-    rl = data["rate_limits"].is_a?(Hash) ? data["rate_limits"] : {}
+    rl = typed?(data, "rate_limits", Hash) ? data["rate_limits"] : {}
     dpp = Calibration.read_cache&.dig("dpp")
     now_grp = []
     ses_grp = []
     wk_grp = []
 
     # context window %
-    cw = data["context_window"]
-    if cw.is_a?(Hash)
-      ctx = cw["used_percentage"].is_a?(Numeric) ? cw["used_percentage"].to_f : nil
+    if typed?(data, "context_window", Hash)
+      cw = data["context_window"]
+      ctx = typed?(cw, "used_percentage", Numeric, "context_window.used_percentage") ? cw["used_percentage"].to_f : nil
       if ctx
         seg = "ctx #{sev("#{ctx.round}%", ctx.round, warn: 70, crit: 90)}"
         (s = fmt_size(cw["context_window_size"])) && (seg += " #{s}")
@@ -133,22 +157,22 @@ module Statusline
 
     # 5h session
     fh = rl["five_hour"]
-    if fh.is_a?(Hash) && fh["used_percentage"].is_a?(Numeric)
+    if typed?(rl, "five_hour", Hash) && typed?(fh, "used_percentage", Numeric, "five_hour.used_percentage")
       s = fh["used_percentage"].round
       seg = "ses #{sev("#{s}%", s, warn: 80, crit: 92)}"
-      seg += " #{fmt_dur(fh['resets_at'] - now)}" if fh["resets_at"].is_a?(Numeric)
+      seg += " #{fmt_dur(fh['resets_at'] - now)}" if typed?(fh, "resets_at", Numeric, "five_hour.resets_at")
       ses_grp << seg
     end
 
     # weekly meter + $ + day-share
     sd = rl["seven_day"]
-    if sd.is_a?(Hash) && sd["used_percentage"].is_a?(Numeric)
+    if typed?(rl, "seven_day", Hash) && typed?(sd, "used_percentage", Numeric, "seven_day.used_percentage")
       used = sd["used_percentage"].to_f
       width = [[cols - 82, 40].min, 14].max
       wknum = sev("#{used.round}%", used.round, warn: 75, crit: 90)
       left = (100 - used) * (dpp || 0)
       dollars = dpp ? " #{DIM}#{left >= 1000 ? "$#{(left / 1000).round(1)}k" : "$#{left.round}"}#{RESET}" : ""
-      if sd["resets_at"].is_a?(Numeric)
+      if typed?(sd, "resets_at", Numeric, "seven_day.resets_at")
         reset = sd["resets_at"]
         pace = Profile.elapsed_fraction(reset - WEEK, now, reset) # same weighting as Pool.pace -> bar agrees with verdict
         days_left = [(reset - now).to_f / 86_400, 0.0001].max

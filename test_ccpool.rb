@@ -15,6 +15,7 @@ ENV["CCPOOL_HISTORY"]     = "#{TMP}/hist.jsonl"
 ENV["CCPOOL_CALIB_CACHE"] = "#{TMP}/calib.json"
 ENV["CCPOOL_PROJECTS"]    = "#{TMP}/projects"
 ENV["TMPDIR"]             = TMP # keep `warn`'s throttle markers hermetic
+ENV["CCPOOL_STATUSLINE_LOG"] = "#{TMP}/statusline.log"
 require_relative "ccpool"
 
 NOW = Time.now.to_i
@@ -111,6 +112,18 @@ ok("Calibration.wk_runs detects a monotonic run", runs.size == 1 && runs[0][:dw]
 File.write(ENV["CCPOOL_HISTORY"], JSON.generate("t" => NOW, "wk" => 5, "wk_reset" => BND) + "\n")
 ok("Calibration.wk_runs: insufficient history -> []", Calibration.wk_runs.empty?)
 
+# ses-keyed dedup writes many flat-wk rows; wk_runs must ignore them (record wk CHANGES only),
+# else a run's t1 stretches to the flat tail and cost_between inflates the $/1% calibration.
+File.open(ENV["CCPOOL_HISTORY"], "w") do |f|
+  f.puts JSON.generate("t" => NOW - 14_400, "wk" => 5, "wk_reset" => BND, "ses" => 10)
+  f.puts JSON.generate("t" => NOW - 7_200, "wk" => 20, "wk_reset" => BND, "ses" => 50) # wk hits 20 here
+  f.puts JSON.generate("t" => NOW - 3_600, "wk" => 20, "wk_reset" => BND, "ses" => 80) # flat wk, ses moved
+  f.puts JSON.generate("t" => NOW, "wk" => 20, "wk_reset" => BND, "ses" => 95)          # flat wk, ses moved
+end
+fr = Calibration.wk_runs
+ok("Calibration.wk_runs ends a run at the last wk CHANGE, not the flat ses-padded tail",
+   fr.size == 1 && fr[0][:dw] == 15 && fr[0][:t1] < NOW - 3_600)
+
 b = [{ s: 0, e: 100, cost: 100.0 }]
 ok("Calibration.cost_between full overlap", Calibration.cost_between(b, 0, 100) == 100.0)
 ok("Calibration.cost_between half overlap prorates", Calibration.cost_between(b, 0, 50) == 50.0)
@@ -201,6 +214,22 @@ ok("prune removes stale session snapshots, keeps fresh",
 clear_snaps
 out = capture { CCPool.status(NOW) }
 ok("status with no data guides to wire the statusline", out.include?("no data yet"))
+
+# statusline parity: anomaly log + per-session, ses-keyed history dedup
+File.write(ENV["CCPOOL_STATUSLINE_LOG"], "")
+Statusline.typed?({ "x" => "str" }, "x", Numeric, "x.field")
+ok("typed? logs a present-but-wrong-type field", File.read(ENV["CCPOOL_STATUSLINE_LOG"]).include?("x.field is String"))
+ok("typed? is silent on a missing key", Statusline.typed?({}, "y", Numeric, "y") == false && !File.read(ENV["CCPOOL_STATUSLINE_LOG"]).include?("[warn] y "))
+
+clear_snaps
+File.write(ENV["CCPOOL_HISTORY"], "")
+h1 = JSON.generate("session_id" => "h", "rate_limits" => { "seven_day" => { "used_percentage" => 10, "resets_at" => NOW + 300_000 }, "five_hour" => { "used_percentage" => 20, "resets_at" => NOW + 7_200 } })
+h2 = JSON.generate("session_id" => "h", "rate_limits" => { "seven_day" => { "used_percentage" => 10, "resets_at" => NOW + 300_000 }, "five_hour" => { "used_percentage" => 25, "resets_at" => NOW + 7_200 } }) # wk flat, 5h moved
+capture(h1) { CCPool.statusline(NOW) }
+capture(h1) { CCPool.statusline(NOW) } # identical -> deduped
+ok("history dedups an identical wk+ses render", File.readlines(ENV["CCPOOL_HISTORY"]).size == 1)
+capture(h2) { CCPool.statusline(NOW) } # 5h-only move -> must record despite flat wk
+ok("history records a 5h-only move (dedup keyed on ses, not just wk)", File.readlines(ENV["CCPOOL_HISTORY"]).size == 2)
 
 # Burn projection integration: a clean monotonic run in history -> a Burn line in status.
 File.open(ENV["CCPOOL_HISTORY"], "w") do |f|

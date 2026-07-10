@@ -122,13 +122,14 @@ module Calibration
 
     runs = []
     by.each do |bnd, mins|
-      run = [mins.min]
-      mins.sort.each_cons(2) do |(_, a), (t2, b)|
-        if b < a - 1
+      sorted = mins.sort
+      run = [sorted.first]
+      sorted.each_cons(2) do |(_, a), (t2, b)|
+        if b < a - 1              # weekly fell hard -> a reset boundary
           runs << [bnd, run]
           run = [[t2, b]]
-        else
-          run << [t2, b]
+        elsif b != run.last[1]    # a real wk CHANGE -> record the transition. Skipping flat minutes
+          run << [t2, b]          # keeps ses-only padding rows from extending t1 and inflating $/1%.
         end
       end
       runs << [bnd, run]
