@@ -101,7 +101,8 @@ module Statusline
         col = (i + 0.5) >= pace_w ? RED : BAR # over-pace tail red, on-pace fill cyan
         "#{col}#{SOLID}#{RESET}"
       elsif i < used_w
-        "#{BAR}#{EIGHTHS[[((used_w - i) * 8).round, 1].max]}#{RESET}" # coloured partial edge
+        col = (i + 0.5) >= pace_w ? RED : BAR # partial edge follows the same over-pace rule (no cyan sliver after the red tail)
+        "#{col}#{EIGHTHS[[((used_w - i) * 8).round, 1].max]}#{RESET}"
       else
         "#{DIM}#{TRACK}#{RESET}" # dim remaining -> contrast with the fill
       end
