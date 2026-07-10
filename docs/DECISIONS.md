@@ -196,3 +196,42 @@ onboarding earns its keep. Shipped + decided:
   **ZERO** of them; ~15 are documented user choices that earn their keep; the ~30 undocumented
   ones are cheap `|| default` threshold escape-hatches, invisible on the happy path. The sprawl is
   low-cost and doesn't burden onboarding — keep defaults, don't grow the documented surface.
+  **Followed through (owner sign-off):** demoted the 10 purest never-user-tuned internals
+  (`USAGE_BURN_*`, `USAGE_SES_*`, `USAGE_CACHE_*_SECS`, `CCPOOL_BLOCKS_TTL`) to plain constants;
+  kept the contestable-judgment knobs (`CHECK_*`/`WARN_*`/`RUNWAY_*`) as overrides.
+
+**Update 2026-07-10 (part 3) — the composition pass.** `init` surfaced the real question: a shared
+user who already runs a statusline (starship/powerline/ccstatusline) shouldn't have to abandon it
+to adopt ccpool. Decided it's a **must-have for release** and built it, adversarially PoC-gated.
+
+- **Positioning: ccpool is a specialized *pool gauge*, not a general statusline.** A cross-tool
+  survey (8+ tools) confirmed everything a ccpool-only user would *miss* — model name, git, dir,
+  cost/token breakdowns, themes, powerline — is **DELEGATE** (a host already does it well); and
+  ccpool's **$-value-of-remaining-pool + pace is unique** (no surveyed tool renders it). So the gap
+  closes by **composing**, not by growing features. Don't try to be a general statusline.
+- **The stdin principle (learned the hard way).** Claude Code allows ONE `statusLine` command, and
+  stdin is single-consumer, so two payload-hungry statuslines can't both read it. First-pass
+  verification against ccstatusline's **README** said its custom-command widgets get only
+  `terminal_width` → wrong conclusion ("must build a wrap-and-tee"). Verifying against **source +
+  an empirical end-to-end capture (v2.2.22)** proved the opposite: ccstatusline forwards the
+  **full payload incl. `rate_limits`** to widgets. **Lesson: verify against source/empirics, not
+  docs — the README under-documented the contract and nearly cost a wrapper we didn't need.**
+- **BUILT: `ccpool statusline --embed`** — a compact `pool 45% $1.4k +2↑` segment (weekly % ·
+  $-of-pool · pace), for embedding as a ccstatusline custom-command widget. `init` detects a
+  ccstatusline host and prints the widget recipe instead of clobbering it (won't replace even with
+  `--replace-statusline` — composing is strictly better). ccpool stays downstream + tiny; the host
+  owns layout/model/git.
+- **The widget-$ fix.** The $ moat was only computed by on-demand commands, so a widget-only user
+  would see it blank. The statusline path now fires a **throttled, detached, fail-open calibration
+  warm-up** so the $ self-populates however ccpool is invoked. Two silent-failure gaps found in
+  review + fixed: the detached child's ccusage schema-drift signal now hits the persistent log (was
+  `/dev/null`); a corrupt calib cache self-heals (Hash-guard) instead of crashing the warm-up.
+- **Adversarial scorecard (cut under PoC — the methodology holding):** *rhythm-weighted projection*
+  — CUT (real R=0.327, weak → identical to linear; already handled by `Profile`). *Daemon
+  fast-render* — DEFER (render is spawn-free, ~47 ms, <1% of turn; and it'd re-solve what the
+  deferred Go port does). *Dated exhaustion landmark, API-health indicator* — DEFER (polish /
+  network-fetch nice-to-haves). *Wrap-and-tee (ccpool wraps a host)* — demoted to a fallback only
+  for non-forwarding hosts (powerline `&&`-chaining, CCometixLine), since ccstatusline (dominant)
+  forwards the payload and B works today.
+- **Upstream contribution (open):** ccstatusline's README materially under-documents that custom
+  commands receive the full payload — a trivial docs PR would help every widget author. Not done.
