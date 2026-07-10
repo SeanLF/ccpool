@@ -1,8 +1,15 @@
 # ccpool — native-binary reimplementation: scope & decision (2026-07-10)
 
-> **Filename is legacy** ("RUST-REIMPL") — the measurement below lands on **Go**, not Rust, and
-> on **defer the build**, not do-it-now. This is a decision doc, gated on measurement. No Rust
-> or Go was written for it.
+> **Filename is legacy** ("RUST-REIMPL") — the measurement below lands on **Go**, not Rust.
+> This is a decision doc, gated on measurement. No Rust or Go was written for it.
+>
+> **DECISION UPDATE (owner, 2026-07-10):** the migration is now **committed — ccpool ships v1 in
+> Go, not Ruby.** So the "defer" verdict below is superseded: the *build* is scheduled (before
+> v1), even though the doc's measurement showed latency alone didn't force it. The driver is
+> **distribution** (one static binary, no Ruby dep) for the sharing goal, exactly as the doc
+> argued — the owner has chosen to pay for it up front rather than wait for a second-user trigger.
+> Everything below (language = Go, scope = hot path first, migration/coexistence plan) stands as
+> the plan of record; only the timing changed from "when a trigger appears" to "before v1".
 
 ## TL;DR
 
@@ -117,7 +124,13 @@ only by the "one file, no runtime" pitch, not by speed.
 
 ## Decision
 
-**DEFER.** The build is correctly scoped and ready, but neither driver is pressing: latency is
-sub-1% per turn, and distribution demand is theoretical until a second user appears. Revisit when
-(a) someone hits Ruby-install friction adopting ccpool, or (b) a genuinely tool-dense tight loop
-makes the ~45 ms/fire visible. Until then, this doc is the plan; the Ruby stays.
+**~~DEFER~~ → COMMITTED (2026-07-10): migrate to Go, ship v1 as a single Go binary.** The
+measurement showed latency alone was sub-1%/turn and wouldn't force a rewrite — but the owner has
+decided the **distribution** win (one static binary, no Ruby/`bin/ccpool`-launcher dependency, for
+the sharing goal that `init` and the whole public-repo posture exist to serve) is worth paying for
+up front rather than waiting for a second-user trigger. So the plan of record is unchanged in
+substance — **Go; port the hot path (`warn`/`statusline`) first; keep Ruby runnable behind the
+same on-disk contract until the Go side passes the full fixture suite** — only the timing moved to
+"before v1." The Ruby stays the reference implementation and conformance oracle during the port
+(its ~160 hermetic tests become the Go port's fixtures). New Ruby work in the meantime should stay
+translatable and avoid Ruby-specific cleverness (see `AGENTS.md`).
