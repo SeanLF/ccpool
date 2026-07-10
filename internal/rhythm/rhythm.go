@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/clock"
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/rb"
 )
@@ -36,26 +37,17 @@ var blocks = []rune(" ▁▂▃▄▅▆▇█")
 
 // window is the recency window in days (= the current TZ regime).
 func window() int {
-	if v, ok := os.LookupEnv("CCPOOL_RHYTHM_WINDOW"); ok {
-		return rb.ToI(v)
-	}
-	return 30
+	return env.Int("CCPOOL_RHYTHM_WINDOW", 30)
 }
 
 // rStrong is the R at/above which the rhythm is sharp enough to schedule to.
 func rStrong() float64 {
-	if v, ok := os.LookupEnv("CCPOOL_RHYTHM_R"); ok {
-		return rb.ToF(v)
-	}
-	return 0.5
+	return env.Float("CCPOOL_RHYTHM_R", 0.5)
 }
 
 // peakFrac: a bucket is "active" at >= this fraction of the peak bucket.
 func peakFrac() float64 {
-	if v, ok := os.LookupEnv("CCPOOL_RHYTHM_PEAK"); ok {
-		return rb.ToF(v)
-	}
-	return 0.25
+	return env.Float("CCPOOL_RHYTHM_PEAK", 0.25)
 }
 
 // scanResult is the corpus histogram in the machine's LOCAL frame, restricted to the last window days.

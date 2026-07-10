@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/rb"
 )
@@ -26,10 +27,7 @@ const (
 )
 
 func ttl() int {
-	if v, ok := os.LookupEnv("CCPOOL_CALIB_TTL"); ok {
-		return rb.ToI(v)
-	}
-	return ttlDefault
+	return env.Int("CCPOOL_CALIB_TTL", ttlDefault)
 }
 
 func ccusageCmd() string {

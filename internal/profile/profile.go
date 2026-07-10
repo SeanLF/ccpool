@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SeanLF/ccpool/internal/rb"
+	"github.com/SeanLF/ccpool/internal/env"
 )
 
 // Config is a resolved profile: active days, waking window [H0, H1), and optional graded weight
@@ -59,14 +59,9 @@ func Load() Config {
 }
 
 // floorValue re-reads the FLOOR knob (kept out of Config to mirror the Ruby module constant; it is
-// only consulted inside weight()). Matches Ruby's `(ENV[...] || "0.15").to_f`: the "0.15" default
-// applies only when the var is UNSET; a set-but-garbage value coerces to 0.0 like String#to_f.
+// only consulted inside weight()). Fails open: unset OR unparseable -> the 0.15 default.
 func floorValue() float64 {
-	v, ok := os.LookupEnv("CCPOOL_PACE_FLOOR")
-	if !ok {
-		v = "0.15"
-	}
-	return rb.ToF(v)
+	return env.Float("CCPOOL_PACE_FLOOR", 0.15)
 }
 
 // Uniform reports whether the weight is 1.0 everywhere, so pace is just the plain time fraction and

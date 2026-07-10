@@ -5,13 +5,13 @@ package report
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/calib"
 	"github.com/SeanLF/ccpool/internal/clock"
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/pool"
 	"github.com/SeanLF/ccpool/internal/profile"
@@ -37,17 +37,11 @@ type Weekly struct {
 
 // margin / coast are the shared pace knobs (also read by warn/check/downshift so they never disagree).
 func margin() float64 {
-	if v, ok := os.LookupEnv("CCPOOL_PACE_MARGIN"); ok {
-		return rb.ToF(v)
-	}
-	return 3
+	return env.Float("CCPOOL_PACE_MARGIN", 3)
 }
 
 func coast() int64 {
-	if v, ok := os.LookupEnv("CCPOOL_COAST_SECS"); ok {
-		return int64(rb.ToI(v))
-	}
-	return 43200
+	return env.Int64("CCPOOL_COAST_SECS", 43200)
 }
 
 // ResolveWeekly is the 3-tier read: fresh official snapshot > stale-but-extrapolated-from-accrued-

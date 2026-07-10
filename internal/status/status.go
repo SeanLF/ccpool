@@ -12,6 +12,7 @@ import (
 
 	"github.com/SeanLF/ccpool/internal/burn"
 	"github.com/SeanLF/ccpool/internal/calib"
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/pool"
@@ -91,10 +92,7 @@ func Status(now int64) []string {
 // staleCaches lists the per-session snapshot files (and their write-tmp siblings) older than the
 // keep window. Surfaced by status when they pile up; matches CCPool.stale_caches.
 func staleCaches(now int64) []string {
-	keep := int64(3600)
-	if v, ok := os.LookupEnv("CCPOOL_CACHE_KEEP_SECS"); ok {
-		keep = int64(rb.ToI(v))
-	}
+	keep := env.Int64("CCPOOL_CACHE_KEEP_SECS", 3600)
 	glob := paths.SnapshotGlob()
 	files, _ := filepath.Glob(glob)
 	tmps, _ := filepath.Glob(glob + ".*.tmp")
@@ -113,11 +111,11 @@ func staleCaches(now int64) []string {
 
 // historyCleanup surfaces an oversized history log (opt-out via CCPOOL_HISTORY_KEEP_DAYS<=0).
 func historyCleanup(now int64) (string, bool) {
-	keepDays := envF("CCPOOL_HISTORY_KEEP_DAYS", 30)
+	keepDays := env.Float("CCPOOL_HISTORY_KEEP_DAYS", 30)
 	if keepDays <= 0 {
 		return "", false
 	}
-	warnMB := envF("CCPOOL_HISTORY_WARN_MB", 20)
+	warnMB := env.Float("CCPOOL_HISTORY_WARN_MB", 20)
 	size := 0.0
 	if info, err := os.Stat(paths.History()); err == nil {
 		size = float64(info.Size())
@@ -128,11 +126,4 @@ func historyCleanup(now int64) (string, bool) {
 			"MB -- `ccpool prune --history` compacts it to the last " + strconv.Itoa(rb.RoundToInt(keepDays)) + "d", true
 	}
 	return "", false
-}
-
-func envF(key string, def float64) float64 {
-	if v, ok := os.LookupEnv(key); ok {
-		return rb.ToF(v)
-	}
-	return def
 }

@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/analyzer"
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/initcmd"
-	"github.com/SeanLF/ccpool/internal/rb"
 	"github.com/SeanLF/ccpool/internal/rhythm"
 	"github.com/SeanLF/ccpool/internal/run"
 	"github.com/SeanLF/ccpool/internal/status"
@@ -106,10 +106,7 @@ func prune(args []string, now int64) int {
 	n := statusline.PruneCaches(now)
 	msg := fmt.Sprintf("pruned %d stale snapshot(s)", n)
 	if hasFlag(args, "--history") {
-		keep := 30.0
-		if v, ok := os.LookupEnv("CCPOOL_HISTORY_KEEP_DAYS"); ok {
-			keep = rb.ToF(v)
-		}
+		keep := env.Float("CCPOOL_HISTORY_KEEP_DAYS", 30)
 		removed, _ := initcmd.PruneHistory(now, keep)
 		msg += fmt.Sprintf("; compacted %d old history row(s)", removed)
 	}

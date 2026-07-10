@@ -16,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/pool"
 	"github.com/SeanLF/ccpool/internal/rb"
@@ -42,11 +43,11 @@ func mode() string {
 	return "auto"
 }
 
-func margin() float64 { return envF("CCPOOL_PACE_MARGIN", 3) }
+func margin() float64 { return env.Float("CCPOOL_PACE_MARGIN", 3) }
 
-func coast() int64 { return envI("CCPOOL_COAST_SECS", 43200) } // <12h to reset -> use-it-or-lose-it
+func coast() int64 { return env.Int64("CCPOOL_COAST_SECS", 43200) } // <12h to reset -> use-it-or-lose-it
 
-func fiveHCap() float64 { return envF("CCPOOL_5H_CAP", 85) } // 5h window this full -> downshift too
+func fiveHCap() float64 { return env.Float("CCPOOL_5H_CAP", 85) } // 5h window this full -> downshift too
 
 func dmodel() string { return envS("CCPOOL_DOWNSHIFT_MODEL", "haiku") }
 
@@ -172,20 +173,6 @@ func mergedEnv(extra map[string]string) []string {
 func envS(key, def string) string {
 	if v, ok := os.LookupEnv(key); ok {
 		return v
-	}
-	return def
-}
-
-func envI(key string, def int64) int64 {
-	if v, ok := os.LookupEnv(key); ok {
-		return int64(rb.ToI(v))
-	}
-	return def
-}
-
-func envF(key string, def float64) float64 {
-	if v, ok := os.LookupEnv(key); ok {
-		return rb.ToF(v)
 	}
 	return def
 }

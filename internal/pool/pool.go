@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/profile"
 	"github.com/SeanLF/ccpool/internal/rb"
@@ -25,10 +26,7 @@ const resetJitter = 300
 // 120s). During active use the statusline re-renders seconds apart, so a trustworthy snapshot is
 // seconds old; past this the caller extrapolates or tiers down.
 func Stale() int64 {
-	if v, ok := os.LookupEnv("CCPOOL_STALE_SECS"); ok {
-		return int64(rb.ToI(v))
-	}
-	return 120
+	return env.Int64("CCPOOL_STALE_SECS", 120)
 }
 
 // Window is a reconciled rate-limit window: the used % and its reset epoch.

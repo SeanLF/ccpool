@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/calib"
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/profile"
 	"github.com/SeanLF/ccpool/internal/rb"
@@ -131,7 +132,7 @@ func Render(data map[string]any, now int64) string {
 	// weekly meter + $ + day-share
 	if sd := typedHash(rl, "seven_day", "seven_day"); sd != nil {
 		if used, ok := typedNum(sd, "used_percentage", "seven_day.used_percentage"); ok {
-			cols := rb.ToI(envOr("COLUMNS", "120"))
+			cols := env.Int("COLUMNS", 120)
 			width := clampInt(cols-82, 14, 40)
 			wr := rb.RoundToInt(used)
 			wknum := sev(fmt.Sprintf("%d%%", wr), wr, 75, 90, pal)
@@ -329,15 +330,6 @@ func typedNum(m map[string]any, key, label string) (float64, bool) {
 		logAnomaly("warn", fmt.Sprintf("%s is %T, expected number", label, v))
 	}
 	return 0, false
-}
-
-// --- environment ---
-
-func envOr(key, def string) string {
-	if v, ok := os.LookupEnv(key); ok {
-		return v
-	}
-	return def
 }
 
 // --- transcript cache state ---

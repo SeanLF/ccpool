@@ -11,6 +11,7 @@ import (
 	"os"
 	"syscall"
 
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/rb"
 )
@@ -190,10 +191,7 @@ func cost(payload map[string]any) *json.Number {
 }
 
 func minInterval() int {
-	if v, ok := os.LookupEnv("CCPOOL_HISTORY_MIN_INTERVAL"); ok {
-		return rb.ToI(v)
-	}
-	return minIntervalDefault
+	return env.Int("CCPOOL_HISTORY_MIN_INTERVAL", minIntervalDefault)
 }
 
 // numEqual compares a parsed value against a fresh json.Number the way Ruby == does (45 == 45.0).

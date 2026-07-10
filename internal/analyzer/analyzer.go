@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/rb"
 )
@@ -45,12 +46,9 @@ type Result struct {
 
 // lowOut is the output-token threshold below which (with no tool calls) an expensive turn counts as
 // trivial. Env-overridable (CCPOOL_LOW_OUTPUT, default 500), read fresh so the hermetic test env is
-// honoured; mirrors Ruby's `(ENV["CCPOOL_LOW_OUTPUT"] || "500").to_i`.
+// honoured; unset OR unparseable -> the default.
 func lowOut() int {
-	if v, ok := os.LookupEnv("CCPOOL_LOW_OUTPUT"); ok {
-		return rb.ToI(v)
-	}
-	return 500
+	return env.Int("CCPOOL_LOW_OUTPUT", 500)
 }
 
 // Review scans the transcript window and returns the per-model + triviality summary. Mirrors

@@ -10,6 +10,7 @@ import (
 
 	"github.com/SeanLF/ccpool/internal/burn"
 	"github.com/SeanLF/ccpool/internal/clock"
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/pool"
@@ -81,7 +82,7 @@ func freshness(age int64, ageOK bool) string {
 	if age <= 90 {
 		return "fresh (" + strconv.FormatInt(age, 10) + "s ago)"
 	}
-	if age <= checkEnvI("CCPOOL_CHECK_STALE_SECS", 900) {
+	if age <= env.Int64("CCPOOL_CHECK_STALE_SECS", 900) {
 		return fmtx.Dur(age) + " old"
 	}
 	return "STALE -- " + fmtx.Dur(age) + " old; statusline not rendering. The real budget may have moved."
@@ -110,7 +111,7 @@ func sessionLines(lines *[]string, ses pool.Window, sesOK bool, sesHist []burn.E
 		return false
 	}
 	*lines = append(*lines, fmt.Sprintf("         burn: ~%s -> 5h cap in ~%s at this rate; land work before the pause", rate, fmtx.Dur(int64(capIn))))
-	return capIn <= float64(checkEnvI("CCPOOL_CHECK_SES_SOON_SECS", 900))
+	return capIn <= float64(env.Int64("CCPOOL_CHECK_SES_SOON_SECS", 900))
 }
 
 // weeklyLines appends the WEEKLY block. Returns pace_warn: past the linear share and not near reset.
@@ -123,7 +124,7 @@ func weeklyLines(lines *[]string, wk pool.Window, wkOK bool, wkHist []burn.Entry
 	*lines = append(*lines, fmt.Sprintf("WEEKLY   %d%% used  ·  resets in %s  (7d window)", rb.RoundToInt(used), fmtx.Dur(reset-now)))
 
 	p := pool.GetPace(used, reset, now)
-	paceWarn := p.Delta > checkEnvF("CCPOOL_PACE_MARGIN", 3) && p.ToReset > checkEnvI("CCPOOL_COAST_SECS", 43200)
+	paceWarn := p.Delta > env.Float("CCPOOL_PACE_MARGIN", 3) && p.ToReset > env.Int64("CCPOOL_COAST_SECS", 43200)
 	daysLeft := math.Max(float64(reset-now)/86400.0, 0.0001)
 	remaining := math.Max(100.0-used, 0.0)
 	todayCap := clampF(math.Min(remaining, remaining/daysLeft), 0, 100)
@@ -162,7 +163,7 @@ func weeklyLines(lines *[]string, wk pool.Window, wkOK bool, wkHist []burn.Entry
 		} else {
 			idle := float64(reset-now) - secsToCap
 			tail := "just shy of reset -> burn it down freely"
-			if idle > checkEnvF("CCPOOL_CHECK_IDLE_WARN_H", 24)*3600 {
+			if idle > env.Float("CCPOOL_CHECK_IDLE_WARN_H", 24)*3600 {
 				tail = "~" + fmtx.Dur(int64(idle)) + " idle before reset -- ease off IF you'll sustain this unattended"
 			}
 			*lines = append(*lines, fmt.Sprintf("         burn: ~%.1f%%/h; IF sustained 24/7, cap in ~%s -- %s (idle/sleep stretches this out)", proj.BurnPerH, fmtx.Dur(int64(secsToCap)), tail))
@@ -180,9 +181,9 @@ func weeklyLines(lines *[]string, wk pool.Window, wkOK bool, wkHist []burn.Entry
 // 5h SESSION window as "out of budget" and stopping — it resets in hours; only the WEEKLY pool
 // genuinely low is a real "stop for the week".
 func verdict(ses pool.Window, sesOK bool, wk pool.Window, wkOK bool, sesSoon, paceWarn bool, now int64) string {
-	sessionFull := checkEnvF("CCPOOL_CHECK_SES_FULL", 92)
-	weeklyLow := checkEnvF("CCPOOL_CHECK_WEEKLY_LOW", 90)
-	coast := checkEnvI("CCPOOL_COAST_SECS", 43200)
+	sessionFull := env.Float("CCPOOL_CHECK_SES_FULL", 92)
+	weeklyLow := env.Float("CCPOOL_CHECK_WEEKLY_LOW", 90)
+	coast := env.Int64("CCPOOL_COAST_SECS", 43200)
 
 	wkLeft := 0
 	if wkOK {
@@ -249,21 +250,7 @@ func forfeit(wk pool.Window, wkLeft int, now int64) float64 {
 
 // burnDown fires when a meaningful chunk would go unspent -> nudge to spend it.
 func burnDown(wk pool.Window, wkLeft int, now int64) bool {
-	return forfeit(wk, wkLeft, now) >= checkEnvF("CCPOOL_CHECK_BURNDOWN_FORFEIT", 15)
-}
-
-func checkEnvF(key string, def float64) float64 {
-	if v, ok := os.LookupEnv(key); ok {
-		return rb.ToF(v)
-	}
-	return def
-}
-
-func checkEnvI(key string, def int64) int64 {
-	if v, ok := os.LookupEnv(key); ok {
-		return int64(rb.ToI(v))
-	}
-	return def
+	return forfeit(wk, wkLeft, now) >= env.Float("CCPOOL_CHECK_BURNDOWN_FORFEIT", 15)
 }
 
 func clampF(v, lo, hi float64) float64 {

@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/SeanLF/ccpool/internal/calib"
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/history"
 	"github.com/SeanLF/ccpool/internal/paths"
@@ -238,10 +239,7 @@ func snapshotAge(data map[string]any, path string) int64 {
 // PruneCaches deletes stale per-session snapshots (and orphaned tmp files) older than the keep
 // window. Opt-in (CCPOOL_PRUNE=1); returns the count removed.
 func PruneCaches(now int64) int {
-	keep := int64(3600)
-	if v, ok := os.LookupEnv("CCPOOL_CACHE_KEEP_SECS"); ok {
-		keep = int64(rb.ToI(v))
-	}
+	keep := env.Int64("CCPOOL_CACHE_KEEP_SECS", 3600)
 	removed := 0
 	globs := []string{paths.SnapshotGlob(), paths.SnapshotGlob() + ".*.tmp"}
 	for _, g := range globs {

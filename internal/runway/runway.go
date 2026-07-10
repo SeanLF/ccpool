@@ -8,10 +8,10 @@ package runway
 
 import (
 	"math"
-	"os"
 	"strconv"
 
 	"github.com/SeanLF/ccpool/internal/burn"
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/profile"
 	"github.com/SeanLF/ccpool/internal/rb"
 )
@@ -33,9 +33,9 @@ type Result struct {
 
 // Asymmetric fat-tail band + a per-active-hour density floor. Read fresh (env) so per-fixture test
 // env is honoured; defaults match the Ruby module constants.
-func fast() float64       { return envF("CCPOOL_RUNWAY_FAST", 1.5) }        // rate could be this much higher
-func slow() float64       { return envF("CCPOOL_RUNWAY_SLOW", 0.7) }        // ...or this much lower
-func minDensity() float64 { return envF("CCPOOL_RUNWAY_MIN_DENSITY", 0.5) } // floor active-hours at this fraction of wall
+func fast() float64       { return env.Float("CCPOOL_RUNWAY_FAST", 1.5) }        // rate could be this much higher
+func slow() float64       { return env.Float("CCPOOL_RUNWAY_SLOW", 0.7) }        // ...or this much lower
+func minDensity() float64 { return env.Float("CCPOOL_RUNWAY_MIN_DENSITY", 0.5) } // floor active-hours at this fraction of wall
 
 // activeHours over [a, b] (the Profile activity integral in hours), but never fewer than minDensity
 // of the wall span.
@@ -102,11 +102,4 @@ func dur(secs int64) string {
 		return strconv.FormatInt(d, 10) + "d " + strconv.FormatInt(h, 10) + "h"
 	}
 	return strconv.FormatInt(h, 10) + "h"
-}
-
-func envF(key string, def float64) float64 {
-	if v, ok := os.LookupEnv(key); ok {
-		return rb.ToF(v)
-	}
-	return def
 }

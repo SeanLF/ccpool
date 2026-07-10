@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/pool"
 	"github.com/SeanLF/ccpool/internal/profile"
@@ -45,14 +46,14 @@ type config struct {
 
 func load() config {
 	return config{
-		stale:       envI("CCPOOL_WARN_STALE_SECS", 3600),
-		throttle:    envI("CCPOOL_WARN_THROTTLE_SECS", 1800),
-		ctxThrottle: envI("CCPOOL_WARN_CTX_THROTTLE_SECS", 600),
-		coast:       envI("CCPOOL_COAST_SECS", 43200),
-		ctxWarn:     envF("CCPOOL_WARN_CTX_PCT", 85),
-		ctxWarnLeft: float64(envI("CCPOOL_WARN_CTX_LEFT", 30000)), // Ruby reads this with .to_i
-		sesWarn:     envF("CCPOOL_WARN_5H_PCT", 85),
-		margin:      envF("CCPOOL_PACE_MARGIN", 3),
+		stale:       env.Int64("CCPOOL_WARN_STALE_SECS", 3600),
+		throttle:    env.Int64("CCPOOL_WARN_THROTTLE_SECS", 1800),
+		ctxThrottle: env.Int64("CCPOOL_WARN_CTX_THROTTLE_SECS", 600),
+		coast:       env.Int64("CCPOOL_COAST_SECS", 43200),
+		ctxWarn:     env.Float("CCPOOL_WARN_CTX_PCT", 85),
+		ctxWarnLeft: float64(env.Int64("CCPOOL_WARN_CTX_LEFT", 30000)),
+		sesWarn:     env.Float("CCPOOL_WARN_5H_PCT", 85),
+		margin:      env.Float("CCPOOL_PACE_MARGIN", 3),
 		tmp:         tmpDir(),
 	}
 }
@@ -283,20 +284,6 @@ func tmpDir() string {
 		return v
 	}
 	return "/tmp"
-}
-
-func envI(key string, def int64) int64 {
-	if v, ok := os.LookupEnv(key); ok {
-		return int64(rb.ToI(v))
-	}
-	return def
-}
-
-func envF(key string, def float64) float64 {
-	if v, ok := os.LookupEnv(key); ok {
-		return rb.ToF(v)
-	}
-	return def
 }
 
 func sizeStr(v any) string {
