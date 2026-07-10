@@ -143,8 +143,14 @@ module Check
         lines << format("         burn: ~%.1f%%/h -> even non-stop, resets before you'd reach the cap, fine", proj[:burn_per_h])
       else
         idle = (reset - now) - secs_to_cap
-        tail = idle > IDLE_WARN_SECS ? "~#{fmt_dur(idle)} idle before reset -- ease off IF you'll sustain this unattended" : "just shy of reset -> burn it down freely"
-        lines << format("         burn: ~%.1f%%/h; IF sustained 24/7, cap in ~%s -- %s (idle/sleep stretches this out)", proj[:burn_per_h], fmt_dur(secs_to_cap), tail)
+        tail =
+          if idle > IDLE_WARN_SECS
+            "~#{fmt_dur(idle)} idle before reset -- ease off IF you'll sustain this unattended"
+          else
+            "just shy of reset -> burn it down freely"
+          end
+        lines << format("         burn: ~%.1f%%/h; IF sustained 24/7, cap in ~%s -- %s (idle/sleep stretches this out)", proj[:burn_per_h],
+                        fmt_dur(secs_to_cap), tail)
       end
     elsif history.nil?
       lines << "         burn: history unreadable -- projection unavailable (not a clear signal)"
@@ -199,7 +205,7 @@ module Check
   # be on the table when the week resets (resets to zero, can't bank).
   def forfeit(wk, wk_left, now)
     days_to_reset = [(wk[:reset] - now).to_f / 86_400, 0].max
-    wk_left - days_to_reset * (100.0 / 7)
+    wk_left - (days_to_reset * (100.0 / 7))
   end
 
   # Near-reset surplus: would a meaningful chunk go UNSPENT => nudge to spend it. Self-gating:

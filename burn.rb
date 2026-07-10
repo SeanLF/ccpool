@@ -78,7 +78,7 @@ module Burn
     running = nil
     entries.filter_map do |e|
       next unless e[field].is_a?(Numeric)
-      next unless e[reset_field] == latest  # current window only (nil == nil when no reset recorded)
+      next unless e[reset_field] == latest # current window only (nil == nil when no reset recorded)
 
       running = running ? [running, e[field]].max : e[field]
       row = { "t" => e["t"], field => running }
@@ -140,6 +140,7 @@ module Burn
     start = entries.size - 1
     (entries.size - 1).downto(1) do |i|
       break if entries[i][field].to_f < entries[i - 1][field].to_f - DROP_RESET
+
       start = i - 1
     end
     entries[start..]

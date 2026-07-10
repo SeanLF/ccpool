@@ -23,12 +23,12 @@ module Clock
 
   # macOS: AppleICUForce24HourTime "1" => 24h, "0" => 12h. Absent / other / non-mac => 24.
   def detect
-    (`defaults read -g AppleICUForce24HourTime 2>/dev/null`.strip == "0") ? 12 : 24
+    `defaults read -g AppleICUForce24HourTime 2>/dev/null`.strip == "0" ? 12 : 24
   rescue StandardError
     24
   end
 
-  MODE = resolve(ENV["CCPOOL_CLOCK"])
+  MODE = resolve(ENV.fetch("CCPOOL_CLOCK", nil))
 
   def h12? = MODE == 12
 

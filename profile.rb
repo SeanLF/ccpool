@@ -38,8 +38,8 @@ module Profile
     return default if str.nil? || str.strip.empty?
 
     parsed = str.split(",").flat_map do |part|
-      if part =~ /\A\s*(\d+)\s*-\s*(\d+)\s*\z/ then ($1.to_i..$2.to_i).to_a
-      else Integer(part) rescue nil
+      if (m = part.match(/\A\s*(\d+)\s*-\s*(\d+)\s*\z/)) then (m[1].to_i..m[2].to_i).to_a
+      else Integer(part, exception: false)
       end
     end.compact
     parsed.empty? ? default : parsed
@@ -71,10 +71,13 @@ module Profile
   day_default  = %w[weekdays workhours].include?(NAME) ? (1..5).to_a : (0..6).to_a
   hour_default = NAME == "workhours" ? [9, 17] : [0, 24]
 
-  WORK_DAYS = int_set(ENV["CCPOOL_WORK_DAYS"], day_default).freeze
-  WAKE_H0, WAKE_H1 = hours(ENV["CCPOOL_WAKE_HOURS"], hour_default)
+  WORK_DAYS = int_set(ENV.fetch("CCPOOL_WORK_DAYS", nil), day_default).freeze
+  WAKE_H0, WAKE_H1 = hours(ENV.fetch("CCPOOL_WAKE_HOURS", nil), hour_default)
   # Graded weight vectors -- custom profile only (nil otherwise).
-  CUSTOM = NAME == "custom" ? [weights(ENV["CCPOOL_PACE_WEIGHTS"], 7), weights(ENV["CCPOOL_PACE_HOUR_WEIGHTS"], 24)].freeze : nil
+  CUSTOM = if NAME == "custom"
+             [weights(ENV.fetch("CCPOOL_PACE_WEIGHTS", nil), 7),
+              weights(ENV.fetch("CCPOOL_PACE_HOUR_WEIGHTS", nil), 24)].freeze
+           end
 
   # A resolved profile: active days, waking window [h0, h1), and optional [day_wts, hour_wts].
   Config  = Struct.new(:days, :h0, :h1, :custom)
@@ -86,13 +89,14 @@ module Profile
   def uniform?(cfg = DEFAULT)
     cfg.custom.nil? && cfg.h0 <= 0 && cfg.h1 >= 24 && (0..6).all? { |d| cfg.days.include?(d) }
   end
+
   def scheduled? = !uniform?
 
   # Weight for a local (wday, hour). >= 0. Off a work day OR outside waking hours -> FLOOR.
   def weight(wday, hour, cfg = DEFAULT)
     return cfg.custom[0][wday] * cfg.custom[1][hour] if cfg.custom
 
-    (cfg.days.include?(wday) && hour >= cfg.h0 && hour < cfg.h1) ? 1.0 : FLOOR
+    cfg.days.include?(wday) && hour >= cfg.h0 && hour < cfg.h1 ? 1.0 : FLOOR
   end
 
   def weight_at(epoch, cfg = DEFAULT)

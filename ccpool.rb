@@ -33,8 +33,8 @@ module CCPool
   DMODEL  = ENV["CCPOOL_DOWNSHIFT_MODEL"] || "haiku"
   DEFFORT = ENV["CCPOOL_DOWNSHIFT_EFFORT"] || "low"
   COAST   = (ENV["CCPOOL_COAST_SECS"] || "43200").to_i # <12h to reset -> use-it-or-lose-it
-  FIVE_H_CAP = (ENV["CCPOOL_5H_CAP"] || "85").to_f      # 5h window this full -> downshift too
-  HIST    = File.expand_path(ENV["CCPOOL_HISTORY"] || "~/.claude/rate-limit-history.jsonl")
+  FIVE_H_CAP = (ENV["CCPOOL_5H_CAP"] || "85").to_f # 5h window this full -> downshift too
+  HIST = File.expand_path(ENV["CCPOOL_HISTORY"] || "~/.claude/rate-limit-history.jsonl")
   HIST_KEEP_DAYS = (ENV["CCPOOL_HISTORY_KEEP_DAYS"] || "30").to_f    # `prune --history` cutoff; 0 = keep raw forever
   HIST_MIN_INT   = (ENV["CCPOOL_HISTORY_MIN_INTERVAL"] || "60").to_i # min secs between 5h-only writes (curbs growth)
 
@@ -66,13 +66,13 @@ module CCPool
     dpp = Calibration.dollar_per_pct(now)
     accrued = dpp && Calibration.cost_since(now - age, now)
     if dpp && accrued && accrued >= 0
-      wk.merge(used: (wk[:used] + accrued / dpp).clamp(0, 100), confidence: :estimated)
+      wk.merge(used: (wk[:used] + (accrued / dpp)).clamp(0, 100), confidence: :estimated)
     else
       wk.merge(confidence: :stale)
     end
   end
 
-  def stamp(wk, now)
+  def stamp(wk)
     case wk[:confidence]
     when :estimated then "  ·  ~estimated (snapshot #{dur(wk[:age])} old + accrued cost)"
     when :stale then "  ·  ⚠ stale: snapshot #{dur(wk[:age])} old, may be behind (open Claude Code)"
@@ -93,6 +93,7 @@ module CCPool
   end
 
   # -- full readout --------------------------------------------------------------------
+  # rubocop:disable Metrics/AbcSize -- inline readout assembler (pool/pace/burn/runway lines); linear display code, deliberately not fragmented
   def status(now = Time.now.to_i)
     wk = resolve_weekly(now)
     unless wk
@@ -103,8 +104,13 @@ module CCPool
 
     used = wk[:used]
     dpp = Calibration.dollar_per_pct(now)
-    dollars = dpp ? "  ·  ~#{usd((100 - used) * dpp)} left of ~#{usd(100 * dpp)} (API-equiv)" : "  ·  ($ value calibrating -- needs ccusage + a few days of history)"
-    puts "Weekly pool  ·  #{used.round}% used#{dollars}  ·  resets #{at(wk[:reset])} (#{dur(wk[:reset] - now)})#{stamp(wk, now)}"
+    dollars =
+      if dpp
+        "  ·  ~#{usd((100 - used) * dpp)} left of ~#{usd(100 * dpp)} (API-equiv)"
+      else
+        "  ·  ($ value calibrating -- needs ccusage + a few days of history)"
+      end
+    puts "Weekly pool  ·  #{used.round}% used#{dollars}  ·  resets #{at(wk[:reset])} (#{dur(wk[:reset] - now)})#{stamp(wk)}"
     puts "Pace         ·  #{pace_phrase(Pool.pace(used, wk[:reset], now))}"
 
     # Burn projection (reset-robust, from the history log) -- will you throttle before reset?
@@ -119,7 +125,12 @@ module CCPool
       cap_h = (100.0 - used) / pr[:burn_per_h]
       dcap = cap_h / 24.0
       dreset = (wk[:reset] - now) / 86_400.0
-      verdict = cap_h * 3_600 < (wk[:reset] - now) ? "⚠ ~#{(dreset - dcap).round(1)}d BEFORE reset -- you'll throttle early" : "resets first (in #{dreset.round(1)}d) -- you're clear"
+      verdict =
+        if cap_h * 3_600 < (wk[:reset] - now)
+          "⚠ ~#{(dreset - dcap).round(1)}d BEFORE reset -- you'll throttle early"
+        else
+          "resets first (in #{dreset.round(1)}d) -- you're clear"
+        end
       puts "Burn         ·  ~#{pr[:burn_per_h].round(1)}%/h -> hits cap in ~#{dcap.round(1)}d; #{verdict}"
     end
     if pr && (r = Runway.estimate(used, wk[:reset], pr, now))
@@ -138,6 +149,7 @@ module CCPool
       puts "cleanup      ·  usage history is #{mb.round}MB -- `ccpool prune --history` compacts it to the last #{HIST_KEEP_DAYS.round}d"
     end
   end
+  # rubocop:enable Metrics/AbcSize
 
   # -- statusLine command: capture + seed + render (cached $ only; must stay fast) ------
   # Direct in a terminal there's no CC payload on stdin (reading it would just hang), so PREVIEW
@@ -145,13 +157,14 @@ module CCPool
   def statusline(now = Time.now.to_i)
     return preview_statusline(now) if $stdin.tty?
 
-    payload = (JSON.parse($stdin.read) rescue {})
+    payload = JSON.parse($stdin.read) rescue {}
     return unless payload.is_a?(Hash)
 
     if (sid = payload["session_id"]).is_a?(String)
       path = Pool::CACHE.sub(/\.json\z/, "-#{sid.gsub(/[^\w.-]/, '')}.json")
       tmp = "#{path}.#{Process.pid}.tmp"
-      (File.write(tmp, JSON.generate(payload.merge("captured_at" => now))); File.rename(tmp, path)) rescue nil # atomic
+      (File.write(tmp, JSON.generate(payload.merge("captured_at" => now)))
+       File.rename(tmp, path)) rescue nil # atomic
     end
     seed_history(payload, now)
     prune_caches(now) if ENV["CCPOOL_PRUNE"] == "1" # opt-in only: deleting files is never silent-by-default
@@ -201,7 +214,7 @@ module CCPool
   def prune_history(now, keep = HIST_KEEP_DAYS)
     return 0 if keep <= 0 || !File.exist?(HIST)
 
-    cutoff = now - keep * 86_400
+    cutoff = now - (keep * 86_400)
     removed = 0
     File.open(HIST, File::RDWR) do |f|
       f.flock(File::LOCK_EX)
@@ -232,7 +245,7 @@ module CCPool
     sid = payload["session_id"]
     row = { "t" => now, "wk" => sd["used_percentage"], "wk_reset" => sd["resets_at"],
             "ses" => fh&.dig("used_percentage"), "ses_reset" => fh&.dig("resets_at"),
-            "tier" => (ENV["USAGE_TIER"] || "max_20x"), "cost" => payload.dig("cost", "total_cost_usd"),
+            "tier" => ENV["USAGE_TIER"] || "max_20x", "cost" => payload.dig("cost", "total_cost_usd"),
             "session" => sid }
     # flock the read-check-append so concurrent sessions' statuslines can't interleave lines.
     # Dedup PER SESSION (not the global last line: other sessions interleave, and wk is
@@ -246,7 +259,7 @@ module CCPool
       f.seek([f.size - 65_536, 0].max)
       last = nil
       f.read.lines.reverse_each do |l|
-        e = (JSON.parse(l) rescue nil)
+        e = JSON.parse(l) rescue nil
         next unless e.is_a?(Hash) && (sid.nil? || e["session"] == sid)
 
         last = e
@@ -266,7 +279,7 @@ module CCPool
 
   # -- situational-awareness hook (stdin = hook payload) --------------------------------
   def warn_hook(now = Time.now.to_i)
-    payload = (JSON.parse($stdin.read) rescue {})
+    payload = JSON.parse($stdin.read) rescue {}
     payload = {} unless payload.is_a?(Hash)
     out = Warn.run(payload, now)
     puts out unless out.to_s.empty?
@@ -319,7 +332,7 @@ module CCPool
     end
     env, msg = downshift_env(now)
     if MODE == "advise" # print the recommendation, like the native tab -- but don't apply it
-      warn "[ccpool] #{msg}#{env.empty? ? '' : ' (advise mode -> not applied; CCPOOL_DOWNSHIFT=auto to enforce)'}"
+      warn "[ccpool] #{msg}#{' (advise mode -> not applied; CCPOOL_DOWNSHIFT=auto to enforce)' unless env.empty?}"
       exec(*cmd)
     end
     warn "[ccpool] #{msg}"

@@ -47,7 +47,7 @@ module Rhythm
         next unless (m = TS.match(line))
 
         h = m[4].to_i
-        roll = (h + off_h).div(24)                      # offset may push local past midnight (+/-1 day)
+        roll = (h + off_h).div(24) # offset may push local past midnight (+/-1 day)
         date = Date.new(m[1].to_i, m[2].to_i, m[3].to_i) + roll # UTC date -> local date
         next unless (today - date).to_i.between?(0, WINDOW)
 
@@ -77,7 +77,7 @@ module Rhythm
       s += cnt * Math.sin(a)
       c += cnt * Math.cos(a)
     end
-    [(Math.atan2(s, c) / (2 * Math::PI) * 24) % 24, Math.sqrt(s * s + c * c) / n, n]
+    [(Math.atan2(s, c) / (2 * Math::PI) * 24) % 24, Math.sqrt((s * s) + (c * c)) / n, n]
   end
 
   # Indices of buckets at >= PEAK_FRAC of the peak bucket.

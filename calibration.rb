@@ -32,8 +32,8 @@ module Calibration
     dpp || cached&.dig("dpp")
   end
 
-  def read_cache = (JSON.parse(File.read(CACHE)) rescue nil)
-  def write_cache(dpp, at) = (File.write(CACHE, JSON.generate("dpp" => dpp, "at" => at)) rescue nil)
+  def read_cache = JSON.parse(File.read(CACHE)) rescue nil
+  def write_cache(dpp, at) = File.write(CACHE, JSON.generate("dpp" => dpp, "at" => at)) rescue nil
 
   def compute
     runs = wk_runs
@@ -57,11 +57,11 @@ module Calibration
   # Raw `ccusage blocks --json` with a short file cache, so tight staleness doesn't re-spawn
   # ccusage (a multi-second npx call) on every idle status read.
   def ccusage_raw(now = Time.now.to_i)
-    c = (JSON.parse(File.read(BLOCKS_CACHE)) rescue nil)
+    c = JSON.parse(File.read(BLOCKS_CACHE)) rescue nil
     return c["raw"] if c.is_a?(Hash) && c["at"].is_a?(Numeric) && now - c["at"] < BLOCKS_TTL && c["raw"]
 
     raw = `#{CCUSAGE} blocks --json 2>/dev/null`
-    (File.write(BLOCKS_CACHE, JSON.generate("raw" => raw, "at" => now)) rescue nil) unless raw.strip.empty?
+    File.write(BLOCKS_CACHE, JSON.generate("raw" => raw, "at" => now)) rescue nil unless raw.strip.empty?
     raw
   end
 

@@ -22,7 +22,7 @@ module Pool
   def load_snapshots
     files = Dir.glob(GLOB)
     files = [CACHE] if files.empty? && File.exist?(CACHE)
-    files.filter_map { |f| (JSON.parse(File.read(f)) rescue nil) }.select { |d| d.is_a?(Hash) }
+    files.filter_map { |f| JSON.parse(File.read(f)) rescue nil }.grep(Hash)
   end
 
   # Reconcile one account-global window across snapshots frozen at differing staleness:
@@ -32,6 +32,7 @@ module Pool
     live = snaps.filter_map do |d|
       w = d.dig("rate_limits", key)
       next unless w.is_a?(Hash) && (u = w["used_percentage"]).is_a?(Numeric) && u >= 0 && u < 10_000
+
       r = w["resets_at"]
       next unless r.is_a?(Numeric) && r > now && r <= now + max_ahead
 

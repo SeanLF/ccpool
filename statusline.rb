@@ -30,7 +30,7 @@ module Statusline
   # when healthy; the over-pace tail overrides to red. Override via CCPOOL_BAR_COLOR.
   BAR   = ansi(ENV["CCPOOL_BAR_COLOR"] || "\e[38;2;86;182;194m")
   BOLD  = ansi("\e[1m")
-  SEP   = " #{DIM}·#{RESET} "
+  SEP   = " #{DIM}·#{RESET} ".freeze # interpolated -> not auto-frozen by the magic comment
   WEEK  = 7 * 86_400
   CACHE_TTL  = (ENV["USAGE_CACHE_TTL_SECS"] || "3600").to_i
   CACHE_WARN = (ENV["USAGE_CACHE_WARN_SECS"] || "900").to_i
@@ -55,7 +55,8 @@ module Statusline
   # True if hash[key] is the expected type. Present-but-wrong-type LOGS a warning (the signal a
   # CC schema change silently dropped a segment); a missing key is silent + expected. Callers
   # && these so a false result skips the segment without touching the wrong-typed value.
-  def typed?(hash, key, type, label = key) # label defaults to the key; pass a dotted path for nested fields
+  # label defaults to the key; pass a dotted path for nested fields.
+  def typed?(hash, key, type, label = key)
     v = hash[key]
     return true if v.is_a?(type)
 
@@ -109,20 +110,27 @@ module Statusline
   def cache_state(path)
     return nil unless path.is_a?(String) && File.exist?(path)
 
-    tail = File.open(path, "rb") { |f| f.seek([f.size - 32_768, 0].max); f.read }
+    tail = File.open(path, "rb") do |f|
+      f.seek([f.size - 32_768, 0].max)
+      f.read
+    end
     lines = tail.to_s.lines
     lines.shift if tail.bytesize >= 32_768 && lines.size > 1
-    entries = lines.filter_map { |l| (JSON.parse(l) rescue nil) }.select { |e| e.is_a?(Hash) }
+    entries = lines.filter_map { |l| JSON.parse(l) rescue nil }.grep(Hash)
 
-    tse = entries.reverse_each.find { |e| e["timestamp"].is_a?(String) } or return nil
-    ts = (Time.parse(tse["timestamp"]).to_i rescue return nil)
+    tse = entries.rfind { |e| e["timestamp"].is_a?(String) } or return nil
+    ts = (Time.parse(tse["timestamp"]).to_i rescue return nil) # rubocop:disable Style/RedundantParentheses -- parens are REQUIRED to scope `rescue return`
     ttl = nil
     entries.reverse_each do |e|
       cc = e.dig("message", "usage", "cache_creation")
       next unless cc.is_a?(Hash)
 
-      if cc["ephemeral_5m_input_tokens"].to_i.positive? then ttl = 300; break
-      elsif cc["ephemeral_1h_input_tokens"].to_i.positive? then ttl = 3_600; break
+      if cc["ephemeral_5m_input_tokens"].to_i.positive?
+        ttl = 300
+        break
+      elsif cc["ephemeral_1h_input_tokens"].to_i.positive?
+        ttl = 3_600
+        break
       end
     end
     [ts, ttl]
@@ -132,6 +140,7 @@ module Statusline
 
   # Render the whole line from the fresh CC payload (rate_limits is account-global, so the
   # payload IS current). `dpp` = cached $/1% (fast; never spawn ccusage in the statusline).
+  # rubocop:disable Metrics/AbcSize -- inline segment-assembler (ctx/cache/5h/weekly); linear display code, deliberately not fragmented into helpers
   def render(data, now = Time.now.to_i)
     cols = (ENV["COLUMNS"] || "120").to_i
     rl = typed?(data, "rate_limits", Hash) ? data["rate_limits"] : {}
@@ -155,7 +164,8 @@ module Statusline
     if (st = cache_state(data["transcript_path"]))
       ts, ttl = st
       left = ts + (ttl || CACHE_TTL) - now
-      if left <= 0 then now_grp << "cache #{BOLD}#{RED}cold#{RESET}"
+      if left <= 0
+        now_grp << "cache #{BOLD}#{RED}cold#{RESET}"
       elsif left < CACHE_WARN
         col = left < CACHE_CRIT ? "#{BOLD}#{RED}" : YELLOW
         now_grp << "cache #{col}#{fmt_dur(left)}#{RESET}"
@@ -175,10 +185,14 @@ module Statusline
     sd = rl["seven_day"]
     if typed?(rl, "seven_day", Hash) && typed?(sd, "used_percentage", Numeric, "seven_day.used_percentage")
       used = sd["used_percentage"].to_f
-      width = [[cols - 82, 40].min, 14].max
+      width = (cols - 82).clamp(14, 40)
       wknum = sev("#{used.round}%", used.round, warn: 75, crit: 90)
       left = (100 - used) * (dpp || 0)
-      dollars = dpp ? " #{DIM}#{left >= 1000 ? "$#{(left / 1000).round(1)}k" : "$#{left.round}"}#{RESET}" : ""
+      dollars = if dpp
+                  " #{DIM}#{left >= 1000 ? "$#{(left / 1000).round(1)}k" : "$#{left.round}"}#{RESET}"
+                else
+                  ""
+                end
       if typed?(sd, "resets_at", Numeric, "seven_day.resets_at")
         reset = sd["resets_at"]
         pace = Profile.elapsed_fraction(reset - WEEK, now, reset) # same weighting as Pool.pace -> bar agrees with verdict
@@ -192,4 +206,5 @@ module Statusline
 
     [now_grp, ses_grp, wk_grp].reject(&:empty?).map { |g| g.join("  ") }.join(SEP)
   end
+  # rubocop:enable Metrics/AbcSize
 end

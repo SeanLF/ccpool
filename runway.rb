@@ -42,7 +42,7 @@ module Runway
     cal_h    = Profile.integral(now, reset) / 3600.0
     return nil if active_h <= 0 || cal_h <= 0
 
-    rate      = proj[:dpct] / active_h          # % of pool per WORKING hour
+    rate      = proj[:dpct] / active_h # % of pool per WORKING hour
     remaining = [100.0 - used, 0.0].max
     budget_h  = remaining / rate
     { hours: [budget_h, cal_h].min, budget_h: budget_h, cal_h: cal_h,
@@ -60,7 +60,8 @@ module Runway
   # calendar-limited just says the week wins, so burn freely.
   def phrase(r, to_reset)
     if r[:bind] == :budget
-      lo, hi = r[:low].round, r[:high].round
+      lo = r[:low].round
+      hi = r[:high].round
       span = lo == hi ? "~#{lo}" : "~#{lo}-#{hi}"
       "#{span} working-hours of pool left -> at your active-hour burn you'd throttle before reset (#{dur(to_reset)} out)"
     else
