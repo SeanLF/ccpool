@@ -28,7 +28,7 @@ import (
 func Command(now int64, embed bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			logAnomaly("error", fmt.Sprintf("statusline panic: %v", r))
+			diag.Error("statusline panic", "recovered", fmt.Sprint(r))
 		}
 	}()
 
@@ -52,7 +52,7 @@ func Command(now int64, embed bool) {
 	bestEffort("capture", func() { capture(raw, data, now) })
 	bestEffort("seed_history", func() {
 		if err := history.Seed(data, now); err != nil {
-			logAnomaly("warn", "history append failed: "+err.Error())
+			diag.Warn("history append failed", "err", err)
 		}
 	})
 	bestEffort("warm", func() { warm(now) })
@@ -83,7 +83,7 @@ func WarmCalib(now int64) {
 func bestEffort(name string, fn func()) {
 	defer func() {
 		if r := recover(); r != nil {
-			logAnomaly("warn", name+" panic: "+fmt.Sprint(r))
+			diag.Warn("hot-path stage panic", "stage", name, "recovered", fmt.Sprint(r))
 		}
 	}()
 	fn()

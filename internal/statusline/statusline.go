@@ -310,7 +310,7 @@ func typedHash(m map[string]any, key, label string) map[string]any {
 		return h
 	}
 	if present {
-		logAnomaly("warn", fmt.Sprintf("%s is %T, expected object", label, v))
+		diag.Warn("segment not an object", "field", label, "got", fmt.Sprintf("%T", v))
 	}
 	return nil
 }
@@ -327,7 +327,7 @@ func typedNum(m map[string]any, key, label string) (float64, bool) {
 		}
 	}
 	if present {
-		logAnomaly("warn", fmt.Sprintf("%s is %T, expected number", label, v))
+		diag.Warn("segment not a number", "field", label, "got", fmt.Sprintf("%T", v))
 	}
 	return 0, false
 }
