@@ -235,3 +235,21 @@ to adopt ccpool. Decided it's a **must-have for release** and built it, adversar
   forwards the payload and B works today.
 - **Upstream contribution (open):** ccstatusline's README materially under-documents that custom
   commands receive the full payload — a trivial docs PR would help every widget author. Not done.
+
+## Roadmap → v1 (2026-07-10)
+
+The Ruby tool is feature-complete for its lane (init, composition, downshift, verdict, warn,
+statusline, review, rhythm) and well-tested (~160 hermetic cases). **Decision: freeze Ruby scope —
+no new features pre-migration** (each is paid for twice) — and stay in lane (everything outside
+"get the most out of a fixed pool" the competitor survey put in DELEGATE). **v1 ships in Go.** The
+migration is its own focused effort, executed from a clean session per the playbook:
+
+- `docs/GO-MIGRATION.md` — the phased execution plan + handover (Phase 0 pipeline → 1 statusline →
+  2 warn → 3 on-demand → v1 binary; the on-disk contract to preserve; conformance-via-Ruby-fixtures).
+- `docs/standards/go.md` — Go idioms + the GoReleaser/Homebrew release path.
+- `docs/RUST-REIMPL.md` — the measurement + why-Go decision.
+
+Immediate next actions before the port: add a git remote + push (activates CI + the issue/PR
+templates, which are dormant with no remote), and grab a real in-Claude-Code statusline screenshot
+for the README. Post-v1: revisit deferred items (per-model weekly buckets if the payload carries
+them, `--json` if a consumer appears) from the stable Go base.
