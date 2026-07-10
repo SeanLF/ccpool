@@ -1,0 +1,10 @@
+0
+time     2024-07-03 09:46 UTC (Wed)
+data     0h 5m old
+
+SESSION  (no live 5h window across sessions -- all snapshots predate the last reset)
+WEEKLY   20% used  ·  resets in 1d 0h  (7d window)
+         86% of week elapsed -> 66pts UNDER even-burn pace -- expected unless you run 24/7 (idle/sleep counts as elapsed)
+         pace guide: ~80%/day spends the rest evenly to reset (not a hard cap)
+
+VERDICT  BURN DOWN -- 80% unspent, reset in 1d 0h; at your ~1/7/day pace ~66% would go UNSPENT and reset to zero (you can't bank it). If you have valuable but deferrable work -- deep passes, parallel fan-outs, research, an overnight loop -- spend it now: go bigger/parallel. Not busywork, but don't waste the headroom.

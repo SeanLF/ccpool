@@ -1,0 +1,10 @@
+Model provisioning review -- last 7d
+       2 turns       5k out  claude-opus-4-8
+       1 turns       0k out  claude-sonnet-5
+
+  Expensive-model turns (opus/fable): 2
+  ...low-complexity (little output, no tools): 1 (50%) -- candidates to downshift to sonnet/haiku
+  ~2% of your expensive-model output tokens went to that trivial work.
+
+  caveat: effort isn't logged per-turn -- this proxies complexity from output volume +
+  tool-calls; `ultrathink`/thinking inflate output invisibly, so treat as a hint, not a verdict.

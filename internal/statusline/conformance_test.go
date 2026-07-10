@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/SeanLF/ccpool/internal/golden"
 )
 
 // The statusline render must be byte-identical to the Ruby statusline.rb (ANSI included), which is
@@ -30,16 +31,12 @@ var envKeys = []string{
 }
 
 func TestStatuslineConformance(t *testing.T) {
-	if _, err := exec.LookPath("ruby"); err != nil {
-		t.Skip("ruby not found; conformance diff needs the Ruby oracle")
-	}
-	// Pin the zone for both sides: Go's .Local() and the oracle's TZ must agree so scheduled-profile
-	// pace math lines up. Fixed here rather than relying on the launch environment.
+	// Pin the zone: Go's .Local() must match the zone the goldens were captured under (UTC) so
+	// scheduled-profile pace math lines up. Fixed here rather than relying on the launch environment.
 	time.Local = time.UTC
 	t.Setenv("TZ", "UTC")
 
 	root := repoRoot(t)
-	oracle := filepath.Join(root, "conformance", "oracle.rb")
 
 	fixtures := loadFixtures(t, filepath.Join(root, "conformance", "fixtures.json"))
 	calibPath := filepath.Join(t.TempDir(), "calib.json")
@@ -58,14 +55,8 @@ func TestStatuslineConformance(t *testing.T) {
 			goRender := Render(fx.Payload, now)
 			goCompact := RenderCompact(fx.Payload, now)
 
-			rubyRender, rubyCompact := runOracle(t, oracle, fx)
-
-			if goRender != rubyRender {
-				t.Errorf("render mismatch\n go:   %q\n ruby: %q", goRender, rubyRender)
-			}
-			if goCompact != rubyCompact {
-				t.Errorf("render_compact mismatch\n go:   %q\n ruby: %q", goCompact, rubyCompact)
-			}
+			golden.Assert(t, filepath.Join(root, "conformance", "golden", "statusline", fx.Name+".render.txt"), []byte(goRender))
+			golden.Assert(t, filepath.Join(root, "conformance", "golden", "statusline", fx.Name+".compact.txt"), []byte(goCompact))
 		})
 	}
 }
@@ -109,29 +100,6 @@ func writeCalib(t *testing.T, path string, fx fixture) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write calib: %v", err)
 	}
-}
-
-// runOracle renders the fixture through the Ruby oracle and splits render / render_compact.
-func runOracle(t *testing.T, oracle string, fx fixture) (string, string) {
-	t.Helper()
-	in, err := json.Marshal(map[string]any{"now": fx.Now, "payload": fx.Payload})
-	if err != nil {
-		t.Fatalf("marshal oracle input: %v", err)
-	}
-	cmd := exec.Command("ruby", oracle)
-	cmd.Stdin = bytes.NewReader(in)
-	cmd.Env = os.Environ() // carries the fixture env + CCPOOL_CALIB_CACHE + TZ set above
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("oracle failed: %v\nstderr: %s", err, stderr.String())
-	}
-	parts := bytes.SplitN(stdout.Bytes(), []byte{0}, 2)
-	if len(parts) != 2 {
-		t.Fatalf("oracle output missing NUL separator: %q", stdout.String())
-	}
-	return string(parts[0]), string(parts[1])
 }
 
 // repoRoot walks up from the test's working directory to the module root (the dir with go.mod).

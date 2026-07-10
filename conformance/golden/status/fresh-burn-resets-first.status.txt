@@ -1,0 +1,4 @@
+Weekly pool  ·  40% used  ·  ~$300 left of ~$500 (API-equiv)  ·  resets Sat 07-06 09:46 (3d 0h)
+Pace         ·  17 pts under pace (57% of the week elapsed) -- banked headroom
+Burn         ·  ~0.8%/h -> hits cap in ~3.0d; resets first (in 3.0d) -- you're clear
+Runway       ·  budget outlasts the week -> reset (3d 0h) comes first with headroom, burn freely

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
+
+	"github.com/SeanLF/ccpool/internal/golden"
 )
 
 // The Ruby Init module is the conformance oracle: for each fixture we run the Go Run and the Ruby
@@ -30,15 +32,11 @@ type initFixture struct {
 var initEnvKeys = []string{"CCPOOL_CCUSAGE_CMD", "CCPOOL_SETTINGS", "USAGE_CACHE"}
 
 func TestInitConformance(t *testing.T) {
-	if _, err := exec.LookPath("ruby"); err != nil {
-		t.Skip("ruby not found; conformance diff needs the Ruby oracle")
-	}
-	// Pin the zone for both sides (the preview's fmt_dur/pace math is local-zone sensitive).
+	// Pin the zone (the preview's fmt_dur/pace math is local-zone sensitive; goldens captured under UTC).
 	time.Local = time.UTC
 	t.Setenv("TZ", "UTC")
 
 	root := repoRoot(t)
-	oracle := filepath.Join(root, "conformance", "init_oracle.rb")
 
 	// Pin the launcher to the Ruby reference path so the wired command strings match. Ruby derives
 	// this from init.rb's __dir__ (= repo root); Go defaults to the running binary, so override it.
@@ -67,31 +65,12 @@ func TestInitConformance(t *testing.T) {
 				t.Fatalf("bad now: %v", err)
 			}
 
-			// --- Go side ---
 			stageFixture(t, fx, dir, settingsPath)
 			goOut, goCode := captureStdout(func() error { return Run(fx.Argv, now) })
 			goSym, goExists, goBody := inspect(settingsPath)
-			cleanDir(t, dir)
 
-			// --- Ruby oracle side (same path so stdout's absolute paths line up) ---
-			stageFixture(t, fx, dir, settingsPath)
-			rubyOut, rubyCode, rubySym, rubyExists, rubyBody := runInitOracle(t, oracle, fx, now)
-
-			if goOut != rubyOut {
-				t.Errorf("stdout mismatch\n go:   %q\n ruby: %q", goOut, rubyOut)
-			}
-			if goCode != rubyCode {
-				t.Errorf("exit code mismatch: go=%d ruby=%d", goCode, rubyCode)
-			}
-			if goSym != rubySym {
-				t.Errorf("symlink state mismatch: go=%v ruby=%v", goSym, rubySym)
-			}
-			if goExists != rubyExists {
-				t.Errorf("exists mismatch: go=%v ruby=%v", goExists, rubyExists)
-			}
-			if !bytes.Equal(goBody, rubyBody) {
-				t.Errorf("settings.json mismatch\n go:   %q\n ruby: %q", goBody, rubyBody)
-			}
+			golden.Assert(t, filepath.Join(root, "conformance", "golden", "initcmd", fx.Name+".init.txt"),
+				normInitPaths(initEnvelope(goOut, goCode, goSym, goExists, goBody), dir))
 		})
 	}
 }
@@ -118,19 +97,6 @@ func stageFixture(t *testing.T, fx initFixture, dir, settingsPath string) {
 		}
 	default:
 		t.Fatalf("unknown fixture kind %q", fx.Kind)
-	}
-}
-
-func cleanDir(t *testing.T, dir string) {
-	t.Helper()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("read dir: %v", err)
-	}
-	for _, e := range entries {
-		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
-			t.Fatalf("clean dir: %v", err)
-		}
 	}
 }
 
@@ -166,40 +132,6 @@ func captureStdout(fn func() error) (string, int) {
 	return buf.String(), code
 }
 
-func runInitOracle(t *testing.T, oracle string, fx initFixture, now int64) (out string, code int, isSymlink, exists bool, body []byte) {
-	t.Helper()
-	in, err := json.Marshal(map[string]any{"argv": fx.Argv, "now": now})
-	if err != nil {
-		t.Fatalf("marshal oracle input: %v", err)
-	}
-	cmd := exec.Command("ruby", oracle)
-	cmd.Stdin = bytes.NewReader(in)
-	cmd.Env = os.Environ() // carries CCPOOL_SETTINGS, USAGE_CACHE, CCPOOL_CCUSAGE_CMD, TZ
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("oracle failed: %v\nstderr: %s", err, stderr.String())
-	}
-	parts := bytes.SplitN(stdout.Bytes(), []byte{0}, 5)
-	if len(parts) != 5 {
-		t.Fatalf("oracle output missing NUL fields: %q", stdout.String())
-	}
-	code, err = atoi(parts[1])
-	if err != nil {
-		t.Fatalf("bad oracle exit code %q: %v", parts[1], err)
-	}
-	return string(parts[0]), code, string(parts[2]) == "1", string(parts[3]) == "1", parts[4]
-}
-
-func atoi(b []byte) (int, error) {
-	var n int
-	if err := json.Unmarshal(b, &n); err != nil {
-		return 0, err
-	}
-	return n, nil
-}
-
 func loadInitFixtures(t *testing.T, path string) []initFixture {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -232,11 +164,7 @@ type pruneFixture struct {
 }
 
 func TestPruneHistoryConformance(t *testing.T) {
-	if _, err := exec.LookPath("ruby"); err != nil {
-		t.Skip("ruby not found; conformance diff needs the Ruby oracle")
-	}
 	root := repoRoot(t)
-	oracle := filepath.Join(root, "conformance", "init_prune_oracle.rb")
 
 	for _, fx := range loadPruneFixtures(t, filepath.Join(root, "conformance", "init_prune_fixtures.json")) {
 		t.Run(fx.Name, func(t *testing.T) {
@@ -267,15 +195,8 @@ func TestPruneHistoryConformance(t *testing.T) {
 				t.Fatalf("read go hist: %v", err)
 			}
 
-			// Ruby oracle side.
-			rubyRemoved, rubyBody := runPruneOracle(t, oracle, fx, filepath.Join(t.TempDir(), "hist.jsonl"))
-
-			if goRemoved != rubyRemoved {
-				t.Errorf("removed count mismatch: go=%d ruby=%d", goRemoved, rubyRemoved)
-			}
-			if !bytes.Equal(goBody, rubyBody) {
-				t.Errorf("history mismatch\n go:   %q\n ruby: %q", goBody, rubyBody)
-			}
+			golden.Assert(t, filepath.Join(root, "conformance", "golden", "initcmd", fx.Name+".prune.txt"),
+				pruneEnvelope(goRemoved, goBody))
 		})
 	}
 }
@@ -286,32 +207,6 @@ func (fx pruneFixture) parseKeepDays() (float64, error) {
 		return 0, err
 	}
 	return f, nil
-}
-
-func runPruneOracle(t *testing.T, oracle string, fx pruneFixture, histPath string) (int, []byte) {
-	t.Helper()
-	in, err := json.Marshal(map[string]any{"now": fx.Now, "hist": fx.Hist})
-	if err != nil {
-		t.Fatalf("marshal oracle input: %v", err)
-	}
-	cmd := exec.Command("ruby", oracle)
-	cmd.Stdin = bytes.NewReader(in)
-	cmd.Env = append(envWithout(os.Environ(), "CCPOOL_HISTORY"), "CCPOOL_HISTORY="+histPath)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("oracle failed: %v\nstderr: %s", err, stderr.String())
-	}
-	parts := bytes.SplitN(stdout.Bytes(), []byte{0}, 2)
-	if len(parts) != 2 {
-		t.Fatalf("oracle output missing NUL separator: %q", stdout.String())
-	}
-	removed, err := atoi(parts[0])
-	if err != nil {
-		t.Fatalf("bad removed count %q: %v", parts[0], err)
-	}
-	return removed, parts[1]
 }
 
 func loadPruneFixtures(t *testing.T, path string) []pruneFixture {
@@ -329,18 +224,48 @@ func loadPruneFixtures(t *testing.T, path string) []pruneFixture {
 	return fs
 }
 
-// --- shared helpers (mirrors of the other conformance tests) ---
+// initEnvelope serializes the init result the same way init_oracle.rb does (NUL-separated:
+// stdout, exit code, is-symlink bit, exists bit, settings bytes) so one golden captures every field.
+func initEnvelope(out string, code int, isSymlink, exists bool, body []byte) []byte {
+	var buf bytes.Buffer
+	buf.WriteString(out)
+	buf.WriteByte(0)
+	buf.WriteString(strconv.Itoa(code))
+	buf.WriteByte(0)
+	buf.WriteString(bit(isSymlink))
+	buf.WriteByte(0)
+	buf.WriteString(bit(exists))
+	buf.WriteByte(0)
+	buf.Write(body)
+	return buf.Bytes()
+}
 
-func envWithout(env []string, key string) []string {
-	out := env[:0:0]
-	prefix := key + "="
-	for _, e := range env {
-		if len(e) >= len(prefix) && e[:len(prefix)] == prefix {
-			continue
-		}
-		out = append(out, e)
+// pruneEnvelope mirrors init_prune_oracle.rb's <removed_count>\0<history_bytes>.
+func pruneEnvelope(removed int, body []byte) []byte {
+	var buf bytes.Buffer
+	buf.WriteString(strconv.Itoa(removed))
+	buf.WriteByte(0)
+	buf.Write(body)
+	return buf.Bytes()
+}
+
+func bit(b bool) string {
+	if b {
+		return "1"
 	}
-	return out
+	return "0"
+}
+
+// normInitPaths tokenizes the per-run temp settings dir (in both its /var and macOS-resolved
+// /private/var forms) so the init golden is reproducible: the volatile dir is the only
+// machine-specific content in init's stdout ("wiring plan for <path>", "real target: <path>"). The
+// same substitution runs on both sides, so a diff in any real content still surfaces. The resolved
+// form (a prefix superset of dir) must be replaced first, else the plain-dir pass mangles it.
+func normInitPaths(b []byte, dir string) []byte {
+	if real, err := filepath.EvalSymlinks(dir); err == nil && real != dir {
+		b = bytes.ReplaceAll(b, []byte(real), []byte("<DIR>"))
+	}
+	return bytes.ReplaceAll(b, []byte(dir), []byte("<DIR>"))
 }
 
 func repoRoot(t *testing.T) string {

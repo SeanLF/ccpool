@@ -1,0 +1,2 @@
+weekly pool: no data yet. Wire `ccpool statusline` as your Claude Code
+statusLine command (settings.json) so it can capture rate_limits, then use CC once.

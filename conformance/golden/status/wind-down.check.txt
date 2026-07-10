@@ -1,0 +1,10 @@
+0
+time     2024-07-03 09:46 UTC (Wed)
+data     fresh (10s ago)
+
+SESSION  30% used  ·  resets in 1h 0m  (5h window)
+WEEKLY   95% used  ·  resets in 1d 0h  (7d window)
+         86% of week elapsed -> 9pts AHEAD of even-burn pace (burning fast)
+         pace guide: ~5%/day spends the rest evenly to reset (not a hard cap)
+
+VERDICT  WIND DOWN -- weekly pool is nearly spent (5% left). Land what's in flight and stop for the week. Finish the task if that's cheaper than a handover; otherwise stop at a natural boundary and checkpoint properly -- update docs and leave a handover note so the next session resumes cheaply.

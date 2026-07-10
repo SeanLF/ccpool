@@ -1,0 +1,12 @@
+0
+time     2024-07-03 09:46 UTC (Wed)
+data     fresh (10s ago)
+
+SESSION  30% used  ·  resets in 1h 0m  (5h window)
+WEEKLY   40% used  ·  resets in 8h 20m  (7d window)
+         95% of week elapsed -> 55pts UNDER even-burn pace -- expected unless you run 24/7 (idle/sleep counts as elapsed)
+         pace guide: ~60%/day spends the rest evenly to reset (not a hard cap)
+         burn: ~2.5%/h -> even non-stop, resets before you'd reach the cap, fine
+         runway: budget outlasts the week -> reset (8h) comes first with headroom, burn freely
+
+VERDICT  BURN DOWN -- 60% unspent, reset in 8h 20m; at your ~1/7/day pace ~55% would go UNSPENT and reset to zero (you can't bank it). If you have valuable but deferrable work -- deep passes, parallel fan-outs, research, an overnight loop -- spend it now: go bigger/parallel. Not busywork, but don't waste the headroom.

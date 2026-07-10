@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/SeanLF/ccpool/internal/golden"
 )
 
 // The status + check readouts must be byte-identical to the Ruby CCPool.status / Check.report, which
@@ -41,30 +42,26 @@ var readoutEnvKeys = []string{
 }
 
 func TestStatusConformance(t *testing.T) {
-	runReadoutConformance(t, "status_fixtures.json", "status_oracle.rb", func(now int64) string {
+	runReadoutConformance(t, "status", "status_fixtures.json", func(now int64) string {
 		return strings.Join(Status(now), "\n") + "\n"
-	}, func(oracleOut string) string { return oracleOut })
+	})
 }
 
 func TestCheckConformance(t *testing.T) {
-	runReadoutConformance(t, "check_fixtures.json", "check_oracle.rb", func(now int64) string {
+	runReadoutConformance(t, "check", "check_fixtures.json", func(now int64) string {
 		lines, code := Report(now)
 		return strconv.Itoa(code) + "\n" + strings.Join(lines, "\n")
-	}, func(oracleOut string) string { return oracleOut })
+	})
 }
 
-// runReadoutConformance drives one fixture file: stage each case identically on both sides, render
-// Go via goRender, run the Ruby oracle, and diff byte-for-byte.
-func runReadoutConformance(t *testing.T, fixturesFile, oracleFile string, goRender func(int64) string, normOracle func(string) string) {
-	if _, err := exec.LookPath("ruby"); err != nil {
-		t.Skip("ruby not found; conformance diff needs the Ruby oracle")
-	}
-	// Pin the zone on both sides: check's %Z line and the scheduled-profile pace depend on it.
+// runReadoutConformance drives one fixture file: stage each case, render Go via goRender, and diff
+// byte-for-byte against the committed golden (which names the output family: "status" or "check").
+func runReadoutConformance(t *testing.T, which, fixturesFile string, goRender func(int64) string) {
+	// Pin the zone: check's %Z line and the scheduled-profile pace depend on it (goldens captured under UTC).
 	time.Local = time.UTC
 	t.Setenv("TZ", "UTC")
 
 	root := repoRoot(t)
-	oracle := filepath.Join(root, "conformance", oracleFile)
 	fakeCmd := "sh " + filepath.Join(root, "conformance", "fake-ccusage.sh")
 	fixtures := loadReadoutFixtures(t, filepath.Join(root, "conformance", fixturesFile))
 
@@ -81,13 +78,10 @@ func runReadoutConformance(t *testing.T, fixturesFile, oracleFile string, goRend
 				t.Fatalf("bad now %q: %v", fx.Now, err)
 			}
 
-			rubyEnv := stageReadout(t, fx, fakeCmd)
+			stageReadout(t, fx, fakeCmd)
 			goOut := goRender(now)
-			rubyOut := runReadoutOracle(t, oracle, fx, rubyEnv)
 
-			if goOut != normOracle(rubyOut) {
-				t.Errorf("readout mismatch\n go:   %q\n ruby: %q", goOut, rubyOut)
-			}
+			golden.Assert(t, filepath.Join(root, "conformance", "golden", "status", fx.Name+"."+which+".txt"), []byte(goOut))
 		})
 	}
 }
@@ -152,24 +146,6 @@ func stageReadout(t *testing.T, fx readoutFixture, fakeCmd string) []string {
 		"CCPOOL_BLOCKS_CACHE="+filepath.Join(rubyDir, "blocks-cache.json"),
 		"CCPOOL_CALIB_CACHE="+rubyCalib,
 	)
-}
-
-func runReadoutOracle(t *testing.T, oracle string, fx readoutFixture, env []string) string {
-	t.Helper()
-	in, err := json.Marshal(map[string]any{"now": fx.Now})
-	if err != nil {
-		t.Fatalf("marshal oracle input: %v", err)
-	}
-	cmd := exec.Command("ruby", oracle)
-	cmd.Stdin = bytes.NewReader(in)
-	cmd.Env = env
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("oracle failed: %v\nstderr: %s", err, stderr.String())
-	}
-	return stdout.String()
 }
 
 func loadReadoutFixtures(t *testing.T, path string) []readoutFixture {

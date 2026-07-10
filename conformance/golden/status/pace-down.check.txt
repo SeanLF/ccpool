@@ -1,0 +1,10 @@
+0
+time     2024-07-03 09:46 UTC (Wed)
+data     fresh (10s ago)
+
+SESSION  30% used  ·  resets in 1h 0m  (5h window)
+WEEKLY   70% used  ·  resets in 5d 0h  (7d window)
+         29% of week elapsed -> 41pts AHEAD of even-burn pace (burning fast)
+         pace guide: ~6%/day spends the rest evenly to reset (not a hard cap)
+
+VERDICT  PACE DOWN -- 30% weekly headroom, but you're past the linear share of the week. Front-loaded, not doomed -- it self-corrects for interactive work. Before a big new thread, spread the spend; finish or checkpoint what's in flight first.

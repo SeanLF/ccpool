@@ -1,0 +1,5 @@
+rhythm (last 30d · 192 messages · local UTC+0)
+  weak/continuous rhythm -- your loops fill the clock  (R=0.00)
+  activity  ████████████████████████  midnight -> midnight
+  busiest 00:00 · quietest 00:00 · active ~24h/day
+  suggested: CCPOOL_PACE_PROFILE=even   (R too low for a schedule to help)

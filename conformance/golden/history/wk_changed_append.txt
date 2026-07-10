@@ -1,0 +1,2 @@
+{"t":1719999970,"wk":45,"wk_reset":1720345600,"ses":30,"ses_reset":1720003600,"tier":"max_20x","cost":null,"session":"s1"}
+{"t":1720000000,"wk":46,"wk_reset":1720345600,"ses":31,"ses_reset":1720003600,"tier":"max_20x","cost":null,"session":"s1"}

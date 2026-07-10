@@ -1,0 +1,10 @@
+0
+time     2024-07-03 09:46 UTC (Wed)
+data     fresh (10s ago)
+
+SESSION  95% used  ·  resets in 1h 0m  (5h window)
+WEEKLY   40% used  ·  resets in 3d 0h  (7d window)
+         57% of week elapsed -> 17pts UNDER even-burn pace -- expected unless you run 24/7 (idle/sleep counts as elapsed)
+         pace guide: ~20%/day spends the rest evenly to reset (not a hard cap)
+
+VERDICT  SESSION-LIMITED -- 5h window almost full (resets in 1h 0m). TEMPORARY: land in-flight work, then pause and resume after the session resets. Do NOT call the work done while 60% of the weekly pool remains.

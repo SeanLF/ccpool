@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/SeanLF/ccpool/internal/golden"
 )
 
 // The `ccpool review` readout must be byte-identical to Ruby CCPool.review (docs/GO-MIGRATION.md).
@@ -33,15 +34,11 @@ type reviewFixture struct {
 var envKeys = []string{"CCPOOL_PROJECTS", "CCPOOL_LOW_OUTPUT"}
 
 func TestReviewConformance(t *testing.T) {
-	if _, err := exec.LookPath("ruby"); err != nil {
-		t.Skip("ruby not found; conformance diff needs the Ruby oracle")
-	}
-	// Pin the zone for both sides so RFC3339 timestamp -> unix and the window cutoff agree.
+	// Pin the zone so RFC3339 timestamp -> unix and the window cutoff agree (goldens captured under UTC).
 	time.Local = time.UTC
 	t.Setenv("TZ", "UTC")
 
 	root := repoRoot(t)
-	oracle := filepath.Join(root, "conformance", "review_oracle.rb")
 	fixtures := loadReviewFixtures(t, filepath.Join(root, "conformance", "review_fixtures.json"))
 
 	for _, fx := range fixtures {
@@ -64,13 +61,7 @@ func TestReviewConformance(t *testing.T) {
 			stageFiles(t, goProjects, fx, now)
 			goOut := RenderCommand(fx.Args, now)
 
-			// Ruby side: the oracle stages into a separate projects dir it reads from CCPOOL_PROJECTS.
-			rubyProjects := t.TempDir()
-			rubyOut := runReviewOracle(t, oracle, fx, rubyProjects)
-
-			if goOut != string(rubyOut) {
-				t.Errorf("review mismatch\n go:   %q\n ruby: %q", goOut, string(rubyOut))
-			}
+			golden.Assert(t, filepath.Join(root, "conformance", "golden", "analyzer", fx.Name+".txt"), []byte(goOut))
 		})
 	}
 }
@@ -117,42 +108,6 @@ func loadReviewFixtures(t *testing.T, path string) []reviewFixture {
 		t.Fatalf("decode fixtures: %v", err)
 	}
 	return fs
-}
-
-// runReviewOracle runs CCPool.review through the Ruby oracle with CCPOOL_PROJECTS pointed at its own
-// dir (frozen into a constant at require time, so it must be in the process env before load).
-func runReviewOracle(t *testing.T, oracle string, fx reviewFixture, projects string) []byte {
-	t.Helper()
-	args := fx.Args
-	if args == nil {
-		args = []string{}
-	}
-	in, err := json.Marshal(map[string]any{"now": fx.Now, "args": args, "files": fx.Files})
-	if err != nil {
-		t.Fatalf("marshal oracle input: %v", err)
-	}
-	cmd := exec.Command("ruby", oracle)
-	cmd.Stdin = bytes.NewReader(in)
-	cmd.Env = append(envWithout(os.Environ(), "CCPOOL_PROJECTS"), "CCPOOL_PROJECTS="+projects)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("oracle failed: %v\nstderr: %s", err, stderr.String())
-	}
-	return stdout.Bytes()
-}
-
-func envWithout(env []string, key string) []string {
-	out := env[:0:0]
-	prefix := key + "="
-	for _, e := range env {
-		if len(e) >= len(prefix) && e[:len(prefix)] == prefix {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
 }
 
 func repoRoot(t *testing.T) string {

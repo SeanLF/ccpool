@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/SeanLF/ccpool/internal/golden"
 )
 
 // The rendered `ccpool rhythm` output must be byte-identical to Ruby CCPool.rhythm. For each fixture
@@ -47,11 +48,7 @@ type rawSpec struct {
 var rhythmEnvKeys = []string{"CCPOOL_RHYTHM_WINDOW", "CCPOOL_RHYTHM_R", "CCPOOL_RHYTHM_PEAK", "CCPOOL_CLOCK"}
 
 func TestRhythmConformance(t *testing.T) {
-	if _, err := exec.LookPath("ruby"); err != nil {
-		t.Skip("ruby not found; conformance diff needs the Ruby oracle")
-	}
 	root := repoRoot(t)
-	oracle := filepath.Join(root, "conformance", "rhythm_oracle.rb")
 	fixtures := loadFixtures(t, filepath.Join(root, "conformance", "rhythm_fixtures.json"))
 
 	savedLocal := time.Local
@@ -79,11 +76,8 @@ func TestRhythmConformance(t *testing.T) {
 			t.Setenv("CCPOOL_PROJECTS", projects)
 
 			goOut := strings.Join(Report(now), "\n") + "\n"
-			rubyOut := runOracle(t, oracle, projects, fx, now)
 
-			if goOut != rubyOut {
-				t.Errorf("rhythm mismatch\n go:   %q\n ruby: %q", goOut, rubyOut)
-			}
+			golden.Assert(t, filepath.Join(root, "conformance", "golden", "rhythm", fx.Name+".txt"), []byte(goOut))
 		})
 	}
 }
@@ -130,28 +124,6 @@ func stageCorpus(t *testing.T, projects string, fx rhythmFixture, now int64) {
 func fmtHour(h int) string {
 	hh := "0" + itoa(h)
 	return "T" + hh[len(hh)-2:] + ":30:00Z"
-}
-
-func runOracle(t *testing.T, oracle, projects string, fx rhythmFixture, now int64) string {
-	t.Helper()
-	in, err := json.Marshal(map[string]any{"now": fx.Now})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	env := append(os.Environ(), "CCPOOL_PROJECTS="+projects, "TZ="+fx.TZ)
-	for k, v := range fx.Env {
-		env = append(env, k+"="+v)
-	}
-	cmd := exec.Command("ruby", oracle)
-	cmd.Stdin = bytes.NewReader(in)
-	cmd.Env = env
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("oracle failed: %v\nstderr: %s", err, stderr.String())
-	}
-	return stdout.String()
 }
 
 func loadFixtures(t *testing.T, path string) []rhythmFixture {

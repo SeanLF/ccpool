@@ -1,0 +1,1 @@
+[usage-session] 5h SESSION window at 90% (resets in 1h 0m) -- you will auto-throttle soon. Land or checkpoint in-flight work before the pause. This is a short wait, not done for the week, if the weekly pool still has room.

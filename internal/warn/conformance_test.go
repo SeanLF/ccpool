@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
+
+	"github.com/SeanLF/ccpool/internal/golden"
 )
 
 // warn's emitted text and PostToolUse hook JSON must be byte-identical to Ruby Warn.run. For each
@@ -34,13 +35,9 @@ var warnEnvKeys = []string{
 var markerKeyUnsafe = regexp.MustCompile(`[^\w.-]`)
 
 func TestWarnConformance(t *testing.T) {
-	if _, err := exec.LookPath("ruby"); err != nil {
-		t.Skip("ruby not found; conformance diff needs the Ruby oracle")
-	}
-	time.Local = time.UTC // pin Go's zone to match the oracle's TZ=UTC (scheduled-profile pace)
+	time.Local = time.UTC // pin Go's zone to the zone the goldens were captured under (scheduled-profile pace)
 	t.Setenv("TZ", "UTC")
 	root := repoRoot(t)
-	oracle := filepath.Join(root, "conformance", "warn_oracle.rb")
 	fixtures := loadWarnFixtures(t, filepath.Join(root, "conformance", "warn_fixtures.json"))
 
 	for _, fx := range fixtures {
@@ -62,12 +59,7 @@ func TestWarnConformance(t *testing.T) {
 			t.Setenv("TMPDIR", goTmp)
 			goOut := Run(fx.Payload, now)
 
-			// Ruby side (its own dirs).
-			rubyOut := runWarnOracle(t, oracle, fx, now)
-
-			if goOut != rubyOut {
-				t.Errorf("warn mismatch\n go:   %q\n ruby: %q", goOut, rubyOut)
-			}
+			golden.Assert(t, filepath.Join(root, "conformance", "golden", "warn", fx.Name+".txt"), []byte(goOut))
 		})
 	}
 }
@@ -124,34 +116,6 @@ func loadWarnFixtures(t *testing.T, path string) []warnFixture {
 		t.Fatalf("decode fixtures: %v", err)
 	}
 	return fs
-}
-
-func runWarnOracle(t *testing.T, oracle string, fx warnFixture, now int64) string {
-	t.Helper()
-	cacheDir := t.TempDir()
-	tmpDir := t.TempDir()
-	writeSnaps(t, cacheDir, fx.Snaps)
-	writeMarkers(t, tmpDir, fx)
-
-	in, err := json.Marshal(map[string]any{"now": fx.Now, "payload": fx.Payload})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	env := append(
-		os.Environ(),
-		"USAGE_CACHE="+filepath.Join(cacheDir, "usage-cache.json"),
-		"TMPDIR="+tmpDir,
-	)
-	cmd := exec.Command("ruby", oracle)
-	cmd.Stdin = bytes.NewReader(in)
-	cmd.Env = env
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("oracle failed: %v\nstderr: %s", err, stderr.String())
-	}
-	return stdout.String()
 }
 
 func repoRoot(t *testing.T) string {

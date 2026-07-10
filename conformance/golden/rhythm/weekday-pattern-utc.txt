@@ -1,0 +1,5 @@
+rhythm (last 30d · 400 messages · local UTC+0)
+  strong day/night rhythm  (R=0.83)
+  activity           ████████         midnight -> midnight
+  busiest 09:00 · quietest 00:00 · active ~8h/day
+  suggested: CCPOOL_WAKE_HOURS=9-17 CCPOOL_WORK_DAYS=1-5   (strong rhythm -- pace to it)

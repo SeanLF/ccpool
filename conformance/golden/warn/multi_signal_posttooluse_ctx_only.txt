@@ -1,0 +1,1 @@
+{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"[context] this session is at 95% of the 200k context window (~10k left) -- auto-compaction is near. Land or checkpoint important state now, and consider /compact at a clean point so it doesn't cut mid-task."}}

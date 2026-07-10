@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/SeanLF/ccpool/internal/golden"
 )
 
 // downshift_env's decision (env overrides + message) must be byte-identical to Ruby
@@ -33,13 +34,9 @@ var dsEnvKeys = []string{
 }
 
 func TestDownshiftConformance(t *testing.T) {
-	if _, err := exec.LookPath("ruby"); err != nil {
-		t.Skip("ruby not found; conformance diff needs the Ruby oracle")
-	}
-	time.Local = time.UTC // pin Go's zone to match the oracle's TZ=UTC (scheduled-profile pace)
+	time.Local = time.UTC // pin Go's zone to the zone the goldens were captured under (scheduled-profile pace)
 	t.Setenv("TZ", "UTC")
 	root := repoRoot(t)
-	oracle := filepath.Join(root, "conformance", "downshift_oracle.rb")
 	fakeCmd := "sh " + filepath.Join(root, "conformance", "fake-ccusage.sh")
 	fixtures := loadFixtures(t, filepath.Join(root, "conformance", "downshift_fixtures.json"))
 
@@ -77,11 +74,7 @@ func TestDownshiftConformance(t *testing.T) {
 			env, msg := DownshiftEnv(now)
 			goOut := formatDS(t, env, msg)
 
-			rubyOut := runOracle(t, oracle, now, filepath.Join(dir, "ruby-blocks.json"))
-
-			if goOut != rubyOut {
-				t.Errorf("downshift mismatch\n go:   %q\n ruby: %q", goOut, rubyOut)
-			}
+			golden.Assert(t, filepath.Join(root, "conformance", "golden", "run", fx.Name+".txt"), []byte(goOut))
 		})
 	}
 }
@@ -124,27 +117,6 @@ func loadFixtures(t *testing.T, path string) []dsFixture {
 		t.Fatalf("decode fixtures: %v", err)
 	}
 	return fs
-}
-
-// runOracle runs the Ruby oracle, inheriting the staged env (USAGE_CACHE, CCPOOL_CALIB_CACHE, the
-// fake ccusage, the knobs) but with its own blocks cache so it never reads the Go side's.
-func runOracle(t *testing.T, oracle string, now int64, rubyBlocksCache string) string {
-	t.Helper()
-	in, err := json.Marshal(map[string]any{"now": now})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	env := append(os.Environ(), "CCPOOL_BLOCKS_CACHE="+rubyBlocksCache)
-	cmd := exec.Command("ruby", oracle)
-	cmd.Stdin = bytes.NewReader(in)
-	cmd.Env = env
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("oracle failed: %v\nstderr: %s", err, stderr.String())
-	}
-	return stdout.String()
 }
 
 func mustWrite(t *testing.T, path, content string) {

@@ -1,0 +1,2 @@
+pace +21pts (50% used est) -> downshifting subagents to haiku/low
+{"CLAUDE_CODE_EFFORT_LEVEL":"low","CLAUDE_CODE_SUBAGENT_MODEL":"haiku"}

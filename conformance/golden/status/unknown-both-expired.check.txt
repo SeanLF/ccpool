@@ -1,0 +1,8 @@
+0
+time     2024-07-03 09:46 UTC (Wed)
+data     fresh (10s ago)
+
+SESSION  (no live 5h window across sessions -- all snapshots predate the last reset)
+WEEKLY   (no live 7d window across sessions -- snapshots missing or stale)
+
+VERDICT  UNKNOWN -- no live budget data across snapshots. Don't guess; re-render the statusline.

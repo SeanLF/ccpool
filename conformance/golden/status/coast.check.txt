@@ -1,0 +1,10 @@
+0
+time     2024-07-03 09:46 UTC (Wed)
+data     fresh (10s ago)
+
+SESSION  30% used  ·  resets in 1h 0m  (5h window)
+WEEKLY   95% used  ·  resets in 8h 20m  (7d window)
+         95% of week elapsed -> on even-burn pace
+         pace guide: ~5%/day spends the rest evenly to reset (not a hard cap)
+
+VERDICT  COAST -- weekly is nearly spent (5% left) but it resets in 8h 20m. Unspent budget is use-it-or-lose-it, so spend the rest freely.

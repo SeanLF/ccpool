@@ -1,0 +1,4 @@
+Weekly pool  ·  40% used  ·  ~$300 left of ~$500 (API-equiv)  ·  resets Sat 07-06 09:46 (3d 0h)
+Pace         ·  8 pts under pace (48% of your work-rhythm pace) -- banked headroom
+Burn         ·  ~4.2%/h -> hits cap in ~0.6d; ⚠ ~2.4d BEFORE reset -- you'll throttle early
+Runway       ·  ~5-10 working-hours of pool left -> at your active-hour burn you'd throttle before reset (3d 0h out)

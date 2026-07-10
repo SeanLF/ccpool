@@ -1,0 +1,11 @@
+0
+time     2024-07-03 09:46 UTC (Wed)
+data     fresh (10s ago)
+
+SESSION  30% used  ·  resets in 1h 0m  (5h window)
+WEEKLY   50% used  ·  resets in 3d 0h  (7d window)
+         57% of week elapsed -> 7pts UNDER even-burn pace -- expected unless you run 24/7 (idle/sleep counts as elapsed)
+         pace guide: ~17%/day spends the rest evenly to reset (not a hard cap)
+         burn: history unreadable -- projection unavailable (not a clear signal)
+
+VERDICT  KEEP GOING -- 50% weekly headroom, session has room. Spend the budget you were asked to spend.

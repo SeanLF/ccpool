@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/SeanLF/ccpool/internal/golden"
 )
 
 // The $/1% calibration must match Ruby's compute (wk_runs run-detection, the Anthropic block
@@ -23,11 +24,7 @@ type computeFixture struct {
 }
 
 func TestComputeConformance(t *testing.T) {
-	if _, err := exec.LookPath("ruby"); err != nil {
-		t.Skip("ruby not found; conformance diff needs the Ruby oracle")
-	}
 	root := repoRoot(t)
-	oracle := filepath.Join(root, "conformance", "compute_oracle.rb")
 	fakeCmd := "sh " + filepath.Join(root, "conformance", "fake-ccusage.sh")
 	fixtures := loadComputeFixtures(t, filepath.Join(root, "conformance", "compute_fixtures.json"))
 
@@ -56,11 +53,7 @@ func TestComputeConformance(t *testing.T) {
 				goOut = fmt.Sprintf("%.4f", dpp)
 			}
 
-			rubyOut := runComputeOracle(t, oracle, fx, dir)
-
-			if goOut != rubyOut {
-				t.Errorf("dpp mismatch: go=%s ruby=%s", goOut, rubyOut)
-			}
+			golden.Assert(t, filepath.Join(root, "conformance", "golden", "calib", fx.Name+".txt"), []byte(goOut))
 		})
 	}
 }
@@ -78,30 +71,6 @@ func loadComputeFixtures(t *testing.T, path string) []computeFixture {
 		t.Fatalf("decode fixtures: %v", err)
 	}
 	return fs
-}
-
-func runComputeOracle(t *testing.T, oracle string, fx computeFixture, dir string) string {
-	t.Helper()
-	in, err := json.Marshal(map[string]any{"now": fx.Now})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	// Ruby uses its own cache files; everything else (history, fake ccusage, fixture) is shared.
-	env := append(
-		os.Environ(),
-		"CCPOOL_BLOCKS_CACHE="+filepath.Join(dir, "ruby-blocks.json"),
-		"CCPOOL_CALIB_CACHE="+filepath.Join(dir, "ruby-calib.json"),
-	)
-	cmd := exec.Command("ruby", oracle)
-	cmd.Stdin = bytes.NewReader(in)
-	cmd.Env = env
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("oracle failed: %v\nstderr: %s", err, stderr.String())
-	}
-	return stdout.String()
 }
 
 func mustWrite(t *testing.T, path, content string) {
