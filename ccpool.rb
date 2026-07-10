@@ -17,6 +17,7 @@ require_relative "pool"
 require_relative "calibration"
 require_relative "analyzer"
 require_relative "burn"
+require_relative "statusline"
 
 module CCPool
   MARGIN  = (ENV["CCPOOL_PACE_MARGIN"] || "3").to_f
@@ -119,14 +120,8 @@ module CCPool
     end
     seed_history(payload, now)
 
-    wk = Pool.weekly(now)
-    return puts("ccpool: warming up") unless wk
-
-    dpp = Calibration.read_cache&.dig("dpp") # cached only -- statusline must stay fast
-    left = dpp ? " · #{usdk((100 - wk[:used]) * dpp)} left" : ""
-    p = Pool.pace(wk[:used], wk[:reset], now)
-    tag = p[:to_reset] < COAST ? "reset<#{dur(p[:to_reset])}" : (p[:delta] > MARGIN ? "+#{p[:delta].round}↑" : "#{p[:delta].round}↓")
-    puts "pool #{wk[:used].round}%#{left} · pace #{tag}"
+    line = Statusline.render(payload, now) # rich: ctx · cache · 5h · weekly meter (coloured) + $
+    print line unless line.to_s.empty?
   rescue StandardError
     # a statusline must NEVER break Claude Code
   end

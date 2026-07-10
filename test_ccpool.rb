@@ -158,7 +158,7 @@ ok("downshift_env: near reset -> no downshift (coast/burn it)", env.empty? && ms
 clear_snaps
 File.write(ENV["CCPOOL_HISTORY"], "")
 out = capture(JSON.generate("session_id" => "t", "rate_limits" => { "seven_day" => { "used_percentage" => 10, "resets_at" => NOW + 300_000 } })) { CCPool.statusline(NOW) }
-ok("statusline renders a compact line", out.include?("pool 10%"))
+ok("statusline renders the rich weekly line", out.include?("wk") && out.include?("10%"))
 ok("statusline wrote a snapshot", File.exist?(ENV["USAGE_CACHE"].sub(/\.json\z/, "-t.json")))
 ok("statusline seeded history", File.read(ENV["CCPOOL_HISTORY"]).include?('"wk":10'))
 
