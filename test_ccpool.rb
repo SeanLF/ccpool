@@ -185,6 +185,84 @@ r = Analyzer.review(days: 7, now: NOW)
 ok("Analyzer counts only expensive Claude turns", r[:exp_turns] == 2)
 ok("Analyzer flags the trivial expensive turn", r[:exp_trivial] == 1)
 
+# ---- Rhythm -----------------------------------------------------------------------
+# Pure circular stats + window math (TZ-independent).
+ok("circ: single spike -> R~1", (Rhythm.circ(Array.new(24, 0).tap { _1[14] = 100 })[1] - 1.0).abs < 0.01)
+ok("circ: uniform -> R~0", Rhythm.circ(Array.new(24, 5))[1] < 0.01)
+ok("wake_window: daytime block 9..16 -> [9,17]", Rhythm.wake_window((9..16).to_a) == [9, 17])
+ok("wake_window: straddles midnight -> wraps (h1<=h0)", Rhythm.wake_window([22, 23, 0, 1, 2]).then { |a| a[1] <= a[0] })
+ok("fmt_set: contiguous -> range", Rhythm.fmt_set([1, 2, 3, 4, 5]) == "1-5")
+ok("fmt_set: gapped -> comma list", Rhythm.fmt_set([6, 0, 1, 5]) == "0,1,5,6")
+ok("suggestion: low R -> even", Rhythm.suggestion(0.3, Array.new(24, 5), Array.new(7, 5)).include?("PACE_PROFILE=even"))
+ok("suggestion: strong daytime -> WAKE_HOURS",
+   Rhythm.suggestion(0.9, Array.new(24, 0).tap { |a| (9..16).each { |h| a[h] = 50 } }, Array.new(7, 5)).include?("CCPOOL_WAKE_HOURS=9-17"))
+
+# Integration: a corpus concentrated in a local-hour block reads as a strong rhythm. Pin TZ=UTC
+# so local == the UTC hour we write, making the assertion machine-independent.
+ENV["TZ"] = "UTC"
+FileUtils.mkdir_p("#{ENV['CCPOOL_PROJECTS']}/rh")
+File.open("#{ENV['CCPOOL_PROJECTS']}/rh/r.jsonl", "w") do |f|
+  0.upto(6) do |d|                      # last 7 days
+    [13, 14, 15, 16].each do |h|        # busy 1pm-4pm UTC
+      20.times { f.puts JSON.generate("timestamp" => Time.at(NOW - d * 86_400).utc.strftime("%Y-%m-%dT#{format('%02d', h)}:30:00Z")) }
+    end
+  end
+end
+lines = Rhythm.report(NOW)
+ok("Rhythm.report: header names the window + local TZ", lines.first.match?(/\Arhythm \(last 30d · .+ messages · local UTC\+0\)/))
+ok("Rhythm.report: strong block -> strong headline + a schedule suggestion",
+   lines.any? { _1.include?("strong day/night") } && lines.any? { _1.include?("CCPOOL_WAKE_HOURS=") })
+ok("Rhythm.report: R demoted to a trailing detail, not the lead", lines.any? { _1.match?(/\A  strong day\/night rhythm  \(R=/) })
+ok("Rhythm.report: busiest hour rendered 24h, in the concentrated block", lines.any? { _1.match?(/busiest 1[3-6]:00/) })
+
+# Recency filter must use the LOCAL date, not the raw UTC date. In a negative-offset zone a late
+# local-evening event has already rolled to the next UTC calendar day; filtering on the UTC date
+# would drop it from "the last 30d". TZ=UTC-4, "now" = 10pm local (= 2am UTC next day).
+ENV["TZ"] = "Etc/GMT+4" # POSIX sign-inverted -> UTC-4, no DST
+evening = Time.new(2026, 7, 10, 22, 0, 0, "-04:00").to_i
+File.open("#{ENV['CCPOOL_PROJECTS']}/rh/rollover.jsonl", "w") do |f|
+  50.times { f.puts JSON.generate("timestamp" => "2026-07-11T02:30:00Z") } # UTC July 11, but local July 10 22:00
+end
+rolled = Rhythm.scan(evening)
+ok("Rhythm.scan: local-evening event (next UTC day) still counts as today", rolled[:hours][22] >= 50)
+ENV["TZ"] = nil
+
+# ---- Clock ------------------------------------------------------------------------
+ok("Clock.resolve: default -> 24h", Clock.resolve(nil) == 24 && Clock.resolve("24") == 24)
+ok("Clock.resolve: explicit 12h", Clock.resolve("12") == 12)
+ok("Clock.resolve: garbage -> 24h (predictable default)", Clock.resolve("banana") == 24)
+ok("Clock.resolve: auto -> a concrete 12 or 24", [12, 24].include?(Clock.resolve("auto")))
+ok("Clock.hour: 24h formatting", Clock.hour(18, h12: false) == "18:00" && Clock.hour(0, h12: false) == "00:00")
+ok("Clock.hour: 12h formatting", Clock.hour(18, h12: true) == "6pm" && Clock.hour(0, h12: true) == "12am" && Clock.hour(12, h12: true) == "12pm")
+ok("Clock.time: 24h vs 12h", Clock.time(Time.new(2026, 7, 10, 22, 30), h12: false) == "22:30" &&
+                             Clock.time(Time.new(2026, 7, 10, 22, 30), h12: true) == "10:30pm")
+
+# ---- help + statusline preview ----------------------------------------------------
+help = capture { CCPool.help }
+ok("help lists every subcommand", %w[status check rhythm run review statusline warn prune].all? { help.include?("  #{_1}") })
+ok("help names the clock knob", help.include?("CCPOOL_CLOCK"))
+
+clear_snaps
+snap("prev", week: 40, reset_in: 3 * 86_400)
+preview = capture { CCPool.preview_statusline(NOW) }  # bypasses the tty gate -> renders newest snapshot
+ok("statusline preview renders from a snapshot", preview.include?("40%") || preview.match?(/\d+%/))
+clear_snaps
+nowhere = capture { CCPool.preview_statusline(NOW) }   # no snapshots -> quiet, no crash, no stdout
+ok("statusline preview with no snapshot -> no stdout (guidance goes to stderr)", nowhere.strip.empty?)
+
+# NO_COLOR contract. COLOR resolves at load, so exercise it in subprocesses (child inherits the
+# hermetic TMP env). Payload on stdin -> the real render path.
+sl_payload = JSON.generate("session_id" => "t", "rate_limits" => { "seven_day" => { "used_percentage" => 30, "resets_at" => NOW + 300_000 } })
+sl_run = lambda do |env|
+  IO.popen(env.merge("PATH" => ENV["PATH"]), ["ruby", "#{Dir.pwd}/ccpool.rb", "statusline"], "r+") do |io|
+    io.write(sl_payload); io.close_write; io.read
+  end
+end
+ok("statusline colours by default", sl_run.call("NO_COLOR" => nil, "TERM" => "xterm-256color").include?("\e["))
+ok("NO_COLOR strips all ANSI", !sl_run.call("NO_COLOR" => "1", "TERM" => "xterm-256color").include?("\e["))
+ok("NO_COLOR='' KEEPS colour (empty is the no-color.org exception)", sl_run.call("NO_COLOR" => "", "TERM" => "xterm-256color").include?("\e["))
+ok("TERM=dumb strips all ANSI", !sl_run.call("NO_COLOR" => nil, "TERM" => "dumb").include?("\e["))
+
 # ---- CCPool decision + IO ---------------------------------------------------------
 clear_snaps
 snap("a", week: 60, reset_in: 4 * 86_400)

@@ -17,6 +17,7 @@ require "json"
 require_relative "pool"
 require_relative "burn"
 require_relative "runway"
+require_relative "clock"
 
 module Check
   SESSION_FULL  = (ENV["CCPOOL_CHECK_SES_FULL"]      || "92").to_f   # 5h window effectively spent
@@ -50,7 +51,8 @@ module Check
     ses_hist = Burn.envelope(history, "ses", "ses_reset")
 
     lines = []
-    lines << format("time     %s", Time.at(now).strftime("%Y-%m-%d %H:%M %Z (%a)"))
+    t = Time.at(now)
+    lines << format("time     %s %s %s", t.strftime("%Y-%m-%d"), Clock.time(t), t.strftime("%Z (%a)"))
     lines << "data     #{freshness(age)}"
     lines << ""
 

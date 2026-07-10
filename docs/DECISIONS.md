@@ -65,8 +65,9 @@ context compaction or the scratch wipe. (Governor-era detail also in
   schedule profile when the rhythm is strong (high R = easy to read), and when it's weak (low R,
   Sean) `even` is already correct. No "valuable-and-hard" middle → no BOCPD/ADWIN change-point
   machinery. Timezone travel (UTC-stamped jsonl) further poisons naive hour-of-day detection,
-  but that's a red herring given the above. Survives only as a possible opt-in `ccpool rhythm`
-  *diagnostic* (compute R on a recency window, SUGGEST a profile, never auto-apply).
+  but that's a red herring given the above. **Shipped** as the opt-in `ccpool rhythm`
+  *diagnostic* (`rhythm.rb`): compute R on a recency window, R-gate the output (high → suggest
+  concrete `WAKE_HOURS`/`WORK_DAYS`; low → stick with `even`), SUGGEST only, never auto-apply.
 
 ## Research findings (durable)
 
@@ -157,5 +158,5 @@ statusline-command.rb) across ~/.claude + dotfiles.
 Key design threads this session (see graveyard/competitor above): pace reorganized around two
 orthogonal knobs (`WORK_DAYS × WAKE_HOURS`, 24/7 default) with named profiles as sugar; the
 working-hours runway (SRE error-budget burn-rate shape) as the actionable reframe of "% left";
-detect-from-usage PoC'd and banked. Possible later: `ccpool rhythm` diagnostic; Rust reimpl if the
-warn hook's ~67ms Ruby startup ever bites a tight loop.
+detect-from-usage PoC'd, banked, then shipped as the opt-in `ccpool rhythm` diagnostic. Possible
+later: Rust reimpl if the warn hook's ~67ms Ruby startup ever bites a tight loop.

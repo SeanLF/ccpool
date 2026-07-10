@@ -11,6 +11,7 @@
 #   ccpool warn              hook: warn the agent mid-turn about pace / 5h / context (stdin=payload).
 #   ccpool run -- <cmd...>   run <cmd>, downshifting subagent model/effort when ahead of pace.
 #   ccpool review [days]     retrospective: did you use the right model for the work?
+#   ccpool rhythm            read-only: your circadian work rhythm + a suggested pace profile.
 #
 # Delegates cost to ccusage; reads the % ccusage can't see. Fails OPEN on missing data.
 require "json"
@@ -23,6 +24,8 @@ require_relative "statusline"
 require_relative "warn"
 require_relative "check"
 require_relative "runway"
+require_relative "rhythm"
+require_relative "clock"
 
 module CCPool
   MARGIN  = (ENV["CCPOOL_PACE_MARGIN"] || "3").to_f
@@ -48,7 +51,10 @@ module CCPool
     d.positive? ? "#{d}d #{r / 3_600}h" : "#{r / 3_600}h #{(r % 3_600) / 60}m"
   end
 
-  def at(epoch) = Time.at(epoch).localtime.strftime("%a %m-%d %H:%M")
+  def at(epoch)
+    t = Time.at(epoch).localtime
+    "#{t.strftime('%a %m-%d')} #{Clock.time(t)}"
+  end
 
   # 3-tier read: fresh official snapshot > stale-but-extrapolated-from-accrued-cost >
   # stale-shown-with-warning. (No OAuth tier -- deliberately.) => window + :confidence.
@@ -134,7 +140,11 @@ module CCPool
   end
 
   # -- statusLine command: capture + seed + render (cached $ only; must stay fast) ------
+  # Direct in a terminal there's no CC payload on stdin (reading it would just hang), so PREVIEW
+  # from the newest snapshot instead. Piped/redirected stdin (incl. Claude Code) -> the real path.
   def statusline(now = Time.now.to_i)
+    return preview_statusline(now) if $stdin.tty?
+
     payload = (JSON.parse($stdin.read) rescue {})
     return unless payload.is_a?(Hash)
 
@@ -151,6 +161,25 @@ module CCPool
   rescue StandardError => e
     Statusline.log("error", "#{e.class}: #{e.message} @ #{e.backtrace&.first}")
     # a statusline must NEVER break Claude Code
+  end
+
+  # `ccpool statusline` in a terminal: render from the freshest per-session snapshot the real
+  # statusLine has captured, so you can see what the line looks like without Claude Code. The
+  # rate_limits % is account-global, so an old snapshot's % is still current; only the ctx/cache
+  # segments (session-local) may be stale -- hence the "preview" caveat on stderr.
+  def preview_statusline(now = Time.now.to_i)
+    newest = Dir.glob(Pool::GLOB).max_by { |f| File.mtime(f) rescue 0 }
+    unless newest
+      warn "ccpool: no statusline snapshot yet. Wire `ccpool statusline` as your Claude Code statusLine first (see README), then it self-populates."
+      return
+    end
+    data = JSON.parse(File.read(newest))
+    age  = now - (data["captured_at"] || File.mtime(newest).to_i)
+    line = Statusline.render(data, now)
+    warn "[preview from a #{dur(age)}-old snapshot -- ctx/cache may be stale; live values come from Claude Code]"
+    puts line unless line.to_s.empty?
+  rescue StandardError
+    warn "ccpool: couldn't render a statusline preview (no readable snapshot)."
   end
 
   # Stale per-session snapshots older than KEEP (dead sessions). Non-destructive by default:
@@ -317,23 +346,54 @@ module CCPool
     puts "  caveat: effort isn't logged per-turn -- this proxies complexity from output volume +"
     puts "  tool-calls; `ultrathink`/thinking inflate output invisibly, so treat as a hint, not a verdict."
   end
+
+  # -- read-only work-rhythm diagnostic ------------------------------------------------
+  def rhythm(now = Time.now.to_i)
+    puts Rhythm.report(now)
+  end
+
+  # -- help ----------------------------------------------------------------------------
+  def help
+    puts <<~TXT
+      ccpool -- get the most out of your fixed Claude subscription pool.
+
+      Usage: ccpool <command> [args]        (no command -> status)
+
+      Commands:
+        status             % used, ~$ API-equiv left, and pace vs how far through the week you are.
+        check              time + budget + a keep-going/stop VERDICT, for long or autonomous loops.
+        rhythm             your circadian work rhythm + a suggested pace profile (read-only).
+        run -- <cmd...>    run <cmd>, downshifting subagent model/effort when you're ahead of pace.
+        review [days]      retrospective: did you use the right model for the work? (default 7d)
+        statusline         render the Claude Code statusLine; bare in a terminal shows a preview.
+        warn               Claude Code hook: warn mid-turn on pace / 5h / context (stdin = payload).
+        prune [--history]  delete stale snapshots (add --history to also compact the history file).
+        help               this message (also -h, --help).
+
+      Pace knobs:  CCPOOL_PACE_PROFILE=even|weekdays|workhours|custom · CCPOOL_WORK_DAYS=0-6 ·
+                   CCPOOL_WAKE_HOURS=9-17 · CCPOOL_CLOCK=24|12|auto
+      Full reference + env vars: see the README.
+    TXT
+  end
 end
 
 if $PROGRAM_NAME == __FILE__
-  case ARGV.shift
+  case cmd = ARGV.shift
   when "statusline" then CCPool.statusline
   when "status", nil then CCPool.status
   when "check" then CCPool.check
   when "warn" then CCPool.warn_hook
   when "run" then CCPool.run(ARGV)
   when "review" then CCPool.review(ARGV)
+  when "rhythm" then CCPool.rhythm
+  when "help", "-h", "--help" then CCPool.help
   when "prune"
     now = Time.now.to_i
     msg = "pruned #{CCPool.prune_caches(now)} stale snapshot(s)"
     msg += "; compacted #{CCPool.prune_history(now)} old history row(s)" if ARGV.include?("--history")
     puts "ccpool: #{msg}"
   else
-    warn "usage: ccpool [statusline|status|check|warn|run -- <cmd...>|review [days]|prune [--history]]"
+    warn "ccpool: unknown command #{cmd.inspect}. Run `ccpool help` for usage."
     exit 2
   end
 end

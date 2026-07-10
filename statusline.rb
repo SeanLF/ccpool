@@ -11,18 +11,25 @@ require_relative "pool"
 require_relative "calibration"
 
 module Statusline
+  # Honour the NO_COLOR contract (present + non-empty, per no-color.org) and TERM=dumb. We CAN'T gate on tty here: Claude
+  # Code invokes the statusLine with a non-tty stdout yet renders ANSI, so tty-gating would strip
+  # colour in the primary use. NO_COLOR is the user's explicit opt-out; colour off -> every escape
+  # below collapses to "", so the line degrades to plain text (the bar/meter still read via glyphs).
+  COLOR = ENV["NO_COLOR"].to_s.empty? && ENV["TERM"] != "dumb"
+  def self.ansi(code) = COLOR ? code : ""
+
   EIGHTHS = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"].freeze
   SOLID = "█"
   TRACK = "░"
-  RESET = "\e[0m"
-  DIM   = "\e[2m"
-  YELLOW = "\e[93m"
-  RED   = "\e[91m" # bright, legible on dark backgrounds
+  RESET = ansi("\e[0m")
+  DIM   = ansi("\e[2m")
+  YELLOW = ansi("\e[93m")
+  RED   = ansi("\e[91m") # bright, legible on dark backgrounds
   # 24-bit truecolour teal-cyan: theme-INDEPENDENT. A 16-colour code (\e[96m) gets remapped by
   # the terminal palette -- Ghostty rendered cyan as pink -- so we pin the actual RGB. Calm/cool
   # when healthy; the over-pace tail overrides to red. Override via CCPOOL_BAR_COLOR.
-  BAR   = ENV["CCPOOL_BAR_COLOR"] || "\e[38;2;86;182;194m"
-  BOLD  = "\e[1m"
+  BAR   = ansi(ENV["CCPOOL_BAR_COLOR"] || "\e[38;2;86;182;194m")
+  BOLD  = ansi("\e[1m")
   SEP   = " #{DIM}·#{RESET} "
   WEEK  = 7 * 86_400
   CACHE_TTL  = (ENV["USAGE_CACHE_TTL_SECS"] || "3600").to_i

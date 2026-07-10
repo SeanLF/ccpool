@@ -46,7 +46,9 @@ so wire ccpool as your statusLine to self-populate:
 `ccpool statusline` captures `rate_limits` from CC's payload, seeds the history the `$`
 calibration needs, and renders a compact line (`pool 9% · $2.3k left · pace -20↓`). If you
 *already* run a statusline that writes those snapshots (e.g. a custom one), ccpool just reads
-it — no statusLine change needed.
+it — no statusLine change needed. Run **`ccpool statusline` bare in a terminal** to preview what
+the line looks like (it renders from the freshest snapshot instead of hanging on stdin), and
+**`ccpool help`** for the full command list.
 
 ## Usage
 
@@ -55,7 +57,16 @@ ccpool status                    # full readout
 ccpool check                     # keep-going/stop verdict (long / autonomous loops)
 ccpool run -- claude -p "..."    # or wrap a fan-out script; downshifts when ahead of pace
 ccpool review 7                  # provisioning review, last 7 days
+ccpool rhythm                    # read-only: your work rhythm + a suggested pace profile
 ```
+
+`ccpool rhythm` reads your last 30d of transcripts (in the *current* machine's local time, so
+timezone travel doesn't corrupt it) and measures rhythm strength `R` — the circular resultant
+over a 24h clock. High `R` = a sharp day/night rhythm, so it prints a concrete `CCPOOL_WAKE_HOURS`
+(+ `CCPOOL_WORK_DAYS`) to adopt; low `R` = continuous loops fill the clock, so it says stick with
+`even`. It's a suggester, never an auto-applier — the honest read is that a schedule only helps
+when the rhythm is strong enough to detect in the first place. Tune with `CCPOOL_RHYTHM_WINDOW`
+(days, default 30) and `CCPOOL_RHYTHM_R` (the strong/weak gate, default 0.5).
 
 ## Pace profiles (env)
 
@@ -92,6 +103,8 @@ bar together — they can't disagree.
 | `CCPOOL_CCUSAGE_CMD` | `npx -y ccusage@20` | how to invoke ccusage (pinned major — see calibration.rb) |
 | `CCPOOL_HISTORY_KEEP_DAYS` | `30` | `prune --history` cutoff; `0` = keep raw forever (some prefer the full ~20 MB/mo) |
 | `CCPOOL_HISTORY_MIN_INTERVAL` | `60` | min seconds between 5h-only history writes (curbs file growth) |
+| `CCPOOL_CLOCK` | `24` | wall-clock time format everywhere: `24` · `12` · `auto` (best-effort OS detect, macOS-only, falls back to 24) |
+| `NO_COLOR` / `TERM=dumb` | — | standard contract ([no-color.org](https://no-color.org)): any **non-empty** `NO_COLOR` (or `TERM=dumb`) strips all ANSI from the statusline (degrades to plain text) |
 | `USAGE_CACHE`, `CCPOOL_HISTORY`, `CCPOOL_CALIB_CACHE` | `~/.claude/...` | data paths (test isolation) |
 
 ## Honest limitations
