@@ -1,5 +1,14 @@
 # ccpool
 
+**How much of your weekly Claude pool is left — in dollars — and are you burning it too fast?**
+
+Your usage tools show a percentage and a reset time. Neither tells you what that percentage is
+*worth*, whether you're ahead of pace, or when you'll actually run dry. ccpool does — and it's
+**complementary to `ccusage` and native `/status`, not a replacement**: it delegates every dollar
+to ccusage and reads the account-global `rate_limits` % that ccusage structurally can't see.
+
+![ccpool statusline and status readout](demo/overview.gif)
+
 Get the most out of your fixed Claude subscription pool. Three things no existing tool
 does, in one CLI:
 
@@ -34,6 +43,8 @@ export PATH="$PWD/bin:$PATH"     # or symlink bin/ccpool onto your PATH
 ccpool init                      # dry-run: shows exactly what it would wire, writes nothing
 ccpool init --apply              # wires it in (timestamped backup first) -- zero config needed
 ```
+
+![ccpool init dry-run](demo/init.gif)
 
 `ccpool init` is the whole setup: it adds the `statusLine` command plus the mid-turn `warn`
 hooks to `~/.claude/settings.json`. It's **dry-run by default** (prints a diff so you see the
