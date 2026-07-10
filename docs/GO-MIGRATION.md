@@ -10,16 +10,25 @@ it in a fresh session with a clean context. Read alongside:
 
 ## The one rule that makes this safe
 
-**The Ruby implementation + its ~160 hermetic `test_ccpool.rb` cases are the conformance oracle.**
-The Go port is correct when it produces the same output as Ruby for the same inputs. So:
+**Reimplement in idiomatic Go — do NOT transliterate the Ruby line-by-line.** The Ruby is the
+*spec and conformance oracle*, not the template. Match the **observable outputs and the on-disk
+contract**, not the source structure. Write idiomatic Go per `go.md` (fail-open via `recover`,
+typed constants for the `:fresh/:estimated/:stale` tiers, errors-as-values, small packages) —
+transliterating Ruby idioms (rescue-modifiers, symbols, duck typing) produces bad Go and breaks the
+invariants. We understand this tool deeply now; bake the lessons in cleanly rather than port warts.
 
-1. Keep Ruby runnable and unchanged during the port (it's the reference, not legacy to delete).
-2. Port a piece, then diff Go output against Ruby output over shared JSON fixtures (reuse the
-   fixtures the Ruby tests already build). Byte-identical for the rendered lines; numerically equal
-   for the `$`/percent math.
+**The Ruby + its ~160 hermetic `test_ccpool.rb` cases are the conformance oracle.** Correct = same
+*output* for the same input. So:
+
+1. Keep Ruby runnable and unchanged during the migration (reference, not legacy to delete).
+2. Build a piece, then diff Go output against Ruby output over shared JSON fixtures (reuse the ones
+   the Ruby tests build; pin `now`). **Byte-identical** for the rendered statusline string (ANSI
+   included), the `warn` emit text + hook JSON, and every on-disk file it writes. **Equal at
+   displayed precision** for the `$`/percent/pace math (compare the rounded output, not raw floats,
+   so FP jitter can't fail a diff). Internals are free to differ; outputs and files are not.
 3. Ruby and Go **coexist through the on-disk contract below** — a Go `statusline` and a Ruby
-   `status` interoperate with zero shared process state. Migrate command-by-command; retire Ruby
-   only when Go passes the whole suite.
+   `status` interoperate with zero shared process state (that's *why* the files must be
+   byte-compatible). Migrate command-by-command; retire Ruby only when Go passes the whole suite.
 
 ## The on-disk contract (preserve byte-for-byte)
 
