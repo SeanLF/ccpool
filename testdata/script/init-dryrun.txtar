@@ -1,0 +1,12 @@
+# init points at a sandbox settings file that does not exist yet.
+env CCPOOL_SETTINGS=$WORK/settings.json
+
+# bare `init` is a DRY RUN: it prints the wiring plan (the actual commands it would wire) and
+# writes nothing.
+exec ccpool init
+stdout 'wiring plan'
+stdout 'ccpool statusline'
+stdout 'ccpool warn'
+
+# the dry run must not create the settings file
+! exists $WORK/settings.json

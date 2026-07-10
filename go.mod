@@ -8,7 +8,10 @@ tool (
 	mvdan.cc/gofumpt
 )
 
-require pgregory.net/rapid v1.3.0
+require (
+	github.com/rogpeppe/go-internal v1.14.1
+	pgregory.net/rapid v1.3.0
+)
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect

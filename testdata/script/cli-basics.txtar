@@ -1,0 +1,17 @@
+# help prints usage and exits 0
+exec ccpool help
+stdout 'Usage: ccpool <command>'
+stdout 'statusline'
+
+# --help is an alias for help
+exec ccpool --help
+stdout 'Commands:'
+
+# bare `version` is deterministic in a test build (no GoReleaser ldflags -> "dev")
+exec ccpool version
+stdout 'ccpool dev'
+
+# an unknown command fails with a non-zero code, the error on STDERR, and nothing on stdout
+! exec ccpool frobnicate
+stderr 'unknown command "frobnicate"'
+! stdout .
