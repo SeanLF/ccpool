@@ -10,3 +10,11 @@ demo/.data/
 
 # rapid property-test failure repro seeds (transient)
 testdata/rapid/
+
+# subagent-driven-development scratch
+.superpowers/
+
+# ~/.gitignore_global has `ENV/` (Python venv); on macOS core.ignorecase=true it matches
+# internal/env/ and silently drops the package from `git add`. Re-include it explicitly so a new
+# file there can't vanish from commits again.
+!internal/env/
