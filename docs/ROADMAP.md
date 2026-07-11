@@ -45,7 +45,32 @@ confirms the current parsers already hold this.)
 
 ---
 
-## Sprint A — hardening + cleanup (the near-term plan; start here)
+## Sprint A — hardening + cleanup — COMPLETE (2026-07-10)
+
+All six items landed, each with review + verification and a green `make check`:
+- **A0** (`88a3d9e`) — bucket jittered `resets_at` within 300s of the max in `burn.Envelope` +
+  `pool.GetWindow`; burn/runway restored (verified on real history). Jittered-reset conformance
+  fixture + unit tests guard it.
+- **A4** (`d404526`, `31ad17f`) — `pgregory.net/rapid` property tests for the four math invariants
+  (pace ∈ [0,1], runway monotonic in burn, burn ≥ 0, reconcile = newest-reset/max-used, all proven
+  non-vacuous) + `testscript` `.txtar` CLI e2e for the dispatch layer. Fuzz targets pre-existing.
+- **A2** (`268e613`) — `internal/env` (Int/Int64/Float, fail-open to default, rejects non-finite)
+  replaces `rb.ToI/ToF` for env config; deleted the duplicated envF/envI/checkEnv* wrappers (net
+  -95 lines). `rb` stays for the 4 DATA/CLI sites. Intentional: garbage COLUMNS → normal width,
+  garbage CCPOOL_PACE_FLOOR → 0.15 (one golden re-baselined).
+- **A3** (`c5dc726`) — anomaly trail moved to structured `log/slog` (greppable `field=`/`got=`/
+  `stage=` records) behind a fail-open capped io.Writer; 200-line cap + recover preserved.
+- **A5** (`38f0e2b`) — dropped `blocksArray`'s "first array-valued field" fallback so a ccusage
+  schema rename trips the fail-loud probe instead of silently misreading an unrelated array.
+- **A1** (`b0360e7`) — termenv colour engine: forced TrueColor default + `CCPOOL_COLOR=256|16|
+  ascii|auto` degradation, NO_COLOR/dumb gated manually. Palette struct + consumers untouched, so
+  default output is byte-identical (no golden re-baseline). Used termenv, NOT lipgloss (lipgloss
+  combines SGR params → would churn every colour golden for equivalent bytes).
+
+Next: **Sprint B (SQLite storage)** below — a larger storage-layer change (new sqlc + sqlite deps,
+the load-bearing `ROWS ... UNBOUNDED PRECEDING` window frame, a one-off importer). Fresh phase.
+
+<details><summary>Original Sprint A plan (for reference)</summary>
 
 **A0. FIX: burn/runway silently dead from `resets_at` jitter (correctness bug — do first).**
 Diagnosed 2026-07-10 against real history. Anthropic's reported weekly `resets_at` wobbles by a few
@@ -80,6 +105,8 @@ schema rename trips the fail-loud probe. (Confirmed: `ccusage@20` via npm IS the
 degradation (no auto-detect from a non-tty). Replace `palette`/meter/`sev`; re-baseline statusline
 goldens; eyeball a truecolor/256/16/NO_COLOR matrix; keep the `recover()`. Medium value (cleaner +
 control), not a critical fix — sequence after the A2–A5 cleanups.
+
+</details>
 
 ---
 
