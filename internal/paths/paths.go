@@ -46,6 +46,12 @@ func StatuslineLog() string {
 	return resolve("CCPOOL_STATUSLINE_LOG", "~/.claude/statusline.log")
 }
 
+// Config is the ccpool config file (CCPOOL_CONFIG || ~/.claude/ccpool.json). The one file a user's
+// persisted choices live in; read fresh per process so the hermetic test env is honoured.
+func Config() string {
+	return resolve("CCPOOL_CONFIG", "~/.claude/ccpool.json")
+}
+
 // Projects is the base dir of Claude Code transcripts the analyzer scans
 // (CCPOOL_PROJECTS || ~/.claude/projects); mirrors Ruby Analyzer::PROJECTS.
 func Projects() string {
