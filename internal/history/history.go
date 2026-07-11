@@ -176,10 +176,7 @@ func numPtr(v any) *json.Number {
 }
 
 func tier() string {
-	if v, ok := os.LookupEnv("USAGE_TIER"); ok {
-		return v
-	}
-	return "max_20x"
+	return env.String("USAGE_TIER", "max_20x")
 }
 
 func cost(payload map[string]any) *json.Number {

@@ -96,7 +96,7 @@ func colorProfile() termenv.Profile {
 	if noColorEnv() {
 		return termenv.Ascii
 	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("CCPOOL_COLOR"))) {
+	switch strings.ToLower(strings.TrimSpace(env.String("CCPOOL_COLOR", ""))) {
 	case "256", "8bit":
 		return termenv.ANSI256
 	case "16", "ansi":

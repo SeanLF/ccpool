@@ -14,7 +14,6 @@
 package profile
 
 import (
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +34,7 @@ type Config struct {
 // that renders under different CCPOOL_* env per call honours each — and so it fails open: every
 // parser below falls back to a safe default rather than erroring.
 func Load() Config {
-	name := strings.ToLower(getenv("CCPOOL_PACE_PROFILE", "even"))
+	name := strings.ToLower(env.String("CCPOOL_PACE_PROFILE", "even"))
 
 	// A preset only sets DEFAULTS for the two knobs; an explicit env var overrides them.
 	dayDefault := allDays()
@@ -47,13 +46,13 @@ func Load() Config {
 		hourDefault = [2]int{9, 17}
 	}
 
-	days := intSet(os.Getenv("CCPOOL_WORK_DAYS"), dayDefault)
-	h0, h1 := hours(os.Getenv("CCPOOL_WAKE_HOURS"), hourDefault)
+	days := intSet(env.String("CCPOOL_WORK_DAYS", ""), dayDefault)
+	h0, h1 := hours(env.String("CCPOOL_WAKE_HOURS", ""), hourDefault)
 
 	var dayW, hourW []float64
 	if name == "custom" {
-		dayW = weights(os.Getenv("CCPOOL_PACE_WEIGHTS"), 7)
-		hourW = weights(os.Getenv("CCPOOL_PACE_HOUR_WEIGHTS"), 24)
+		dayW = weights(env.String("CCPOOL_PACE_WEIGHTS", ""), 7)
+		hourW = weights(env.String("CCPOOL_PACE_HOUR_WEIGHTS", ""), 24)
 	}
 	return Config{Days: days, H0: h0, H1: h1, DayWeights: dayW, HourWeights: hourW}
 }
@@ -232,13 +231,6 @@ func allOnes(size int) []float64 {
 		t[i] = 1.0
 	}
 	return t
-}
-
-func getenv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }
 
 func clamp(v, lo, hi float64) float64 {

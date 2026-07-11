@@ -37,10 +37,8 @@ const (
 // hermetic per-fixture test env honoured). MARGIN/COAST also live in report so pace verdicts agree.
 
 func mode() string {
-	if v, ok := os.LookupEnv("CCPOOL_DOWNSHIFT"); ok {
-		return strings.ToLower(v) // auto (enforce) | advise (print, don't apply) | off
-	}
-	return "auto"
+	// auto (enforce) | advise (print, don't apply) | off
+	return strings.ToLower(env.String("CCPOOL_DOWNSHIFT", "auto"))
 }
 
 func margin() float64 { return env.Float("CCPOOL_PACE_MARGIN", 3) }
@@ -49,9 +47,9 @@ func coast() int64 { return env.Int64("CCPOOL_COAST_SECS", 43200) } // <12h to r
 
 func fiveHCap() float64 { return env.Float("CCPOOL_5H_CAP", 85) } // 5h window this full -> downshift too
 
-func dmodel() string { return envS("CCPOOL_DOWNSHIFT_MODEL", "haiku") }
+func dmodel() string { return env.String("CCPOOL_DOWNSHIFT_MODEL", "haiku") }
 
-func deffort() string { return envS("CCPOOL_DOWNSHIFT_EFFORT", "low") }
+func deffort() string { return env.String("CCPOOL_DOWNSHIFT_EFFORT", "low") }
 
 // DownshiftEnv is the pace-aware decision: the subagent env to inject (empty = no downshift) and a
 // one-line human explanation. Fails OPEN — missing/stale data yields no downshift, never an error.
@@ -168,11 +166,4 @@ func mergedEnv(extra map[string]string) []string {
 		}
 	}
 	return env
-}
-
-func envS(key, def string) string {
-	if v, ok := os.LookupEnv(key); ok {
-		return v
-	}
-	return def
 }

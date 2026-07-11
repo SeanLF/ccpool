@@ -5,15 +5,16 @@ package clock
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/SeanLF/ccpool/internal/env"
 )
 
 // Mode resolves the clock to 12 or 24, read fresh from CCPOOL_CLOCK so per-call test env is honoured.
 func Mode() int {
-	switch strings.ToLower(strings.TrimSpace(getenv("CCPOOL_CLOCK", "24"))) {
+	switch strings.ToLower(strings.TrimSpace(env.String("CCPOOL_CLOCK", "24"))) {
 	case "12":
 		return 12
 	case "auto":
@@ -62,11 +63,4 @@ func Time(t time.Time) string {
 		return t.Format("3:04pm") // Ruby %-I:%M%P
 	}
 	return t.Format("15:04") // Ruby %H:%M
-}
-
-func getenv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }
