@@ -1,17 +1,38 @@
 package configcmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/SeanLF/ccpool/internal/profile"
 )
 
-// TestDetectFromWorkhoursPinsAllWeekWorkDays is the Task 7 cross-task fix: rhythm.Detect reports
-// "workhours" with workDays=="" for an all-7-days rhythm (hour-only restriction). But
-// internal/profile.Load's "workhours" preset defaults CCPOOL_WORK_DAYS to Mon-Fri when unset,
-// which would silently narrow the detected all-week rhythm the moment this seeded config is read.
-// detectFrom must pin Pace.WorkDays to "0-6" explicitly in that one case.
+// TestDetectFromNeverSeedsProfile is the MEDIUM-1 fix: detectFrom must NEVER seed pace.profile from
+// rhythm's classification (not "workhours", not "weekdays", not "custom"). See detectFrom's doc
+// comment for why -- profile.Load's "custom" branch takes the weight-vector path and bypasses
+// Days/H0/H1 gating entirely, so a persisted profile:"custom" with no weights silently behaves like
+// uniform 24/7 pacing regardless of the detected work_days/wake_hours.
+func TestDetectFromNeverSeedsProfile(t *testing.T) {
+	var hours [24]int
+	hours[12] = 100
+	wdays := [7]int{10, 10, 10, 10, 10, 10, 10} // every day active -> rhythm.Detect returns "workhours"
+
+	c := detectFrom(1.0, hours, wdays)
+
+	if c.Pace == nil {
+		t.Fatal("Pace is nil, want work_days/wake_hours seeded")
+	}
+	if c.Pace.Profile != nil {
+		t.Errorf("Pace.Profile = %q, want nil (never persist a rhythm-classified profile)", *c.Pace.Profile)
+	}
+}
+
+// TestDetectFromWorkhoursPinsAllWeekWorkDays: rhythm.Detect reports an all-7-days rhythm (hour-only
+// restriction) with workDays=="". detectFrom must pin Pace.WorkDays to "0-6" explicitly in that one
+// case, so the persisted config states what was actually detected.
 func TestDetectFromWorkhoursPinsAllWeekWorkDays(t *testing.T) {
 	var hours [24]int
 	hours[12] = 100                             // single sharp peak -> wakeWindow collapses to [12,13)
@@ -19,11 +40,8 @@ func TestDetectFromWorkhoursPinsAllWeekWorkDays(t *testing.T) {
 
 	c := detectFrom(1.0, hours, wdays)
 
-	if c.Pace == nil || c.Pace.Profile == nil || *c.Pace.Profile != "workhours" {
-		t.Fatalf("Pace.Profile = %v, want workhours", c.Pace)
-	}
 	if c.Pace.WorkDays == nil || *c.Pace.WorkDays != "0-6" {
-		t.Errorf("Pace.WorkDays = %v, want \"0-6\" (else profile.Load's workhours preset narrows to Mon-Fri)", derefStr(c.Pace.WorkDays))
+		t.Errorf("Pace.WorkDays = %v, want \"0-6\" (the detected all-week rhythm, restricted to the detected hours)", derefStr(c.Pace.WorkDays))
 	}
 	if c.Pace.WakeHours == nil || *c.Pace.WakeHours != "12-13" {
 		t.Errorf("Pace.WakeHours = %v, want 12-13", derefStr(c.Pace.WakeHours))
@@ -41,27 +59,70 @@ func TestDetectFromWeekdaysUsesRhythmsOwnWorkDays(t *testing.T) {
 
 	c := detectFrom(1.0, hours, wdays)
 
-	if c.Pace.Profile == nil || *c.Pace.Profile != "weekdays" {
-		t.Fatalf("Pace.Profile = %v, want weekdays", derefStr(c.Pace.Profile))
-	}
 	if c.Pace.WorkDays == nil || *c.Pace.WorkDays != "1-5" {
 		t.Errorf("Pace.WorkDays = %v, want 1-5 (rhythm's own value, not the workhours override)", derefStr(c.Pace.WorkDays))
 	}
 }
 
-// TestDetectFromEvenLeavesScheduleFieldsNil: a weak/no rhythm (R=0) must seed a plain `even`
-// profile with WorkDays/WakeHours left nil, not empty-string pointers (Merge / omitempty rely on
-// absent-vs-empty, per the Config pointer-field contract).
-func TestDetectFromEvenLeavesScheduleFieldsNil(t *testing.T) {
+// TestDetectFromEvenLeavesPaceNil: a weak/no rhythm (R=0) must seed no schedule at all -- Pace
+// itself stays nil (not just WorkDays/WakeHours), so profile.Load defaults cleanly and Merge can
+// fill it from a user's own choice without a stray empty pace object in the way.
+func TestDetectFromEvenLeavesPaceNil(t *testing.T) {
 	var hours [24]int
 	var wdays [7]int
 	c := detectFrom(0.0, hours, wdays) // R=0 -> even, no schedule
 
-	if c.Pace.Profile == nil || *c.Pace.Profile != "even" {
-		t.Fatalf("Pace.Profile = %v, want even", derefStr(c.Pace.Profile))
+	if c.Pace != nil {
+		t.Errorf("Pace = %+v, want nil (even/no-rhythm must seed nothing)", c.Pace)
 	}
-	if c.Pace.WorkDays != nil || c.Pace.WakeHours != nil {
-		t.Errorf("even profile: WorkDays=%v WakeHours=%v, want both nil", derefStr(c.Pace.WorkDays), derefStr(c.Pace.WakeHours))
+}
+
+// TestDetectFromScheduleAppliesViaGating is the MEDIUM-1 regression test proving the bug is fixed:
+// an irregular (non-Mon-Fri, non-all-week) active-day subset -- exactly what rhythm.Detect labels
+// "custom" -- must round-trip through profile.Load as an ACTUAL gated schedule, not silently decay
+// to uniform 24/7 pacing. Before the fix, detectFrom persisted pace.profile="custom" with no
+// weights, which profile.Load's custom branch reads as all-ones weight vectors (Uniform==true) --
+// the detected schedule was seeded but never applied.
+func TestDetectFromScheduleAppliesViaGating(t *testing.T) {
+	var hours [24]int
+	hours[12] = 100
+	var wdays [7]int
+	wdays[1], wdays[3], wdays[5] = 10, 10, 10 // Mon/Wed/Fri only -> irregular subset -> rhythm labels this "custom"
+
+	c := detectFrom(1.0, hours, wdays)
+
+	if c.Pace == nil || c.Pace.Profile != nil {
+		t.Fatalf("Pace = %+v, want non-nil with Profile nil", c.Pace)
+	}
+	if c.Pace.WorkDays == nil || *c.Pace.WorkDays != "1,3,5" {
+		t.Fatalf("Pace.WorkDays = %v, want the detected irregular day set 1,3,5", derefStr(c.Pace.WorkDays))
+	}
+
+	// Round-trip through profile.Load the way a real read would (file > env is irrelevant here --
+	// env.String checks os env first, so setting CCPOOL_* directly simulates "this is what the file
+	// holds" for profile.Load's purposes). Point CCPOOL_CONFIG at an empty temp path too, so
+	// profile.Load's own fail-open file read can't pick up a real ~/.claude/ccpool.json.
+	t.Setenv("CCPOOL_CONFIG", filepath.Join(t.TempDir(), "ccpool.json"))
+	t.Setenv("CCPOOL_PACE_PROFILE", "") // detectFrom leaves profile unset; confirm Load agrees it's absent
+	t.Setenv("CCPOOL_WORK_DAYS", *c.Pace.WorkDays)
+	if c.Pace.WakeHours != nil {
+		t.Setenv("CCPOOL_WAKE_HOURS", *c.Pace.WakeHours)
+	}
+
+	p := profile.Load()
+	if p.DayWeights != nil || p.HourWeights != nil {
+		t.Error("profile.Load took the weight-vector (custom) path; want the Days/H0/H1 gating path")
+	}
+	if !p.Scheduled() {
+		t.Error("profile.Load of the detected config is Uniform (24/7) -- the detected schedule was NOT applied (this is the MEDIUM-1 bug)")
+	}
+	if p.Days[2] {
+		t.Error("Tuesday (wday=2) is marked active, want inactive -- it is not in the detected {1,3,5} set")
+	}
+	for _, d := range []int{1, 3, 5} {
+		if !p.Days[d] {
+			t.Errorf("day %d not active, want it in the detected day set", d)
+		}
 	}
 }
 
@@ -107,6 +168,52 @@ func TestInitApplyWritesFile(t *testing.T) {
 	}
 	if _, err := os.Stat(cfgPath); err != nil {
 		t.Fatalf("Init --apply: %s not written: %v", cfgPath, err)
+	}
+}
+
+// TestInitForceOverwritesCorruptConfig is the MEDIUM-2 fix: --force's whole point is "regenerate
+// from scratch, overwrite" -- including blowing away a corrupt file, which is the exact case it
+// exists for. Before the fix, Init read the existing config BEFORE checking --force and returned
+// exit 2 on a Load error unconditionally, so --force couldn't recover from a corrupt file at all.
+func TestInitForceOverwritesCorruptConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "ccpool.json")
+	if err := os.WriteFile(cfgPath, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CCPOOL_CONFIG", cfgPath)
+	t.Setenv("CCPOOL_PROJECTS", filepath.Join(dir, "projects"))
+	t.Setenv("CCPOOL_HISTORY", filepath.Join(dir, "h.jsonl"))
+
+	lines, code := Init([]string{"--apply", "--force"}, 1_700_000_000)
+	if code != 0 {
+		t.Fatalf("Init --apply --force on a corrupt config: code = %d, want 0 (lines: %v)", code, lines)
+	}
+	b, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("Init --apply --force: %s not written: %v", cfgPath, err)
+	}
+	var v any
+	if err := json.Unmarshal(b, &v); err != nil {
+		t.Errorf("Init --apply --force wrote invalid JSON: %v\ncontent: %s", err, b)
+	}
+}
+
+// TestInitApplyWithoutForceStillFailsOnCorruptConfig confirms MEDIUM-2's fix is scoped to --force:
+// without it, a corrupt existing config must still fail loud (unchanged behaviour).
+func TestInitApplyWithoutForceStillFailsOnCorruptConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "ccpool.json")
+	if err := os.WriteFile(cfgPath, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CCPOOL_CONFIG", cfgPath)
+	t.Setenv("CCPOOL_PROJECTS", filepath.Join(dir, "projects"))
+	t.Setenv("CCPOOL_HISTORY", filepath.Join(dir, "h.jsonl"))
+
+	_, code := Init([]string{"--apply"}, 1_700_000_000)
+	if code != 2 {
+		t.Errorf("Init --apply (no force) on a corrupt config: code = %d, want 2", code)
 	}
 }
 

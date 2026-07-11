@@ -51,11 +51,7 @@ func dispatch(args []string) int {
 		return 0
 	case "check":
 		lines, code := status.Report(now)
-		w := os.Stdout
-		if code != 0 {
-			w = os.Stderr
-		}
-		printLines(w, lines)
+		printLinesToCode(lines, code)
 		return code
 	case "statusline":
 		embed := hasFlag(args[1:], "--embed") || hasFlag(args[1:], "--compact")
@@ -94,11 +90,7 @@ func dispatch(args []string) int {
 		// exit code override init's own -- a caller checking $? must be able to trust that init's
 		// exit code reflects hook wiring, not an unrelated config-seed failure.
 		lines, code := configcmd.Init(args[1:], now)
-		w := os.Stdout
-		if code != 0 {
-			w = os.Stderr
-		}
-		printLines(w, lines)
+		printLinesToCode(lines, code)
 		return 0
 	case "config":
 		return configCommand(args[1:], now)
@@ -135,11 +127,7 @@ func configCommand(args []string, now int64) int {
 		return 2
 	}
 
-	w := os.Stdout
-	if code != 0 {
-		w = os.Stderr
-	}
-	printLines(w, lines)
+	printLinesToCode(lines, code)
 	return code
 }
 
@@ -160,6 +148,19 @@ func printLines(w io.Writer, lines []string) {
 	for _, l := range lines {
 		fmt.Fprintln(w, l)
 	}
+}
+
+// printLinesToCode routes lines to stdout on success (code==0) or stderr otherwise -- the print
+// half of "print then return an exit code," shared by every call site below even though each
+// chooses its OWN return value afterward (e.g. "init" always returns 0 regardless of code; see its
+// call site's comment for why). Only the routing is shared; the exit-code decision stays local to
+// each caller so it can't blur.
+func printLinesToCode(lines []string, code int) {
+	w := os.Stdout
+	if code != 0 {
+		w = os.Stderr
+	}
+	printLines(w, lines)
 }
 
 func hasFlag(args []string, flag string) bool {

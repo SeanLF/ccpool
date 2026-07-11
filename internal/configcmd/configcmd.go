@@ -23,40 +23,56 @@ import (
 	"github.com/SeanLF/ccpool/internal/rhythm"
 )
 
-// Detect builds the config a fresh install would seed: the pace profile read off the transcript
-// rhythm, and the clock mode resolved once (so `auto` gets pinned to a concrete "12"/"24" rather
-// than re-resolved, via a `defaults read`, on every future read). Everything else stays nil so
-// Merge can fill a user's blanks without ever overwriting an existing choice.
+// Detect builds the config a fresh install would seed: work_days/wake_hours read off the transcript
+// rhythm (never pace.profile -- see detectFrom), and the clock mode resolved once (so `auto` gets
+// pinned to a concrete "12"/"24" rather than re-resolved, via a `defaults read`, on every future
+// read). Everything else stays nil so Merge can fill a user's blanks without ever overwriting an
+// existing choice.
 func Detect(now int64) *config.Config {
 	return detectFrom(rhythm.Histogram(now))
 }
 
 // detectFrom is Detect's pure core, split out so tests can drive it with a crafted histogram
 // instead of scanning real transcripts (mirrors how rhythm_test.go drives rhythm.Detect directly).
+//
+// It NEVER seeds pace.profile from rhythm's classification. rhythm.Detect's "custom" label (any
+// active-day subset that isn't all-7 or exactly Mon-Fri) exists to pick a Suggestion() display
+// string, not to be persisted: profile.Load's "custom" branch takes the graded WEIGHT-VECTOR path
+// (CCPOOL_PACE_WEIGHTS/CCPOOL_PACE_HOUR_WEIGHTS, all-ones when unset) and BYPASSES Days/H0/H1 day-
+// hour gating entirely -- so a persisted profile:"custom" with no weights silently behaves like
+// uniform 24/7 pacing regardless of the detected work_days/wake_hours. Seeding only work_days and
+// wake_hours and leaving profile nil makes profile.Load default to "even" and, since DayWeights is
+// nil for any non-custom profile, take the Days/H0/H1 GATING path instead -- so the detected
+// schedule actually applies. This mirrors what rhythm.Suggestion already tells humans to set
+// (WORK_DAYS/WAKE_HOURS, never a custom profile): match that, don't diverge from it.
 func detectFrom(r float64, hours [24]int, wdays [7]int) *config.Config {
 	profile, workDays, wakeHours := rhythm.Detect(r, hours, wdays)
 
-	pace := &config.Pace{Profile: strPtr(profile)}
-	// rhythm.Detect reports "workhours" with workDays=="" for an all-7-days rhythm (hour-only
-	// restriction; see rhythm.Detect's doc comment). But profile.Load's "workhours" preset defaults
-	// CCPOOL_WORK_DAYS to Mon-Fri when it's unset -- which would silently narrow the detected
-	// all-week rhythm the moment this seeded config is read. Pin it explicitly so the persisted
-	// config matches what was actually detected, not profile.Load's unrelated preset default.
-	if profile == "workhours" && workDays == "" {
+	clockMode := strconv.Itoa(clock.Mode())
+	cfg := &config.Config{Clock: &clockMode}
+
+	if profile == "even" {
+		return cfg // low R: no schedule to seed, pace stays nil
+	}
+
+	// rhythm.Detect reports an all-7-days rhythm (hour-only restriction) with workDays=="" -- see
+	// rhythm.Detect's doc comment. Pin it explicitly to "0-6" so the persisted config states what
+	// was actually detected (every day, restricted hours) rather than leaving work_days unset and
+	// relying on profile.Load's day-default (which happens to also be all-days for a nil profile,
+	// but that's an unrelated coincidence this shouldn't depend on).
+	if workDays == "" && wakeHours != "" {
 		workDays = "0-6"
 	}
+
+	pace := &config.Pace{}
 	if workDays != "" {
 		pace.WorkDays = strPtr(workDays)
 	}
 	if wakeHours != "" {
 		pace.WakeHours = strPtr(wakeHours)
 	}
-
-	clockMode := strconv.Itoa(clock.Mode())
-	return &config.Config{
-		Pace:  pace,
-		Clock: &clockMode,
-	}
+	cfg.Pace = pace
+	return cfg
 }
 
 func strPtr(s string) *string { return &s }
@@ -119,23 +135,23 @@ func resolveEnabled(c *config.Config) (value, source string) {
 
 // Init is `ccpool config init`: dry-run by default (prints the plan -- the JSON it would write --
 // and writes nothing); --apply writes it. --force re-detects and overwrites outright (skipping
-// Merge), for deliberately re-seeding after e.g. a rhythm change; the default fill-missing-only
-// Merge never overwrites a value the user already set. On-demand, so a corrupt existing config is
-// surfaced LOUD rather than papered over, even under --force (it still reads the file to report on
-// it honestly, it just doesn't fold its values into the result).
+// Merge AND skipping the read of the existing file entirely), for deliberately re-seeding after
+// e.g. a rhythm change -- or for regenerating from scratch when the existing file is corrupt, which
+// is --force's other job: --force must be able to blow away a corrupt config, not refuse to. The
+// default fill-missing-only Merge never overwrites a value the user already set, and without
+// --force a corrupt existing config is surfaced LOUD rather than papered over.
 func Init(args []string, now int64) (lines []string, code int) {
 	apply := hasFlag(args, "--apply")
 	force := hasFlag(args, "--force")
 
 	detected := Detect(now)
 
-	existing, err := config.Load()
-	if err != nil {
-		return []string{fmt.Sprintf("ccpool: config file %s is corrupt: %v", paths.Config(), err)}, 2
-	}
-
 	final := detected
 	if !force {
+		existing, err := config.Load()
+		if err != nil {
+			return []string{fmt.Sprintf("ccpool: config file %s is corrupt: %v", paths.Config(), err)}, 2
+		}
 		final = config.Merge(existing, detected)
 	}
 

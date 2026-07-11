@@ -20,5 +20,12 @@ exec ccpool init
 stdout 'wiring plan'
 stderr 'corrupt'
 
+# --force's whole point is "regenerate from scratch, overwrite" -- including a corrupt file, which
+# is the exact case it's for. It must skip reading the existing (corrupt) file entirely.
+exec ccpool config init --apply --force
+exists $WORK/ccpool.json
+! grep 'not valid json' $WORK/ccpool.json
+grep '"clock"' $WORK/ccpool.json
+
 -- corrupt.json --
 {not valid json
