@@ -368,3 +368,47 @@ Full plan: `docs/ROADMAP.md`.
 - **Live data-hygiene fix applied:** purged a synthetic `session="bench"` / `wk_reset=9999999999`
   sentinel row from `rate-limit-history.jsonl` that was collapsing the weekly burn envelope to one
   sample.
+
+## Sprint A shipped + config file + architecture validation (2026-07-10, later still)
+
+All of Sprint A landed (A0 `resets_at`-jitter fix, A1 termenv colour, A2 env-config off the `rb`
+shims, A3 slog anomaly trail, A4 rapid property tests + testscript e2e, A5 blocksArray fail-loud).
+Then a config-file feature emerged from a conversation about how users actually configure ccpool.
+
+- **Config FILE shipped (not a config framework).** `~/.claude/ccpool.json`, resolved **env > file >
+  default**. This refines, not contradicts, the "no config framework" decision: no multi-source
+  precedence matrix, no schema-validation engine, no live reload; just a persistence layer so a
+  user's chosen/detected values survive without exported env vars. A2 made it cheap — every numeric
+  knob already routed through `internal/env`, so the file layer is one change there. Scope = the
+  bucket-2 user-shape choices (pace family, downshift, clock, colour, tier, history) + an `enabled`
+  kill-switch; the CHECK_*/WARN_*/RUNWAY_* threshold hatches stay env-only. Detection (pace via
+  `rhythm`, clock via the OS) seeds it ONCE off the hot path. Full design: `docs/config-file-design.md`.
+  Seed rule learned the hard way: never seed `pace.profile=custom` (that routes `profile.Load` to the
+  all-ones weight-vector path and silently disables the day/hour gating); seed `work_days`/`wake_hours`
+  and leave the profile default, exactly as `rhythm.Suggestion` already tells humans.
+- **Daemon/server statusline — REJECTED (measured).** Each hook is a fresh short-lived process
+  (~3.5ms: ~1.84ms fork/exec floor + ~1.5ms Go runtime init), NOT long-running. A shell client
+  (`sh -c :` = 3.92ms) is SLOWER than the whole Go binary, so "daemon responding to bash" is a
+  non-starter. Only a minimal C thin-client (`nc -U`) + a resident daemon could save ~2.5ms/render,
+  at the cost of a resident process, socket lifecycle, `nc -U` portability (only BSD nc present), and
+  a fail-open fallback for when the daemon is down — ~0.5% of a core even at heavy multi-session use.
+  Not worth it. Corollary: since every hook is a fresh process, in-process memoization is useless
+  across renders; only DISK persistence caches cross-process (the config file, the calib/blocks caches).
+- **$/1% recompute cadence — VALIDATED, no change.** The displayed `$` already updates every tick
+  (`(100 - live_used%) × dpp`, used% read live from the payload); only the slowly-moving ratio `dpp`
+  is cached (6h TTL, warmed by a DETACHED process — a goroutine can't outlive the render). Reset to 0
+  (weekly or a surprise Anthropic reset) is handled: the display reads the live number; the
+  calibration segments at hard wk drops + `wk_reset` windows with the same 300s jitter tolerance as A0.
+- **cacheState kept (measured cheap).** The prompt-cache "going cold" countdown reads a bounded 32KB
+  transcript tail ~0.3ms/render (the whole render is ~5ms, process-startup-bound). Not a hot-path cost.
+- **clock=auto costs ~8ms** (a `defaults read` subprocess), but only on `status`/`check`/`rhythm`
+  (on-demand), never the statusline. Persisting the detected `12`/`24` to the config eliminates it.
+- **Hook payload has no plan/tier field** (verified against a live snapshot: it carries
+  session_id/model/version/effort/thinking/fast_mode/cost/context_window/rate_limits{five_hour,
+  seven_day}). So `tier` can't be auto-detected; it stays a plain user-set value.
+- **Critical latent bug found + fixed:** `internal/env` was never git-tracked on `main` — the user's
+  global `~/.gitignore_global` `ENV/` (Python venv) matched `internal/env/` case-insensitively
+  (macOS `core.ignorecase=true`), so `git add` silently skipped it since A2. A clean clone of main
+  would have failed to build. Fixed with a repo-level `!internal/env/` negation; main-tip self-heals
+  on merge (though the A2 commit `268e613` is individually un-buildable — a `git bisect` hazard on an
+  unpushed repo, low-stakes).

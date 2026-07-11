@@ -110,6 +110,20 @@ control), not a critical fix — sequence after the A2–A5 cleanups.
 
 ---
 
+## Config file — COMPLETE (2026-07-10, feature that emerged mid-Sprint)
+
+Not originally on this roadmap; came out of a conversation about how outside users actually configure
+ccpool (env-only was fragile — choices don't survive without exported env vars, and detection is too
+expensive to redo per render). Shipped: `~/.claude/ccpool.json`, resolved **env > file > default**,
+with `ccpool config show`/`config init` (detect + seed, dry-run/`--apply`/`--force`), an `enabled`
+kill-switch, and `ccpool init --apply` seeding it too. Detection (pace via `rhythm`, clock via the OS)
+runs once off the hot path. This is a config FILE, distinct from the rejected config framework (see
+Not doing). Design + rationale: `docs/config-file-design.md`; decisions: `docs/DECISIONS.md`.
+Also fixed a critical latent bug found along the way: `internal/env` was never git-tracked on main
+(global `ENV/` gitignore + macOS case-insensitivity); a clean clone wouldn't have built.
+
+---
+
 ## Sprint B — SQLite storage (on the release path; sequence after A)
 
 Not a bugfix (flock passes 8-way concurrency) but it dissolves the subtlest bespoke code (tail-dedup,
@@ -151,6 +165,10 @@ in-Claude-Code statusline screenshot for the README, and a fresh `ccpool init` w
 ---
 
 ## Not doing (decided): native cost calc (pricing churn — ccusage-delegation invariant), config
-framework (fights zero-config defaults), ORM, `x/text`, `fang`, a Go↔Rust FFI bridge to ccusage (cgo
-kills static/cross-compile; no C ABI; off the hot path + cached), a ccusage schema adapter (one schema
-in play). Node-runtime lever if wanted: `cargo install` ccusage (same schema) + `CCPOOL_CCUSAGE_CMD`.
+*framework* (a multi-source precedence matrix + schema engine — but a config FILE for persistence DID
+ship 2026-07-10, `env > file > default` only; see above), ORM, `x/text`, `fang`, a Go↔Rust FFI bridge
+to ccusage (cgo kills static/cross-compile; no C ABI; off the hot path + cached), a ccusage schema
+adapter (one schema in play), a **daemon/server statusline** (rejected, measured: each hook is a fresh
+~3.5ms process, a shell client is slower than the Go binary, `nc`+daemon saves ~2.5ms at high
+complexity/portability cost — see DECISIONS). Node-runtime lever if wanted: `cargo install` ccusage
+(same schema) + `CCPOOL_CCUSAGE_CMD`.
