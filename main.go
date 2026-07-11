@@ -88,14 +88,18 @@ func dispatch(args []string) int {
 			return 1
 		}
 		// Seed ~/.claude/ccpool.json too (fill-missing-only via Merge, so re-running init is
-		// idempotent and never clobbers a value the user already set in the file).
+		// idempotent and never clobbers a value the user already set in the file). This is a
+		// best-effort bonus on top of init's real job (hook wiring, already done above): print
+		// whatever configcmd.Init reports (including a corrupt-file warning) but don't let its
+		// exit code override init's own -- a caller checking $? must be able to trust that init's
+		// exit code reflects hook wiring, not an unrelated config-seed failure.
 		lines, code := configcmd.Init(args[1:], now)
 		w := os.Stdout
 		if code != 0 {
 			w = os.Stderr
 		}
 		printLines(w, lines)
-		return code
+		return 0
 	case "config":
 		return configCommand(args[1:], now)
 	case "prune":

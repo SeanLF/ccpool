@@ -1,0 +1,24 @@
+# A corrupt ~/.claude/ccpool.json must still fail LOUD when the user invokes `config init`
+# directly (on-demand command), but must NOT override `ccpool init`'s own exit code: init's real
+# job is hook wiring, and the config seed underneath it is a best-effort bonus (see main.go's
+# "init" case). A script checking $? after `ccpool init` needs to trust it reflects hook wiring,
+# not an unrelated config-seed failure.
+env CCPOOL_CONFIG=$WORK/ccpool.json
+env CCPOOL_SETTINGS=$WORK/settings.json
+env CCPOOL_HISTORY=$WORK/h.jsonl
+env CCPOOL_PROJECTS=$WORK/projects
+
+cp corrupt.json $WORK/ccpool.json
+
+# standalone `config init` talks straight to the corrupt file: fails loud, non-zero exit.
+! exec ccpool config init
+stderr 'corrupt'
+
+# `ccpool init` still wires hooks fine and exits 0, even though the config seed underneath hit the
+# same corrupt file (its warning still prints, just doesn't own the exit code).
+exec ccpool init
+stdout 'wiring plan'
+stderr 'corrupt'
+
+-- corrupt.json --
+{not valid json
