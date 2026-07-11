@@ -224,23 +224,69 @@ func spark(counts [24]int) string {
 	return b.String()
 }
 
-// Suggestion is the R-gated recommendation line. Low R -> `even`; high R -> a concrete window (+
-// work-days if there's a day pattern), unless the window straddles midnight (unrepresentable ->
-// honest `even`).
-func Suggestion(r float64, hours [24]int, wdays [7]int) string {
+// Detect is the R-gated profile DECISION (no formatting): low R -> `even`, no schedule. High R with
+// a clean (non-midnight-straddling) window -> a concrete wake window, further classified by the
+// active-day set: every day active -> `workhours` (hour-only restriction); active days exactly
+// Mon-Fri -> `weekdays`; any other day subset -> `custom`. workDays/wakeHours are "" when not
+// applicable to the chosen profile. Mirrors the exact thresholds/window logic Suggestion used to
+// inline (see Suggestion below for the formatting that consumes this).
+func Detect(r float64, hours [24]int, wdays [7]int) (profile, workDays, wakeHours string) {
 	if r < rStrong() {
-		return "CCPOOL_PACE_PROFILE=even   (R too low for a schedule to help)"
+		return "even", "", ""
 	}
 	h0, h1 := wakeWindow(active(hours[:]))
-	if h1 <= h0 {
+	if h1 <= h0 { // straddles midnight -> unrepresentable as a clean day-window
+		return "even", "", ""
+	}
+	wakeHours = fmt.Sprintf("%d-%d", h0, h1)
+	days := active(wdays[:])
+	if len(days) == 7 {
+		return "workhours", "", wakeHours
+	}
+	return dayProfile(days), fmtSet(days), wakeHours
+}
+
+// dayProfile classifies a non-full active-day set: exactly Mon-Fri (wday 1-5) -> `weekdays`;
+// anything else (weekend-only, a partial week, ...) -> `custom`.
+func dayProfile(days []int) string {
+	if len(days) != 5 {
+		return "custom"
+	}
+	for _, d := range days {
+		if d < 1 || d > 5 {
+			return "custom"
+		}
+	}
+	return "weekdays"
+}
+
+// Suggestion is the R-gated recommendation line: formats Detect's decision into the human display
+// string. Low R -> `even`; high R -> a concrete window (+ work-days if there's a day pattern),
+// unless the window straddles midnight (unrepresentable -> honest `even`). Re-checks rStrong/the
+// window itself only to pick WHICH `even` message applies -- Detect already made the one decision
+// that matters (schedule vs. no schedule); this is display-string selection, not re-deciding.
+func Suggestion(r float64, hours [24]int, wdays [7]int) string {
+	profile, workDays, wakeHours := Detect(r, hours, wdays)
+	if profile == "even" {
+		if r < rStrong() {
+			return "CCPOOL_PACE_PROFILE=even   (R too low for a schedule to help)"
+		}
 		return "CCPOOL_PACE_PROFILE=even   (strong, but the rhythm straddles midnight -- no clean day-window)"
 	}
-	parts := []string{fmt.Sprintf("CCPOOL_WAKE_HOURS=%d-%d", h0, h1)}
-	days := active(wdays[:])
-	if len(days) != 7 {
-		parts = append(parts, "CCPOOL_WORK_DAYS="+fmtSet(days))
+	parts := []string{"CCPOOL_WAKE_HOURS=" + wakeHours}
+	if workDays != "" {
+		parts = append(parts, "CCPOOL_WORK_DAYS="+workDays)
 	}
 	return strings.Join(parts, " ") + "   (strong rhythm -- pace to it)"
+}
+
+// Histogram builds the (R, hour-of-day, weekday) triple Detect needs, for callers (e.g. config
+// seeding) that want the profile decision without the full Report text. Mirrors the scan+circ steps
+// Report itself runs. Fails open via scan's own recover: no activity -> r=0 (Detect -> even).
+func Histogram(now int64) (r float64, hours [24]int, wdays [7]int) {
+	d := scan(now)
+	r, _ = circ(d.hours)
+	return r, d.hours, d.wdays
 }
 
 // Report renders the `ccpool rhythm` output as one line per element. Never panics.
