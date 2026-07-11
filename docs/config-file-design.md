@@ -98,16 +98,22 @@ true. A missing OR corrupt config never disables (fail-open must not accidentall
 
 ## Commands
 
-- `ccpool init` — wires hooks (unchanged behaviour) **and** seeds the config. Idempotent /
-  re-runnable: the hook step already no-ops when wired; the config step creates the file if absent and
-  otherwise fills only missing keys, **never clobbering a user's edited values** (reports what it
-  did). So a user can safely re-run `ccpool init` after an upgrade.
-- `ccpool config show` — render each in-scope setting: effective value + source (`env` / `file` /
-  `default`). Detected values live in the file, so once seeded they read as `file` (provenance isn't
-  separately tracked). Needs a provenance-aware resolver: `env` exposes a `(value, source)` variant
-  alongside the plain getters. The "why is my pace X?" answer. Fails LOUD on a corrupt file.
-- `ccpool config init [--force]` — the config step on its own (detect + seed). `--force` regenerates
-  from scratch (overwrites); without it, same fill-missing-only merge as `ccpool init`. Fails LOUD.
+Dry-run by default, `--apply` writes — matching the existing `ccpool init` hook contract (and the
+"init aborts rather than clobbers" invariant). Nothing touches disk without `--apply`.
+
+- `ccpool init` — wires hooks (unchanged) **and** seeds the config. Dry-run shows BOTH the hook plan
+  and the config plan (detected values + the file diff it would write); `--apply` writes both.
+  Idempotent / re-runnable: the hook step already no-ops when wired; the config step creates the file
+  if absent and otherwise fills only missing keys, **never clobbering a user's edited values**. So a
+  user can safely re-run `ccpool init --apply` after an upgrade.
+- `ccpool config show` — read-only. Render each in-scope setting: effective value + source (`env` /
+  `file` / `default`). Detected values live in the file, so once seeded they read as `file`
+  (provenance isn't separately tracked). Needs a provenance-aware resolver: `env` exposes a
+  `(value, source)` variant alongside the plain getters. The "why is my pace X?" answer. Fails LOUD
+  on a corrupt file.
+- `ccpool config init` — the config step on its own. Dry-run shows the detected values + planned
+  file; `--apply` writes (fill-missing-only merge, same as `init`); `--apply --force` regenerates
+  from scratch (re-detect + overwrite). Fails LOUD.
 
 ## Detection (off the hot path, at seed time only)
 
@@ -125,10 +131,9 @@ finding), so it defaults to truecolor and is a manual choice.
   callable). Expensive (scans `~/.claude/projects`), hence persisted.
 - **clock** — resolve `clock`'s `auto` mode ONCE and persist the concrete `12`/`24`. Real cost win,
   measured: `clock.Mode()` under `auto` shells out to `defaults read` (~8ms) on every
-  status/check/rhythm call (not the statusline hot path — clock isn't on it), and isn't memoized, so
-  a command that formats twice spawns it twice. Persisting removes the subprocess entirely.
-  (Complementary cheap fix, independent of this feature: memoize `clock.detect()` with `sync.Once` so
-  a live `auto` spawns at most once per process.)
+  status/check/rhythm call (not the statusline hot path — clock isn't on it). Each hook/command is a
+  fresh short-lived process, so in-process memoization wouldn't survive across calls; only the
+  persisted config value caches it across invocations. Persisting removes the subprocess entirely.
 - **tier** — NOT detected. Verified against a live snapshot: the hook payload carries
   `session_id, model, version, effort, thinking, fast_mode, cost, context_window,
   rate_limits{five_hour, seven_day}` — but **no plan/tier field**, and percentages can't reveal the
