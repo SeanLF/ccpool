@@ -157,3 +157,107 @@ func csv(fs []float64) string {
 	}
 	return strings.Join(parts, ",")
 }
+
+// Merge returns base with each NIL field filled from add -- never overwriting a value base already
+// has (fill-missing-only, so re-seeding can't clobber a user's edits).
+func Merge(base, add *Config) *Config {
+	if base == nil {
+		base = &Config{}
+	}
+	if add == nil {
+		return base
+	}
+	if base.Enabled == nil {
+		base.Enabled = add.Enabled
+	}
+	if base.Clock == nil {
+		base.Clock = add.Clock
+	}
+	if base.Colour == nil {
+		base.Colour = add.Colour
+	}
+	if base.Tier == nil {
+		base.Tier = add.Tier
+	}
+	base.Pace = mergePace(base.Pace, add.Pace)
+	base.Downshift = mergeDownshift(base.Downshift, add.Downshift)
+	base.History = mergeHistory(base.History, add.History)
+	return base
+}
+
+func mergePace(b, a *Pace) *Pace {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	if b.Profile == nil {
+		b.Profile = a.Profile
+	}
+	if b.WorkDays == nil {
+		b.WorkDays = a.WorkDays
+	}
+	if b.WakeHours == nil {
+		b.WakeHours = a.WakeHours
+	}
+	if b.Floor == nil {
+		b.Floor = a.Floor
+	}
+	if b.Weights == nil {
+		b.Weights = a.Weights
+	}
+	if b.HourWeights == nil {
+		b.HourWeights = a.HourWeights
+	}
+	return b
+}
+
+func mergeDownshift(b, a *Downshift) *Downshift {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	if b.Mode == nil {
+		b.Mode = a.Mode
+	}
+	if b.Model == nil {
+		b.Model = a.Model
+	}
+	if b.Effort == nil {
+		b.Effort = a.Effort
+	}
+	return b
+}
+
+func mergeHistory(b, a *History) *History {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	if b.KeepDays == nil {
+		b.KeepDays = a.KeepDays
+	}
+	if b.MinInterval == nil {
+		b.MinInterval = a.MinInterval
+	}
+	return b
+}
+
+// Write marshals c (indented) to path atomically (temp + rename).
+func Write(path string, c *Config) error {
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	b = append(b, '\n')
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
