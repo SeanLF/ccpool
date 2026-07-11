@@ -21,6 +21,7 @@ import (
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/profile"
 	"github.com/SeanLF/ccpool/internal/rb"
+	"github.com/muesli/termenv"
 )
 
 const (
@@ -45,30 +46,75 @@ type palette struct {
 }
 
 func loadPalette() palette {
-	// Honour the NO_COLOR contract (present + non-empty) and TERM=dumb. We can't gate on tty:
-	// Claude Code invokes the statusLine with a non-tty stdout yet renders ANSI.
-	color := os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"
-	ansi := func(code string) string {
-		if color {
-			return code
+	prof := colorProfile()
+
+	// seq is a foreground colour as an SGR prefix, downgraded to the active profile (e.g. 24-bit
+	// "38;2;.." -> 256-colour "38;5;.." -> 16-colour "36" -> "" for Ascii). termenv does the matching.
+	seq := func(spec string) string {
+		s := prof.Color(spec).Sequence(false)
+		if s == "" {
+			return ""
 		}
-		return ""
+		return "\x1b[" + s + "m"
 	}
-	barCode := os.Getenv("CCPOOL_BAR_COLOR")
-	if barCode == "" {
-		// 24-bit truecolour teal-cyan, theme-independent (a 16-colour code gets palette-remapped).
-		barCode = "\x1b[38;2;86;182;194m"
+	// attr gates a non-colour SGR attribute (reset/dim/bold) on colour being on at all.
+	attr := func(code string) string {
+		if prof == termenv.Ascii {
+			return ""
+		}
+		return code
 	}
+
+	// The bar is the default teal-cyan (downgraded to the active tier), unless CCPOOL_BAR_COLOR gives
+	// an explicit raw-escape override; either way it is suppressed when colour is off (attr/seq both
+	// return "" under Ascii).
+	bar := os.Getenv("CCPOOL_BAR_COLOR")
+	if bar == "" {
+		bar = seq("#56B6C2")
+	} else {
+		bar = attr(bar)
+	}
+
 	p := palette{
-		reset:  ansi("\x1b[0m"),
-		dim:    ansi("\x1b[2m"),
-		yellow: ansi("\x1b[93m"),
-		red:    ansi("\x1b[91m"),
-		bar:    ansi(barCode),
-		bold:   ansi("\x1b[1m"),
+		reset:  attr("\x1b[0m"),
+		dim:    attr("\x1b[2m"),
+		yellow: seq("11"), // bright yellow; already 16-colour, so unchanged across the colour tiers
+		red:    seq("9"),  // bright red
+		bar:    bar,
+		bold:   attr("\x1b[1m"),
 	}
 	p.sep = " " + p.dim + "·" + p.reset + " "
 	return p
+}
+
+// colorProfile resolves how much colour to emit. Claude Code invokes the statusLine with a NON-TTY
+// stdout yet renders ANSI, so termenv's own auto-detection would strip everything; we force TrueColor
+// by default and let CCPOOL_COLOR opt down a tier (a non-tty hook can't auto-detect the real
+// terminal). NO_COLOR / TERM=dumb still win: forcing the profile bypasses termenv's NO_COLOR check,
+// so it is gated manually. An unknown CCPOOL_COLOR fails open to TrueColor.
+func colorProfile() termenv.Profile {
+	if noColorEnv() {
+		return termenv.Ascii
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("CCPOOL_COLOR"))) {
+	case "256", "8bit":
+		return termenv.ANSI256
+	case "16", "ansi":
+		return termenv.ANSI
+	case "ascii", "none", "off":
+		return termenv.Ascii
+	case "auto":
+		return termenv.NewOutput(os.Stdout).Profile // termenv's own detection (strips on a non-tty pipe)
+	default: // "", "truecolor", "24bit", or anything unrecognised
+		return termenv.TrueColor
+	}
+}
+
+// noColorEnv preserves the pre-termenv contract exactly: NO_COLOR present AND non-empty, or TERM=dumb.
+// (termenv.EnvNoColor also honours CLICOLOR and treats an empty NO_COLOR as set, which would differ.)
+func noColorEnv() bool {
+	v, ok := os.LookupEnv("NO_COLOR")
+	return (ok && v != "") || os.Getenv("TERM") == "dumb"
 }
 
 // Render builds the whole line from the CC payload. now is unix seconds.
