@@ -39,6 +39,7 @@ var readoutEnvKeys = []string{
 	"CCPOOL_HISTORY_KEEP_DAYS", "CCPOOL_HISTORY_WARN_MB", "CCPOOL_CALIB_TTL", "CCPOOL_RUNWAY_FAST",
 	"CCPOOL_RUNWAY_SLOW", "CCPOOL_RUNWAY_MIN_DENSITY", "CCPOOL_PACE_PROFILE", "CCPOOL_WORK_DAYS",
 	"CCPOOL_WAKE_HOURS", "CCPOOL_PACE_FLOOR", "CCPOOL_PACE_WEIGHTS", "CCPOOL_PACE_HOUR_WEIGHTS",
+	"CCPOOL_CONFIG",
 }
 
 func TestStatusConformance(t *testing.T) {
@@ -127,6 +128,7 @@ func stageReadout(t *testing.T, fx readoutFixture, fakeCmd string) []string {
 	// Shared inputs on the Go process env (inherited by the oracle via os.Environ).
 	t.Setenv("USAGE_CACHE", filepath.Join(inputDir, "usage-cache.json"))
 	t.Setenv("CCPOOL_HISTORY", histPath)
+	t.Setenv("CCPOOL_CONFIG", filepath.Join(inputDir, "no-config.json")) // isolate: never read the dev's real ~/.claude/ccpool.json
 	t.Setenv("CCPOOL_CCUSAGE_CMD", fakeCmd)
 	t.Setenv("CCUSAGE_FIXTURE", blocksPath)
 	t.Setenv("CCPOOL_BLOCKS_CACHE", filepath.Join(goDir, "blocks-cache.json"))

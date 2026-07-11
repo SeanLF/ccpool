@@ -27,7 +27,7 @@ type fixture struct {
 var envKeys = []string{
 	"NO_COLOR", "TERM", "COLUMNS", "CCPOOL_BAR_COLOR", "CCPOOL_PACE_PROFILE",
 	"CCPOOL_WORK_DAYS", "CCPOOL_WAKE_HOURS", "CCPOOL_PACE_FLOOR",
-	"CCPOOL_PACE_WEIGHTS", "CCPOOL_PACE_HOUR_WEIGHTS", "USAGE_TIER",
+	"CCPOOL_PACE_WEIGHTS", "CCPOOL_PACE_HOUR_WEIGHTS", "USAGE_TIER", "CCPOOL_CONFIG",
 }
 
 func TestStatuslineConformance(t *testing.T) {
@@ -76,8 +76,10 @@ func loadFixtures(t *testing.T, path string) []fixture {
 	return fs
 }
 
-// applyEnv clears every fixture-controlled key, then sets the ones this fixture specifies. t.Setenv
-// restores the prior value at test end. TZ is left pinned to UTC by the parent test.
+// applyEnv clears every fixture-controlled key, then sets the ones this fixture specifies, then
+// isolates CCPOOL_CONFIG at a nonexistent path so config.Load() never picks up the dev's real
+// ~/.claude/ccpool.json. t.Setenv restores the prior value at test end. TZ is left pinned to UTC by
+// the parent test.
 func applyEnv(t *testing.T, env map[string]string) {
 	t.Helper()
 	for _, k := range envKeys {
@@ -87,6 +89,7 @@ func applyEnv(t *testing.T, env map[string]string) {
 	for k, v := range env {
 		t.Setenv(k, v)
 	}
+	t.Setenv("CCPOOL_CONFIG", filepath.Join(t.TempDir(), "no-config.json")) // isolate: never read the dev's real ~/.claude/ccpool.json
 }
 
 // writeCalib writes (or removes) the calibration cache so both sides read the same $/1%.
