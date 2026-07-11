@@ -141,6 +141,51 @@ all/24h), `weekdays` (`1-5`/24h), `workhours` (`1-5`/`9-17`), or `custom` for gr
 the preset. One setting steers `status`, `check`, `warn`, `run`'s downshift, and the statusline
 bar together — they can't disagree.
 
+## Config file
+
+ccpool reads a config file at `~/.claude/ccpool.json` (override `CCPOOL_CONFIG`). Zero-config still
+works, every setting below has a default; the file just persists your choices so they survive
+without keeping env vars exported. Resolution order is **env > file > default**; env stays the
+override/escape hatch, the file is where a chosen or detected value lives.
+
+In scope: `enabled`, `pace` (`profile`/`work_days`/`wake_hours`/`floor`/`weights`/`hour_weights`),
+`downshift` (`mode`/`model`/`effort`), `clock`, `colour`, `tier`, `history`
+(`keep_days`/`min_interval`). A realistic file:
+
+```jsonc
+{
+  "enabled": true,
+  "pace":      { "profile": "workhours", "work_days": "1-5", "wake_hours": "9-17" },
+  "downshift": { "mode": "auto", "model": "haiku", "effort": "low" },
+  "clock":     "24",
+  "colour":    "truecolor",
+  "tier":      "max_20x",
+  "history":   { "keep_days": 30, "min_interval": 60 }
+}
+```
+
+`enabled: false` is a kill-switch: the statusline and `warn` hook go quiet (no-op) without
+unwiring anything from `settings.json`, handy for a holiday or a focus block.
+
+**Commands.** `ccpool config show` prints the effective value of every setting plus which layer
+supplied it (`env`/`file`/`default`): the "why is my pace X?" answer. `ccpool config init` seeds
+the file: dry-run by default (prints the plan, writes nothing), `--apply` writes it
+(fill-missing-only, never clobbers a value you already set), `--apply --force` re-detects
+everything and overwrites from scratch. `ccpool init --apply` also seeds the config as part of
+first-time setup, so a single command wires the hooks *and* the file.
+
+Detection is off the hot path (only `init`/`config init` run it, never a render): it infers
+`work_days`/`wake_hours` from your work rhythm (the same analysis behind `ccpool rhythm`) and
+resolves `clock`'s `auto` mode once to a concrete `12`/`24`, persisting both so future renders skip
+the scan/subprocess. `pace.profile` itself is left unset by detection (so it resolves to its
+`even` default until you set it by hand); everything else seeds at its plain default too.
+`colour` is never detected (the hook renders to a non-tty pipe, so there's nothing to probe) and
+`tier` is never detected (the hook payload carries no plan/tier field).
+
+The threshold escape hatches (`CCPOOL_CHECK_*`/`WARN_*`/`RUNWAY_*` and friends, below) are
+deliberately **not** in the file; they're power-user overrides on internal judgment calls, not
+user-shape settings.
+
 ## Config (env)
 
 | var | default | meaning |

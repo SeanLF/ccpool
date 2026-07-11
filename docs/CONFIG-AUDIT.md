@@ -9,6 +9,13 @@ per knob. Paired with `ccpool init` making the happy path zero-config.
 **A fresh user needs zero env vars.** `ccpool init --apply` wires everything; every knob below has
 a working default. ~45 vars exist, but they split cleanly:
 
+**Update (2026-07-10):** the bucket-2 documented user choices below now also persist to
+`~/.claude/ccpool.json` (resolved `env > file > default`), seeded by `ccpool config init` (or
+`ccpool init --apply`, which seeds both the hooks and the config). A user no longer needs env vars
+exported to keep a choice across shells/machines; the file carries it. Bucket 1 (paths) and bucket
+3 (threshold escape hatches) stay env-only by design. See `docs/config-file-design.md` for the full
+scope and resolution model.
+
 - **8 path/data vars** — invisible plumbing (test isolation + data location). Not "config."
 - **~15 documented user choices** — genuine user-shape diversity (pace rhythm, downshift policy,
   clock, colour). These earn their keep; they're *why* ccpool fits more than one operator.
@@ -111,5 +118,6 @@ encodes a contestable judgment call (`CHECK_*`/`WARN_*`) or has a real tuning/te
 
 The config surface is **not** the liability the red-team assumed. Zero vars are required; the
 documented ones are genuine user-shape choices; the rest are invisible escape hatches. `ccpool
-init` delivers the zero-config happy path the principle demands. **Action: none required** — keep
-defaults, hold the documented surface where it is.
+init` delivers the zero-config happy path the principle demands, and the bucket-2 choices now
+persist to `~/.claude/ccpool.json` too, so a user doesn't need to keep them exported to make a
+choice stick. **Action: none required**, keep defaults, hold the documented surface where it is.
