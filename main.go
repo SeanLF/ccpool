@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/analyzer"
+	"github.com/SeanLF/ccpool/internal/configcmd"
 	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/initcmd"
 	"github.com/SeanLF/ccpool/internal/rhythm"
@@ -86,7 +87,17 @@ func dispatch(args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		return 0
+		// Seed ~/.claude/ccpool.json too (fill-missing-only via Merge, so re-running init is
+		// idempotent and never clobbers a value the user already set in the file).
+		lines, code := configcmd.Init(args[1:], now)
+		w := os.Stdout
+		if code != 0 {
+			w = os.Stderr
+		}
+		printLines(w, lines)
+		return code
+	case "config":
+		return configCommand(args[1:], now)
 	case "prune":
 		return prune(args[1:], now)
 	case "version", "--version", "-v":
@@ -99,6 +110,33 @@ func dispatch(args []string) int {
 		fmt.Fprintf(os.Stderr, "ccpool: unknown command %q. Run `ccpool help` for usage.\n", cmd)
 		return 2
 	}
+}
+
+// configCommand dispatches `ccpool config <show|init>`, args already past "config".
+func configCommand(args []string, now int64) int {
+	sub := ""
+	if len(args) > 0 {
+		sub = args[0]
+	}
+
+	var lines []string
+	var code int
+	switch sub {
+	case "show":
+		lines, code = configcmd.Show(now)
+	case "init":
+		lines, code = configcmd.Init(args[1:], now)
+	default:
+		fmt.Fprintf(os.Stderr, "ccpool: unknown config subcommand %q (want show or init). Run `ccpool help` for usage.\n", sub)
+		return 2
+	}
+
+	w := os.Stdout
+	if code != 0 {
+		w = os.Stderr
+	}
+	printLines(w, lines)
+	return code
 }
 
 // prune deletes stale snapshots, and with --history compacts the history log too.
@@ -135,7 +173,11 @@ func usage(w io.Writer) {
 Usage: ccpool <command> [args]        (no command -> status)
 
 Commands:
-  init [--apply]     wire ccpool into Claude Code (dry-run diff by default; --apply writes).
+  init [--apply]     wire ccpool into Claude Code (dry-run diff by default; --apply writes) and
+                     seed ~/.claude/ccpool.json from your detected rhythm (same dry-run/--apply).
+  config show        effective value of every setting + which layer supplied it (env/file/default).
+  config init        (re-)seed ~/.claude/ccpool.json from your detected rhythm; dry-run by default,
+                     --apply writes, --force re-detects and overwrites instead of fill-missing-only.
   status             % used, ~$ API-equiv left, and pace vs how far through the week you are.
   check              time + budget + a keep-going/stop VERDICT, for long or autonomous loops.
   rhythm             your circadian work rhythm + a suggested pace profile (read-only).

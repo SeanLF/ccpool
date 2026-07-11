@@ -1,0 +1,17 @@
+env CCPOOL_CONFIG=$WORK/ccpool.json
+env CCPOOL_HISTORY=$WORK/h.jsonl
+env CCPOOL_PROJECTS=$WORK/projects
+
+# config init is a DRY RUN by default: prints a plan, writes nothing
+exec ccpool config init
+stdout 'DRY RUN'
+! exists $WORK/ccpool.json
+
+# --apply writes the file
+exec ccpool config init --apply
+exists $WORK/ccpool.json
+
+# config show reports effective values + a source column
+exec ccpool config show
+stdout 'enabled'
+stdout 'source'
