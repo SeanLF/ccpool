@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 
+	cfgfile "github.com/SeanLF/ccpool/internal/config" // aliased: this file already has a local `config` type
 	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/pool"
@@ -62,6 +63,10 @@ func load() config {
 // a trailing newline, like Ruby's puts). FAILS OPEN and silent — a hook must NEVER break Claude Code.
 func Hook(now int64) {
 	defer func() { _ = recover() }()
+
+	if !cfgfile.HooksEnabled() {
+		return
+	}
 
 	raw, err := io.ReadAll(os.Stdin)
 	if err != nil {

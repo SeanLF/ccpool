@@ -68,6 +68,17 @@ func (c *Config) HooksEnabled() bool {
 	return c.Enabled == nil || *c.Enabled
 }
 
+// HooksEnabled resolves the kill-switch fail-open: CCPOOL_ENABLED env (escape hatch) > file enabled >
+// true. A missing OR corrupt config never disables (an inability to read config must not silence the
+// tool). Errors are swallowed here by design (hot path).
+func HooksEnabled() bool {
+	if v, ok := os.LookupEnv("CCPOOL_ENABLED"); ok {
+		return v != "0" && !strings.EqualFold(v, "false")
+	}
+	c, _ := Load()
+	return c.HooksEnabled()
+}
+
 // Lookup returns the file's value for an env key in string form (as if the env var were set), present
 // only when the field is set. This lets internal/env flow file values through the same parse+validate
 // path as env values.

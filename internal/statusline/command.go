@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/SeanLF/ccpool/internal/calib"
+	"github.com/SeanLF/ccpool/internal/config"
 	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/history"
@@ -31,6 +32,10 @@ func Command(now int64, embed bool) {
 			diag.Error("statusline panic", "recovered", fmt.Sprint(r))
 		}
 	}()
+
+	if !config.HooksEnabled() {
+		return
+	}
 
 	// No CC payload on a terminal stdin (reading it would hang) -> preview from the newest snapshot.
 	if isTTY(os.Stdin) {
