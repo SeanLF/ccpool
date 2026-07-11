@@ -396,6 +396,8 @@ git commit -m "feat(store): facade read/write methods with typed states + atomic
 - Consumes: `store.Open`, `store.AppendHistory`, `store.LastSessionRow`, `store.HistoryRow`.
 - Preserves: `skip(last map[string]any, r row, now int64) bool` unchanged (dedup identical wk/wk_reset; 60s throttle when only ses moved).
 
+**Note (latent fragility, fix here):** `burn.Envelope` and `calib.wkRuns` trust `wk_reset`/`ses_reset` with no sanity bound, unlike `pool.GetWindow` which already skips `reset > now+maxAhead`. A single absurd reset (e.g. the `9999999999` sentinels found in live data on 2026-07-11) poisons BOTH burn (envelope `latest = max(reset)` collapses the window) AND calibration (`wkRuns` delta-weight skews, inflating `$/1%` ~4.4x -> the statusline `$` was 4.4x too high). The importer skips sentinels, but LIVE ingest does not validate. **Add a cheap guard in `Seed`: reject a row whose `wk_reset`/`ses_reset` is beyond `now + 30*86400` (or below `now`), so newly-arriving bad data cannot recur the bug.** Cover it with a unit test (a row with `wk_reset = now + 400d` is not written).
+
 - [ ] **Step 1: Update the existing `Seed` throttle/dedup tests** to run against a temp DB (set `CCPOOL_DB`), asserting the same skip/append outcomes as today (identical wk+wk_reset+ses -> no new row; only-ses-moved within 60s -> no new row; wk moved -> new row).
 - [ ] **Step 2: Run to verify fail** (`Seed` still writes JSONL) -> FAIL.
 - [ ] **Step 3: Rewrite `Seed`** - build the row as today; `s, st := store.Open()`; on non-OK return best-effort nil (fail-open, no history is not fatal); `last, _ := s.LastSessionRow(sid)`; `if skip(last, r, now) { return nil }`; `return s.AppendHistory(toHistoryRow(r))`. Drop `flock`, `marshalRow`, the 64KB tail scan.
