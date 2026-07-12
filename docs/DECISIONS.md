@@ -423,6 +423,18 @@ Then a config-file feature emerged from a conversation about how users actually 
   probe (`compute.go` stderr warning: `$` disabled, not silently zeroed) backstops a surprise change.
   Graceful degradation confirmed: no ccusage / no network -> `npx` fails -> empty output -> `%` shown
   without `$`, never a crash.
+- **Sprint B queued follow-ups (post-storage, non-blocking).** Recorded so they aren't lost with the
+  session: (1) **Dissolve `internal/rb`** (the retired-Ruby compat shim; user-greenlit). `ParseObject`/
+  `Num` are legit JSON-reading primitives, just misnamed -> rehome as a `jsonx`/`payload` helper;
+  the rounding (`RoundToInt`/`Round1`/`Fmt1`) is a real display decision (half-away-from-zero for
+  DERIVED numbers -- burn %/h, pace, $, day counts; CC gives integer % so rounding raw % is a no-op)
+  -> move to `internal/fmtx`; `ToI`/`ToF` (Ruby lenient string coercion) -> `strconv` at the 4
+  regex-clean sites (analyzer/rhythm/warn). This deletes the package and the Ruby association.
+  (2) `status.historyCleanup` still stats the legacy JSONL for a size nudge -> repoint to DB size or
+  retire. (3) `classify` folds persistent CANTOPEN/READONLY/FULL into `StateTransient`; a 4th
+  `StateBlocked` (or threading the error) would let loud commands name an actionable path/permission
+  fault -- deferred, since the 3-state model was deliberate. (4) Consider `--offline` as ccusage's
+  default (network-independence) with online as an escape hatch, when kv lands (Task 13).
 - **Critical latent bug found + fixed:** `internal/env` was never git-tracked on `main` — the user's
   global `~/.gitignore_global` `ENV/` (Python venv) matched `internal/env/` case-insensitively
   (macOS `core.ignorecase=true`), so `git add` silently skipped it since A2. A clean clone of main

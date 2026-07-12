@@ -2,6 +2,23 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## STATUS (updated mid-sprint)
+
+- **DONE + committed + gate-green:** Phase 1 (T1-T2), Phase 2 (T3-T5), Phase 3 (T6-T10, incl. the
+  live import + parity proof), Phase 4 **T11**. 15 commits `6f1d1cd`..`755e84a`. Phase 3 is
+  live-verified (57,055 rows imported; `check` byte-identical on history-derived lines).
+- **REMAINING:** Phase 4 T12 (snapshot readers -> store; needs a snapshot conformance seeder first,
+  like T7 needed the history one), T13 (kv), T14 (snapshot prune). Phase 5 (T15-T19).
+- **DEVIATIONS from the task text below (locked, reasoned):** `cost` kept / `tier` dropped from
+  history; **added T7b** (calib wkRuns = SQL GROUP BY + Go run-split); envelope `reset` is
+  `interface{}` -> facade-normalized (sqlc can't type it), `DataAge` = `CAST(COALESCE(max,0))`;
+  quick_check dropped from `Open` (hot-path perf); DSN via `url.URL`; ingest guard nulls the reset
+  (not drop-row); the **seeders were pulled forward** (T15's `SeedHistoryJSONL` used by T7/prune);
+  JSONL-byte goldens (history-seed, prune) retired for DB-outcome tests. Full context in the commit
+  messages, `docs/DECISIONS.md` (Sprint B entries + follow-ups), and `scratch/next-session-brief.md`.
+- **NOT rebuilt live yet:** the running statusline is the Phase-1 file-based binary; rebuild only
+  after Phase 4 closes (re-import first). See the resume brief.
+
 **Goal:** Replace ccpool's JSONL/JSON file storage (history + per-session snapshots + small state files) with one embedded SQLite database, dissolving the bespoke tail-dedup / glob reconcile / prune / `Burn.envelope` code into typed SQL, with byte-identical command output.
 
 **Architecture:** A new `internal/store` package owns a `*sql.DB` (driver `modernc.org/sqlite`, pure-Go), an embedded `schema.sql`, sqlc-generated typed queries (`internal/store/db`), and a thin fail-open facade returning a typed 3-way read state (`OK`/`Corrupt`/`Transient`). History reconcile becomes a SQL window query; snapshot reconcile stays in Go over raw payload blobs. Shipped in 5 sequenced phases behind the facade, hot-path callers switched last.
