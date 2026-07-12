@@ -1,7 +1,8 @@
-// Package paths resolves the on-disk file locations ccpool reads and writes under ~/.claude.
-// These are the interop contract with any Ruby still running during the migration (see
-// docs/GO-MIGRATION.md "The on-disk contract"), so the env overrides and default names match the
-// Ruby modules exactly. Resolved fresh per call so the hermetic CCPOOL_*/USAGE_* test env is honoured.
+// Package paths resolves the on-disk file locations ccpool reads and writes. ccpool-owned state
+// lives under Home() (~/.ccpool by default); reads of Claude Code's own data (projects transcripts,
+// the legacy usage-cache snapshots) stay under ~/.claude. The env overrides and default names match
+// the Ruby modules exactly (the on-disk contract; see docs/GO-MIGRATION.md). Resolved fresh per call
+// so the hermetic CCPOOL_*/USAGE_* test env is honoured.
 package paths
 
 import (
@@ -9,6 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 )
+
+// Home is ccpool's own state dir (CCPOOL_HOME || ~/.ccpool). Only ccpool-owned files live here;
+// reads of Claude Code's own data (projects transcripts) stay under ~/.claude.
+func Home() string { return resolve("CCPOOL_HOME", "~/.ccpool") }
+
+// DB is the SQLite database path (CCPOOL_DB || $Home/ccpool.db).
+func DB() string { return resolve("CCPOOL_DB", filepath.Join(Home(), "ccpool.db")) }
 
 // SnapshotCache is the base per-session snapshot path (USAGE_CACHE || ~/.claude/usage-cache.json).
 // Real snapshots are written to the "-<session>.json" sibling; see SnapshotFor / SnapshotGlob.
@@ -26,30 +34,30 @@ func SnapshotFor(sessionID string) string {
 	return strings.TrimSuffix(SnapshotCache(), ".json") + "-" + sessionID + ".json"
 }
 
-// History is the rate-limit history log (CCPOOL_HISTORY || ~/.claude/rate-limit-history.jsonl).
+// History is the rate-limit history log (CCPOOL_HISTORY || $Home/rate-limit-history.jsonl).
 func History() string {
-	return resolve("CCPOOL_HISTORY", "~/.claude/rate-limit-history.jsonl")
+	return resolve("CCPOOL_HISTORY", filepath.Join(Home(), "rate-limit-history.jsonl"))
 }
 
-// CalibCache is the $/1% calibration cache (CCPOOL_CALIB_CACHE || ~/.claude/ccpool-calibration.json).
+// CalibCache is the $/1% calibration cache (CCPOOL_CALIB_CACHE || $Home/ccpool-calibration.json).
 func CalibCache() string {
-	return resolve("CCPOOL_CALIB_CACHE", "~/.claude/ccpool-calibration.json")
+	return resolve("CCPOOL_CALIB_CACHE", filepath.Join(Home(), "ccpool-calibration.json"))
 }
 
-// BlocksCache is the ccusage blocks cache (CCPOOL_BLOCKS_CACHE || ~/.claude/ccpool-blocks-cache.json).
+// BlocksCache is the ccusage blocks cache (CCPOOL_BLOCKS_CACHE || $Home/ccpool-blocks-cache.json).
 func BlocksCache() string {
-	return resolve("CCPOOL_BLOCKS_CACHE", "~/.claude/ccpool-blocks-cache.json")
+	return resolve("CCPOOL_BLOCKS_CACHE", filepath.Join(Home(), "ccpool-blocks-cache.json"))
 }
 
-// StatuslineLog is the capped anomaly log (CCPOOL_STATUSLINE_LOG || ~/.claude/statusline.log).
+// StatuslineLog is the capped anomaly log (CCPOOL_STATUSLINE_LOG || $Home/statusline.log).
 func StatuslineLog() string {
-	return resolve("CCPOOL_STATUSLINE_LOG", "~/.claude/statusline.log")
+	return resolve("CCPOOL_STATUSLINE_LOG", filepath.Join(Home(), "statusline.log"))
 }
 
-// Config is the ccpool config file (CCPOOL_CONFIG || ~/.claude/ccpool.json). The one file a user's
+// Config is the ccpool config file (CCPOOL_CONFIG || $Home/ccpool.json). The one file a user's
 // persisted choices live in; read fresh per process so the hermetic test env is honoured.
 func Config() string {
-	return resolve("CCPOOL_CONFIG", "~/.claude/ccpool.json")
+	return resolve("CCPOOL_CONFIG", filepath.Join(Home(), "ccpool.json"))
 }
 
 // Projects is the base dir of Claude Code transcripts the analyzer scans
