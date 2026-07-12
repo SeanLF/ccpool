@@ -4,13 +4,10 @@
 package pool
 
 import (
-	"os"
-	"path/filepath"
-
 	"github.com/SeanLF/ccpool/internal/env"
-	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/profile"
 	"github.com/SeanLF/ccpool/internal/rb"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // Week is the 7-day weekly window length in seconds.
@@ -35,27 +32,13 @@ type Window struct {
 	Reset int64
 }
 
-// LoadSnapshots reads every per-session snapshot (falling back to the bare cache file if no
-// per-session files exist), dropping anything unreadable or non-object. Order matches Ruby's sorted
-// Dir.glob so callers that take the first match agree.
+// LoadSnapshots reads every per-session snapshot from the store, each parsed to a map (store.Snapshots
+// drops unparseable rows). FAILS OPEN: a nil/non-OK store yields an empty slice so the hot-path callers
+// (warn) degrade to "no data" and never panic. Callers reduce over the whole set (max used%, newest
+// reset/captured_at, or a session match), so row order is irrelevant.
 func LoadSnapshots() []map[string]any {
-	files, _ := filepath.Glob(paths.SnapshotGlob())
-	if len(files) == 0 {
-		if _, err := os.Stat(paths.SnapshotCache()); err == nil {
-			files = []string{paths.SnapshotCache()}
-		}
-	}
-	var out []map[string]any
-	for _, f := range files {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			continue
-		}
-		if m := rb.ParseObject(b); m != nil {
-			out = append(out, m)
-		}
-	}
-	return out
+	snaps, _ := store.ReadSnapshots()
+	return snaps
 }
 
 // GetWindow reconciles one account-global window across snapshots frozen at differing staleness:

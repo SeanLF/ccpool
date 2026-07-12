@@ -1,4 +1,0 @@
-2
-Usage snapshots exist (2) but none is readable -- corrupt or partially written.
-Treat budget as unknown; don't guess. A fresh statusline render rewrites them; re-run once an
-interactive window has redrawn.

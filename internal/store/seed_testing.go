@@ -64,6 +64,36 @@ func SeedHistoryJSONL(dbPath, jsonl string) error {
 	return nil
 }
 
+// SeedSnapshots inserts snapshot payloads into the DB at dbPath as rows -- one PutSnapshot per entry
+// in slice order, the same UPSERT the live capture path uses. Each payload is stored verbatim; it is
+// parsed only to derive the row's session key (the payload's session_id, else a synthetic per-index
+// key so an unparseable/keyless body still lands as its own row) and captured_at (the payload's, else
+// the index). Mirrors SeedHistoryJSONL and is shipped (non-_test) so cross-package conformance suites
+// can seed a snapshot DB the same way the readers now read one.
+func SeedSnapshots(dbPath string, payloads [][]byte) error {
+	s, st := openAt(dbPath)
+	if st != StateOK || s == nil {
+		return fmt.Errorf("seed: open %s: state %v", dbPath, st)
+	}
+	defer s.Close()
+	for i, p := range payloads {
+		session := fmt.Sprintf("seed-%d", i)
+		capturedAt := int64(i)
+		if m := rb.ParseObject(p); m != nil {
+			if sid, ok := m["session_id"].(string); ok && sid != "" {
+				session = sid
+			}
+			if c, ok := rb.Num(m["captured_at"]); ok {
+				capturedAt = int64(c)
+			}
+		}
+		if err := s.PutSnapshot(session, capturedAt, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func jsonlIntPtr(v any) *int64 {
 	if f, ok := rb.Num(v); ok {
 		i := int64(f)

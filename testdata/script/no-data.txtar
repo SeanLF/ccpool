@@ -1,4 +1,6 @@
-# Point every data path into the sandbox so nothing touches the real ~/.claude.
+# Point every data path into the sandbox so nothing touches the real ~/.ccpool. CCPOOL_HOME is the
+# writable store dir (HOME is /no-home here): status/check open an empty DB -> the warm-up path.
+env CCPOOL_HOME=$WORK
 env USAGE_CACHE=$WORK/usage-cache.json
 env CCPOOL_HISTORY=$WORK/history.jsonl
 env CCPOOL_CALIB_CACHE=$WORK/calib.json

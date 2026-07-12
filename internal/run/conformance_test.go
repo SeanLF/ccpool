@@ -3,13 +3,13 @@ package run
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/golden"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // downshift_env's decision (env overrides + message) must be byte-identical to Ruby
@@ -53,9 +53,12 @@ func TestDownshiftConformance(t *testing.T) {
 				t.Fatalf("bad now: %v", err)
 			}
 
-			// Shared, read-only inputs (snapshots, ccusage fixture, calib cache) both sides read.
+			// Shared inputs. Snapshots live in the store DB now; isolate CCPOOL_HOME/CCPOOL_DB so the
+			// downshift decision reads the fixture's snapshots and never the dev's real ~/.ccpool.
 			dir := t.TempDir()
-			writeSnaps(t, dir, fx.Snaps)
+			t.Setenv("CCPOOL_HOME", dir)
+			t.Setenv("CCPOOL_DB", filepath.Join(dir, "ccpool.db"))
+			seedSnaps(t, dir, fx.Snaps)
 			blocksFixture := filepath.Join(dir, "blocks.json")
 			mustWrite(t, blocksFixture, fx.Blocks)
 			calibPath := filepath.Join(dir, "calib.json")
@@ -63,13 +66,11 @@ func TestDownshiftConformance(t *testing.T) {
 				mustWrite(t, calibPath, fx.Calib)
 			}
 
-			// Go side. History is absent (no path) so the calib compute never spawns anything;
+			// Go side. History is an empty store (no rows) so the calib compute never spawns anything;
 			// the blocks cache is per-side so the two runs' ccusage caches don't collide.
-			t.Setenv("USAGE_CACHE", filepath.Join(dir, "usage-cache.json"))
 			t.Setenv("CCPOOL_CCUSAGE_CMD", fakeCmd)
 			t.Setenv("CCUSAGE_FIXTURE", blocksFixture)
 			t.Setenv("CCPOOL_CALIB_CACHE", calibPath)
-			t.Setenv("CCPOOL_HISTORY", filepath.Join(dir, "history.jsonl"))
 			t.Setenv("CCPOOL_BLOCKS_CACHE", filepath.Join(dir, "go-blocks.json"))
 			env, msg := DownshiftEnv(now)
 			goOut := formatDS(t, env, msg)
@@ -90,17 +91,21 @@ func formatDS(t *testing.T, env map[string]string, msg string) string {
 	return msg + "\n" + string(b)
 }
 
-func writeSnaps(t *testing.T, dir string, snaps []map[string]any) {
+func seedSnaps(t *testing.T, dir string, snaps []map[string]any) {
 	t.Helper()
-	for i, s := range snaps {
+	if len(snaps) == 0 {
+		return
+	}
+	var payloads [][]byte
+	for _, s := range snaps {
 		b, err := json.Marshal(s)
 		if err != nil {
 			t.Fatalf("marshal snap: %v", err)
 		}
-		name := filepath.Join(dir, fmt.Sprintf("usage-cache-snap%d.json", i))
-		if err := os.WriteFile(name, b, 0o644); err != nil {
-			t.Fatalf("write snap: %v", err)
-		}
+		payloads = append(payloads, b)
+	}
+	if err := store.SeedSnapshots(filepath.Join(dir, "ccpool.db"), payloads); err != nil {
+		t.Fatalf("seed snapshots: %v", err)
 	}
 }
 

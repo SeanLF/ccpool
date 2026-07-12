@@ -3,7 +3,6 @@ package status
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -25,9 +24,8 @@ type readoutFixture struct {
 	Now      json.Number       `json:"now"`
 	Env      map[string]string `json:"env"`
 	Snaps    []map[string]any  `json:"snaps"`
-	RawSnaps []string          `json:"raw_snaps"`     // verbatim snapshot file bodies (for corrupt cases)
 	Hist     string            `json:"hist"`          // history JSONL body seeded into the store DB; empty -> empty DB
-	DbUnbr   bool              `json:"db_unreadable"` // force a non-OK store read (CCPOOL_DB -> a dir) for the "history unreadable" path
+	DbUnbr   bool              `json:"db_unreadable"` // force a non-OK store read (CCPOOL_DB -> a dir): the whole store (snapshots + history) is unreadable
 	CalibDPP *json.Number      `json:"calib_dpp"`     // seed the $/1% cache; nil -> no cache
 	Blocks   string            `json:"blocks"`        // fake-ccusage blocks JSON (for CostSince)
 }
@@ -97,35 +95,35 @@ func stageReadout(t *testing.T, fx readoutFixture, fakeCmd string) []string {
 	t.Helper()
 	inputDir := t.TempDir()
 
-	// Snapshots: structured objects + any verbatim raw bodies (corrupt cases).
-	idx := 0
-	for _, s := range fx.Snaps {
-		b, err := json.Marshal(s)
-		if err != nil {
-			t.Fatalf("marshal snap: %v", err)
-		}
-		writeFile(t, filepath.Join(inputDir, fmt.Sprintf("usage-cache-snap%d.json", idx)), string(b))
-		idx++
-	}
-	for _, raw := range fx.RawSnaps {
-		writeFile(t, filepath.Join(inputDir, fmt.Sprintf("usage-cache-snap%d.json", idx)), raw)
-		idx++
-	}
-
-	// History: seed the store DB (readouts read history from the store now, not a JSONL file). Always
-	// point CCPOOL_DB at an isolated temp DB so the readout never touches the dev's real ~/.ccpool; an
-	// empty fx.Hist leaves an empty DB (warm-up), matching the old absent-file "Burn.read returns []".
+	// Snapshots AND history now live in the one store DB. Point CCPOOL_DB at an isolated temp DB so the
+	// readout never touches the dev's real ~/.ccpool. db_unreadable makes that path a directory, so
+	// store.Open returns a non-OK state and the WHOLE store (snapshots + history together) is unreadable
+	// -- the unified-store reality: there is no "snapshots readable but history not" split anymore.
+	// Otherwise seed the fixture's snapshots (structured objects + any verbatim raw bodies) and history.
 	dbPath := filepath.Join(inputDir, "ccpool.db")
 	switch {
 	case fx.DbUnbr:
-		// Make the DB path a directory so store.Open returns a non-OK read state -> the readout's
-		// "history unreadable" path (the store-world analogue of the old garbled-JSONL case).
 		if err := os.MkdirAll(dbPath, 0o755); err != nil {
 			t.Fatalf("stage unreadable db: %v", err)
 		}
-	case fx.Hist != "":
-		if err := store.SeedHistoryJSONL(dbPath, fx.Hist); err != nil {
-			t.Fatalf("seed history: %v", err)
+	default:
+		var payloads [][]byte
+		for _, s := range fx.Snaps {
+			b, err := json.Marshal(s)
+			if err != nil {
+				t.Fatalf("marshal snap: %v", err)
+			}
+			payloads = append(payloads, b)
+		}
+		if len(payloads) > 0 {
+			if err := store.SeedSnapshots(dbPath, payloads); err != nil {
+				t.Fatalf("seed snapshots: %v", err)
+			}
+		}
+		if fx.Hist != "" {
+			if err := store.SeedHistoryJSONL(dbPath, fx.Hist); err != nil {
+				t.Fatalf("seed history: %v", err)
+			}
 		}
 	}
 

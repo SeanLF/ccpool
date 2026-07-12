@@ -1,0 +1,3 @@
+2
+Usage data is temporarily unreadable -- the database is busy or unreachable. Treat budget as
+unknown; don't guess. This is usually transient; re-run in a moment.

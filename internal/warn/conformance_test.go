@@ -3,7 +3,6 @@ package warn
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/golden"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // warn's emitted text and PostToolUse hook JSON must be byte-identical to Ruby Warn.run. For each
@@ -54,8 +54,7 @@ func TestWarnConformance(t *testing.T) {
 			}
 
 			// Go side.
-			goCache, goTmp := stage(t, fx)
-			t.Setenv("USAGE_CACHE", filepath.Join(goCache, "usage-cache.json"))
+			_, goTmp := stage(t, fx)
 			t.Setenv("TMPDIR", goTmp)
 			goOut := Run(fx.Payload, now)
 
@@ -64,28 +63,36 @@ func TestWarnConformance(t *testing.T) {
 	}
 }
 
-// stage writes the fixture's snapshots and pre-seeded markers into fresh temp dirs, returning the
-// snapshot-cache dir and the TMPDIR. Used for the Go side; the Ruby side stages its own via env.
+// stage seeds the fixture's snapshots into an isolated store DB and its pre-seeded markers into a temp
+// TMPDIR, returning the cache dir (also the CCPOOL_HOME) and the TMPDIR. warn reads snapshots from the
+// store now, so this isolates CCPOOL_HOME/CCPOOL_DB rather than writing per-session cache files.
 func stage(t *testing.T, fx warnFixture) (cacheDir, tmpDir string) {
 	t.Helper()
 	cacheDir = t.TempDir()
 	tmpDir = t.TempDir()
-	writeSnaps(t, cacheDir, fx.Snaps)
+	seedSnaps(t, cacheDir, fx.Snaps)
 	writeMarkers(t, tmpDir, fx)
 	return cacheDir, tmpDir
 }
 
-func writeSnaps(t *testing.T, dir string, snaps []map[string]any) {
+func seedSnaps(t *testing.T, dir string, snaps []map[string]any) {
 	t.Helper()
-	for i, s := range snaps {
+	dbPath := filepath.Join(dir, "ccpool.db")
+	t.Setenv("CCPOOL_HOME", dir) // isolate every ~/.ccpool-derived path off the dev's real state
+	t.Setenv("CCPOOL_DB", dbPath)
+	if len(snaps) == 0 {
+		return
+	}
+	var payloads [][]byte
+	for _, s := range snaps {
 		b, err := json.Marshal(s)
 		if err != nil {
 			t.Fatalf("marshal snap: %v", err)
 		}
-		name := filepath.Join(dir, fmt.Sprintf("usage-cache-snap%d.json", i))
-		if err := os.WriteFile(name, b, 0o644); err != nil {
-			t.Fatalf("write snap: %v", err)
-		}
+		payloads = append(payloads, b)
+	}
+	if err := store.SeedSnapshots(dbPath, payloads); err != nil {
+		t.Fatalf("seed snapshots: %v", err)
 	}
 }
 

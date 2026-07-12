@@ -5,17 +5,23 @@
 ## STATUS (updated mid-sprint)
 
 - **DONE + committed + gate-green:** Phase 1 (T1-T2), Phase 2 (T3-T5), Phase 3 (T6-T10, incl. the
-  live import + parity proof), Phase 4 **T11**. 15 commits `6f1d1cd`..`755e84a`. Phase 3 is
-  live-verified (57,055 rows imported; `check` byte-identical on history-derived lines).
-- **REMAINING:** Phase 4 T12 (snapshot readers -> store; needs a snapshot conformance seeder first,
-  like T7 needed the history one), T13 (kv), T14 (snapshot prune). Phase 5 (T15-T19).
+  live import + parity proof), Phase 4 **T11-T12**. Phase 3 is live-verified (57,055 rows imported;
+  `check` byte-identical on history-derived lines). T12 (snapshot readers -> store) is done: all reads
+  now come from the DB (`pool.LoadSnapshots`, `statusline`/`initcmd` preview via a shared
+  `statusline.NewestSnapshot`); `store.SeedSnapshots` seeds conformance DBs; `check.absentOrCorrupt`
+  keys off the store read state.
+- **REMAINING:** Phase 4 T13 (kv), T14 (snapshot prune). Phase 5 (T15-T19).
 - **DEVIATIONS from the task text below (locked, reasoned):** `cost` kept / `tier` dropped from
   history; **added T7b** (calib wkRuns = SQL GROUP BY + Go run-split); envelope `reset` is
   `interface{}` -> facade-normalized (sqlc can't type it), `DataAge` = `CAST(COALESCE(max,0))`;
   quick_check dropped from `Open` (hot-path perf); DSN via `url.URL`; ingest guard nulls the reset
   (not drop-row); the **seeders were pulled forward** (T15's `SeedHistoryJSONL` used by T7/prune);
-  JSONL-byte goldens (history-seed, prune) retired for DB-outcome tests. Full context in the commit
-  messages, `docs/DECISIONS.md` (Sprint B entries + follow-ups), and `scratch/next-session-brief.md`.
+  JSONL-byte goldens (history-seed, prune) retired for DB-outcome tests. **T12:** one unified store
+  means "history unreadable while snapshots readable" is no longer reachable (an unreadable store
+  loses both), so the two check conformance cases collapsed to one honest `store-unreadable`
+  (transient) case; the defensive `weeklyLines` burn-line branches moved to a unit test. `LoadSnapshots`
+  kept its signature (opens its own store) so report/warn/run migrate untouched. Full context in the
+  commit messages, `docs/DECISIONS.md` (Sprint B entries + follow-ups), and `scratch/next-session-brief.md`.
 - **NOT rebuilt live yet:** the running statusline is the Phase-1 file-based binary; rebuild only
   after Phase 4 closes (re-import first). See the resume brief.
 
@@ -534,11 +540,11 @@ git commit -m "feat(statusline): capture snapshot+history in one store txn; tmp-
 - Consumes: `store.Snapshots() ([]map[string]any, ReadState)`, `store.DataAge`.
 - Preserves: `GetWindow`, `Weekly`, `FiveHour`, the 300s jitter bucket, the used% clamp + leak guard - all byte-identical.
 
-- [ ] **Step 1: Update pool tests** to seed snapshot rows in a temp DB; assert `GetWindow`/`Weekly`/`FiveHour`/`DataAge` return the same values as the file-based fixtures did.
-- [ ] **Step 2: Run to verify fail** -> FAIL.
-- [ ] **Step 3: Reimplement `LoadSnapshots`** to return `store.Snapshots()` parsed maps; keep `GetWindow` reading those maps unchanged. `absentOrCorrupt` (in `status`) maps: 0 rows -> warm-up, rows-present-but-none-parse -> corruption (as today).
-- [ ] **Step 4: Run to verify pass** + `unset GOROOT && go test ./internal/pool/ ./internal/status/ -v` -> PASS.
-- [ ] **Step 5: Gate + commit**
+- [x] **Step 1: Update pool tests** to seed snapshot rows in a temp DB; assert `GetWindow`/`Weekly`/`FiveHour`/`DataAge` return the same values as the file-based fixtures did. (Also added `store.SeedSnapshots`, rewired the status/warn/run conformance staging + initcmd preview isolation to seed the DB, and a `store-unreadable` unit + conformance case.)
+- [x] **Step 2: Run to verify fail** -> FAIL.
+- [x] **Step 3: Reimplement `LoadSnapshots`** to open the store and return `store.Snapshots()` parsed maps (signature unchanged -> report/warn/run migrate transparently); `DataAge`/`GetWindow` stay map-based. `absentOrCorrupt` reworked to key off the store read state (StateOK -> warm-up, StateTransient -> retry, StateCorrupt -> corrupt); the "rows present but none parse" case folds into warm-up (payloads valid by construction). `statusline`/`initcmd` preview read the store via the shared `statusline.NewestSnapshot`.
+- [x] **Step 4: Run to verify pass** + `unset GOROOT && make check` -> PASS (334 tests; end-to-end capture->check/status/preview verified against an isolated store).
+- [x] **Step 5: Gate + commit**
 
 ```bash
 unset GOROOT && make check

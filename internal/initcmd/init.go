@@ -21,8 +21,6 @@ import (
 	"strings"
 
 	"github.com/SeanLF/ccpool/internal/fmtx"
-	"github.com/SeanLF/ccpool/internal/paths"
-	"github.com/SeanLF/ccpool/internal/rb"
 	"github.com/SeanLF/ccpool/internal/statusline"
 )
 
@@ -406,57 +404,17 @@ func preview(now int64) {
 // previewStatusline renders the freshest per-session snapshot, mirroring CCPool.preview_statusline.
 // Best-effort: on no/unreadable snapshot it notes so on stderr and prints nothing to stdout.
 func previewStatusline(now int64) {
-	newest := newestSnapshot()
-	if newest == "" {
+	data, ok := statusline.NewestSnapshot()
+	if !ok {
 		fmt.Fprintln(os.Stderr, "ccpool: no statusline snapshot yet. Wire `ccpool statusline` as your Claude Code statusLine first (see README), then it self-populates.")
 		return
 	}
-	raw, err := os.ReadFile(newest)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "ccpool: couldn't render a statusline preview (no readable snapshot).")
-		return
-	}
-	data := rb.ParseObject(raw)
-	if data == nil {
-		fmt.Fprintln(os.Stderr, "ccpool: couldn't render a statusline preview (no readable snapshot).")
-		return
-	}
-	age := now - snapshotCapturedAt(data, newest)
+	age := now - statusline.SnapshotCapturedAt(data)
 	line := statusline.Render(data, now)
 	fmt.Fprintf(os.Stderr, "[preview from a %s-old snapshot -- ctx/cache may be stale; live values come from Claude Code]\n", fmtx.Dur(age))
 	if line != "" {
 		fmt.Println(line)
 	}
-}
-
-func newestSnapshot() string {
-	matches, err := filepath.Glob(paths.SnapshotGlob())
-	if err != nil || len(matches) == 0 {
-		return ""
-	}
-	newest, newestMod := "", int64(-1)
-	for _, m := range matches {
-		fi, err := os.Stat(m)
-		if err != nil {
-			continue
-		}
-		if mod := fi.ModTime().UnixNano(); mod > newestMod {
-			newest, newestMod = m, mod
-		}
-	}
-	return newest
-}
-
-func snapshotCapturedAt(data map[string]any, path string) int64 {
-	if n, ok := data["captured_at"].(json.Number); ok {
-		if i, err := n.Int64(); err == nil {
-			return i
-		}
-	}
-	if fi, err := os.Stat(path); err == nil {
-		return fi.ModTime().Unix()
-	}
-	return 0
 }
 
 // --- orchestration ---

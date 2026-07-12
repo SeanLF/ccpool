@@ -31,7 +31,7 @@ type initFixture struct {
 }
 
 // initEnvKeys are cleared before each case so fixtures don't leak env into one another.
-var initEnvKeys = []string{"CCPOOL_CCUSAGE_CMD", "CCPOOL_SETTINGS", "USAGE_CACHE"}
+var initEnvKeys = []string{"CCPOOL_CCUSAGE_CMD", "CCPOOL_SETTINGS", "USAGE_CACHE", "CCPOOL_HOME", "CCPOOL_DB"}
 
 func TestInitConformance(t *testing.T) {
 	// Pin the zone (the preview's fmt_dur/pace math is local-zone sensitive; goldens captured under UTC).
@@ -54,13 +54,14 @@ func TestInitConformance(t *testing.T) {
 			for k, v := range fx.Env {
 				t.Setenv(k, v)
 			}
-			// Point the snapshot glob at an empty dir so the statusline preview finds nothing and
-			// prints only its header on both sides (the preview render itself isn't under test here).
-			t.Setenv("USAGE_CACHE", filepath.Join(t.TempDir(), "usage-cache.json"))
-
 			dir := t.TempDir()
 			settingsPath := filepath.Join(dir, "settings.json")
 			t.Setenv("CCPOOL_SETTINGS", settingsPath)
+			// Isolate the store to an empty temp home so the statusline preview finds no snapshot and
+			// prints only its header (the preview render itself isn't under test here), never the dev's
+			// real ~/.ccpool. The DB path stays absent -> store.Open creates an empty DB -> no snapshot.
+			t.Setenv("CCPOOL_HOME", dir)
+			t.Setenv("CCPOOL_DB", filepath.Join(dir, "ccpool.db"))
 
 			now, err := fx.Now.Int64()
 			if err != nil {

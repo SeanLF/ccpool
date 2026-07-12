@@ -158,6 +158,23 @@ func (s *Store) Snapshots() ([]map[string]any, ReadState) {
 	return out, StateOK
 }
 
+// ReadSnapshots opens the store, reads every snapshot, and closes it -- the standalone read for the
+// callers that don't already hold an open store (pool.LoadSnapshots, statusline.NewestSnapshot). It
+// returns the read state so a caller can tell warm-up (StateOK, empty) from an unreadable store, and
+// fails open: a nil/non-OK store yields no snapshots. Callers holding an open store (check, status)
+// reuse it via Snapshots() directly instead, so snapshots and history share one open.
+func ReadSnapshots() ([]map[string]any, ReadState) {
+	s, st := Open()
+	if s == nil || st != StateOK {
+		if s != nil {
+			_ = s.Close()
+		}
+		return nil, st
+	}
+	defer s.Close()
+	return s.Snapshots()
+}
+
 // DataAge is seconds since the freshest snapshot. ok=false (no data) when the table is empty: the
 // query COALESCEs an empty max to 0, and captured_at is always a real epoch, never 0.
 func (s *Store) DataAge(now int64) (age int64, ok bool, st ReadState) {

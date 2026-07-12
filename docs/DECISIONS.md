@@ -435,6 +435,19 @@ Then a config-file feature emerged from a conversation about how users actually 
   `StateBlocked` (or threading the error) would let loud commands name an actionable path/permission
   fault -- deferred, since the 3-state model was deliberate. (4) Consider `--offline` as ccusage's
   default (network-independence) with online as an escape hatch, when kv lands (Task 13).
+- **Unified store => snapshots and history share fate (Sprint B T12, 2026-07-12).** Once snapshot
+  READS moved off files into the one DB, "history unreadable while snapshots readable" stopped being a
+  reachable state: an unreadable store (`store.Open` non-OK) loses BOTH. The old `check` conformance
+  staged that split by keeping snapshots as files while making the DB a directory; that split is gone,
+  so the two cases (`corrupt-unreadable`, `history-unreadable`) collapsed into one honest
+  `store-unreadable` (transient -> "retry") case, and the defensive `weeklyLines` burn-line branches
+  (history read failed / unreadable, still reachable if a query fails on an otherwise-open store) moved
+  to a unit test. `absentOrCorrupt` keys off the read state (StateOK+empty = warm-up); the design doc's
+  "rows present but none parse -> corrupt" fold into warm-up because payloads are valid JSON by
+  construction and `Open` self-heals real corruption to StateOK-empty. `pool.LoadSnapshots` kept its
+  signature (opens its own store, fails open) so `report`/`warn`/`run` migrated with zero edits; the
+  triple store-open in `status` (ResolveWeekly + burn + snapshots) is accepted for an on-demand command
+  and left for a possible T13/T17 consolidation. Byte-identical was NOT chased here (user call).
 - **Critical latent bug found + fixed:** `internal/env` was never git-tracked on `main` — the user's
   global `~/.gitignore_global` `ENV/` (Python venv) matched `internal/env/` case-insensitively
   (macOS `core.ignorecase=true`), so `git add` silently skipped it since A2. A clean clone of main

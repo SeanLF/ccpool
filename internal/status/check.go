@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 
@@ -31,19 +30,21 @@ func Report(now int64) (lines []string, code int) {
 		}
 	}()
 
-	snaps := pool.LoadSnapshots()
+	// One store open serves both the snapshots and the burn envelope (they share the DB now). A non-OK
+	// store means both are unreadable -- there is no "snapshots readable, history not" split anymore.
+	s, sSt := store.Open()
+	if s != nil {
+		defer s.Close()
+	}
+	snaps, snapSt := readSnapshots(s, sSt)
 	if len(snaps) == 0 {
-		return []string{absentOrCorrupt()}, 2
+		return []string{absentOrCorrupt(snapSt)}, 2
 	}
 
 	age, ageOK := pool.DataAge(snaps, now)
 	ses, sesOK := pool.GetWindow(snaps, "five_hour", now, 6*3600)
 	wk, wkOK := pool.GetWindow(snaps, "seven_day", now, pool.Week+86400)
 
-	s, sSt := store.Open()
-	if s != nil {
-		defer s.Close()
-	}
 	var wkHist, sesHist []burn.Entry
 	histState := sSt
 	if sSt == store.StateOK {
@@ -69,23 +70,34 @@ func Report(now int64) (lines []string, code int) {
 	return out, 0
 }
 
-// absentOrCorrupt distinguishes NO snapshots (warmup) from snapshots-present-but-none-readable
-// (corruption). Matches Check.absent_or_corrupt.
-func absentOrCorrupt() string {
-	files, _ := filepath.Glob(paths.SnapshotGlob())
-	if len(files) == 0 {
-		if _, err := os.Stat(paths.SnapshotCache()); err == nil {
-			files = []string{paths.SnapshotCache()}
-		}
+// readSnapshots reads the parsed snapshot maps from the already-open store, returning the read state
+// so the caller can tell warm-up (StateOK, empty) from an unreadable store. A nil or non-OK store
+// short-circuits to no snapshots carrying that state (both subsystems share the one DB's fate now).
+func readSnapshots(s *store.Store, sSt store.ReadState) ([]map[string]any, store.ReadState) {
+	if s == nil || sSt != store.StateOK {
+		return nil, sSt
 	}
-	if len(files) == 0 {
+	return s.Snapshots()
+}
+
+// absentOrCorrupt is check's no-data message, keyed off the store read state (snapshots live in the DB
+// now, not globbed files). StateOK with zero rows is the warm-up case; a non-OK store is genuinely
+// unreadable -- and we keep the truthful busy-vs-corrupt split (transient -> retry, not a false
+// corruption alarm). Payloads are valid JSON by construction, so "rows present but none parse" folds
+// into warm-up; Open self-heals real corruption to an empty StateOK DB, making StateCorrupt rare here.
+func absentOrCorrupt(st store.ReadState) string {
+	switch st {
+	case store.StateTransient:
+		return "Usage data is temporarily unreadable -- the database is busy or unreachable. Treat budget as\n" +
+			"unknown; don't guess. This is usually transient; re-run in a moment."
+	case store.StateCorrupt:
+		return "The usage database is unreadable (corrupt). Treat budget as unknown; don't guess. A fresh\n" +
+			"statusline render rebuilds it; re-run once an interactive window has redrawn."
+	default:
 		return "No usage snapshots yet. The statusline writes one per session on every render, so this is\n" +
 			"empty only if no interactive Claude Code window has drawn on this machine recently (e.g. a\n" +
 			"pure background job with no TUI). Open/refresh an interactive window, then re-run. Don't guess."
 	}
-	return "Usage snapshots exist (" + strconv.Itoa(len(files)) + ") but none is readable -- corrupt or partially written.\n" +
-		"Treat budget as unknown; don't guess. A fresh statusline render rewrites them; re-run once an\n" +
-		"interactive window has redrawn."
 }
 
 // cutoverGuard fires the one-time "history not imported" warning: a legacy rate-limit-history.jsonl

@@ -184,22 +184,12 @@ func warm(now int64) {
 // captured, so you can see the line without Claude Code. The rate_limits % is account-global so an
 // old snapshot's % is still current; only ctx/cache are session-local (hence the stderr caveat).
 func preview(now int64, embed bool) {
-	newest := newestSnapshot()
-	if newest == "" {
+	data, ok := NewestSnapshot()
+	if !ok {
 		fmt.Fprintln(os.Stderr, "ccpool: no statusline snapshot yet. Wire `ccpool statusline` as your Claude Code statusLine first (see README), then it self-populates.")
 		return
 	}
-	raw, err := os.ReadFile(newest)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "ccpool: couldn't render a statusline preview (no readable snapshot).")
-		return
-	}
-	data := rb.ParseObject(raw)
-	if data == nil {
-		fmt.Fprintln(os.Stderr, "ccpool: couldn't render a statusline preview (no readable snapshot).")
-		return
-	}
-	age := now - snapshotAge(data, newest)
+	age := now - SnapshotCapturedAt(data)
 	var line string
 	if embed {
 		line = RenderCompact(data, now)
@@ -212,32 +202,31 @@ func preview(now int64, embed bool) {
 	}
 }
 
-func newestSnapshot() string {
-	matches, err := filepath.Glob(paths.SnapshotGlob())
-	if err != nil || len(matches) == 0 {
-		return ""
-	}
-	newest, newestMod := "", int64(-1)
-	for _, m := range matches {
-		fi, err := os.Stat(m)
-		if err != nil {
-			continue
-		}
-		if mod := fi.ModTime().UnixNano(); mod > newestMod {
-			newest, newestMod = m, mod
+// NewestSnapshot returns the freshest per-session snapshot (by captured_at) the statusline captured,
+// read from the store. ok=false when there is none or the store is unreadable -- the preview is a
+// terminal convenience, so it degrades to a "wire it up" note rather than surfacing store internals.
+// Exported so initcmd's post-install preview reads the newest snapshot the same way (one source).
+func NewestSnapshot() (map[string]any, bool) {
+	snaps, _ := store.ReadSnapshots()
+	var newest map[string]any
+	newestAt := int64(-1)
+	for _, d := range snaps {
+		if at := SnapshotCapturedAt(d); at > newestAt {
+			newest, newestAt = d, at
 		}
 	}
-	return newest
+	return newest, newest != nil
 }
 
-func snapshotAge(data map[string]any, path string) int64 {
+// SnapshotCapturedAt reads a snapshot map's captured_at epoch. store.Snapshots always splices it (from
+// the payload or the row), so the 0 fallback is unreachable on the store path -- it exists only so a
+// hand-built map can't panic here. Exported alongside NewestSnapshot so initcmd's post-install preview
+// computes the age identically.
+func SnapshotCapturedAt(data map[string]any) int64 {
 	if n, ok := data["captured_at"].(json.Number); ok {
 		if i, err := n.Int64(); err == nil {
 			return i
 		}
-	}
-	if fi, err := os.Stat(path); err == nil {
-		return fi.ModTime().Unix()
 	}
 	return 0
 }
