@@ -76,6 +76,10 @@ func Status(now int64) []string {
 		}
 	}
 
+	if g, ok := cutoverGuard(s); ok {
+		lines = append(lines, g)
+	}
+
 	snaps := pool.LoadSnapshots()
 	if fh, ok := pool.GetWindow(snaps, "five_hour", now, 6*3600); ok {
 		age, _ := pool.DataAge(snaps, now) // 0 when none, matching Ruby `fh[:age] || 0`

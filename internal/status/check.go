@@ -45,12 +45,12 @@ func Report(now int64) (lines []string, code int) {
 		defer s.Close()
 	}
 	var wkHist, sesHist []burn.Entry
-	readable := sSt == store.StateOK
-	if readable {
+	histState := sSt
+	if sSt == store.StateOK {
 		var wkSt, sesSt store.ReadState
 		wkHist, wkSt = burn.WeeklyEnvelope(s, now)
 		sesHist, sesSt = burn.FiveHourEnvelope(s, now)
-		readable = wkSt == store.StateOK && sesSt == store.StateOK
+		histState = worseState(wkSt, sesSt)
 	}
 
 	t := time.Unix(now, 0).Local()
@@ -59,8 +59,11 @@ func Report(now int64) (lines []string, code int) {
 		"data     " + freshness(age, ageOK),
 		"",
 	}
+	if g, ok := cutoverGuard(s); ok {
+		out = append(out, g, "")
+	}
 	sesSoon := sessionLines(&out, ses, sesOK, sesHist, now)
-	paceWarn := weeklyLines(&out, wk, wkOK, wkHist, readable, now)
+	paceWarn := weeklyLines(&out, wk, wkOK, wkHist, histState, now)
 	out = append(out, "")
 	out = append(out, "VERDICT  "+verdict(ses, sesOK, wk, wkOK, sesSoon, paceWarn, now))
 	return out, 0
@@ -83,6 +86,36 @@ func absentOrCorrupt() string {
 	return "Usage snapshots exist (" + strconv.Itoa(len(files)) + ") but none is readable -- corrupt or partially written.\n" +
 		"Treat budget as unknown; don't guess. A fresh statusline render rewrites them; re-run once an\n" +
 		"interactive window has redrawn."
+}
+
+// cutoverGuard fires the one-time "history not imported" warning: a legacy rate-limit-history.jsonl
+// exists but the store's history table is empty, so the user upgraded without running the importer.
+// Reuses LastSessionRow(nil) for emptiness (no extra query); silent on a fresh install (no JSONL).
+func cutoverGuard(s *store.Store) (string, bool) {
+	if s == nil {
+		return "", false
+	}
+	last, st := s.LastSessionRow(nil)
+	if st != store.StateOK || last != nil {
+		return "", false // unreadable, or history already has rows -> no guard
+	}
+	if fi, err := os.Stat(paths.History()); err == nil && fi.Size() > 0 {
+		return "history  ·  " + paths.History() + " has rows but the database is empty --\n" +
+			"         run the one-off importer to restore weekly burn/runway", true
+	}
+	return "", false
+}
+
+// worseState reports the more-severe of two read states (Corrupt > Transient > OK) so one history
+// message reflects the worst of the weekly/5h reads.
+func worseState(a, b store.ReadState) store.ReadState {
+	if a == store.StateCorrupt || b == store.StateCorrupt {
+		return store.StateCorrupt
+	}
+	if a == store.StateTransient || b == store.StateTransient {
+		return store.StateTransient
+	}
+	return store.StateOK
 }
 
 func freshness(age int64, ageOK bool) string {
@@ -125,7 +158,7 @@ func sessionLines(lines *[]string, ses pool.Window, sesOK bool, sesHist []burn.E
 }
 
 // weeklyLines appends the WEEKLY block. Returns pace_warn: past the linear share and not near reset.
-func weeklyLines(lines *[]string, wk pool.Window, wkOK bool, wkHist []burn.Entry, readable bool, now int64) bool {
+func weeklyLines(lines *[]string, wk pool.Window, wkOK bool, wkHist []burn.Entry, histState store.ReadState, now int64) bool {
 	if !wkOK {
 		*lines = append(*lines, "WEEKLY   (no live 7d window across sessions -- snapshots missing or stale)")
 		return false
@@ -178,8 +211,13 @@ func weeklyLines(lines *[]string, wk pool.Window, wkOK bool, wkHist []burn.Entry
 			}
 			*lines = append(*lines, fmt.Sprintf("         burn: ~%.1f%%/h; IF sustained 24/7, cap in ~%s -- %s (idle/sleep stretches this out)", proj.BurnPerH, fmtx.Dur(int64(secsToCap)), tail))
 		}
-	} else if !readable {
-		*lines = append(*lines, "         burn: history unreadable -- projection unavailable (not a clear signal)")
+	} else {
+		switch histState {
+		case store.StateCorrupt:
+			*lines = append(*lines, "         burn: history unreadable -- projection unavailable (not a clear signal)")
+		case store.StateTransient:
+			*lines = append(*lines, "         burn: history read failed -- projection unknown, retry (a busy or unreachable database)")
+		}
 	}
 	if r, ok := runway.Estimate(used, reset, proj, hasProj, now); ok {
 		*lines = append(*lines, "         runway: "+runway.Phrase(r, reset-now))
