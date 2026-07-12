@@ -60,22 +60,23 @@ them), and **symlink-aware** (if `settings.json` is a symlink to a dotfiles sour
 real target and leaves the link intact). `--apply` takes a `settings.json.bak.<ts>` backup
 before writing. No env vars required — good defaults are the point.
 
-**Data source.** ccpool reads per-session `~/.claude/usage-cache-*.json` snapshots for the
-`rate_limits` %. On a fresh machine those don't exist (vanilla Claude Code doesn't write them) —
-the `statusLine` command `ccpool init` wires is what self-populates them. Doing it by hand instead:
+**Data source.** ccpool captures the `rate_limits` % from Claude Code's statusline payload into a
+local SQLite store (`~/.ccpool/ccpool.db`). On a fresh machine it's empty (vanilla Claude Code doesn't
+surface this over time) — the `statusLine` command `ccpool init` wires is what self-populates it, once
+per render. Doing it by hand instead:
 
 ```jsonc
 // ~/.claude/settings.json
 { "statusLine": { "type": "command", "command": "ccpool statusline" } }
 ```
 
-`ccpool statusline` captures `rate_limits` from CC's payload, seeds the history the `$`
-calibration needs, and renders a compact line (`pool 9% · $2.3k left · pace -20↓`). If you
-*already* run a statusline that writes those snapshots (e.g. a custom one), ccpool just reads
-it — no statusLine change needed (`init` detects it and flags the conflict rather than
-clobbering; re-run with `--replace-statusline` to take it over). Run **`ccpool statusline` bare
-in a terminal** to preview what the line looks like (it renders from the freshest snapshot
-instead of hanging on stdin), and **`ccpool help`** for the full command list.
+`ccpool statusline` captures `rate_limits` from CC's payload into the store, seeds the history the `$`
+calibration needs, and renders a compact line (`pool 9% · $2.3k left · pace -20↓`). If you *already*
+run a statusline of your own, ccpool composes rather than clobbers — `init` detects the existing one
+and flags the conflict instead of overwriting (re-run with `--replace-statusline` to take it over, or
+embed ccpool's gauge into yours; see below). Run **`ccpool statusline` bare in a terminal** to preview
+the line (it renders from the freshest stored snapshot instead of hanging on stdin), and **`ccpool
+help`** (or `ccpool <command> --help`) for the full command list.
 
 ### Keep your statusline — compose, don't replace
 
