@@ -2,10 +2,22 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-## STATUS (updated mid-sprint)
+## STATUS — SPRINT B COMPLETE + LIVE (2026-07-12)
+
+**All phases shipped and the live cutover is done.** The running statusline/warn hooks now use the
+SQLite binary (`make build` after a fresh re-import of 57,088 history rows). Everything ccpool-owned
+lives in the store: history, per-session snapshots, and the `kv` cache tier ($/1% + ccusage blocks);
+one `*store.Store` is threaded per command (a render opens the DB once). T15 (seeder) verified, T16
+(behaviour: status/check/statusline/run/warn/prune + the unreadable-store path all driven against the
+live binary), T17 (dead file-storage code retired), T18 (contention 0-drops + fail-open fuzz), T19
+(docs scrubbed + the DB-backed demo fixed) all done. Backups aside as `~/.ccpool/ccpool.db.rebuild-bak-*`;
+the old `ccpool-calibration.json`/`ccpool-blocks-cache.json`/`.warming` files + the JSONL are dead
+leftovers (safe to delete; the JSONL is the re-import source, keep if you might re-import).
+
+Prior detail retained below.
 
 - **DONE + committed + gate-green:** Phase 1 (T1-T2), Phase 2 (T3-T5), Phase 3 (T6-T10, incl. the
-  live import + parity proof), **Phase 4 CLOSED (T11-T14)**. Phase 3 is live-verified (57,055 rows imported;
+  live import + parity proof), **Phase 4 CLOSED (T11-T14)**, **Phase 5 DONE (T15-T19)**. Phase 3 is live-verified (57,055 rows imported;
   `check` byte-identical on history-derived lines). T12 = snapshot readers -> store. T13 = calibration
   + blocks caches -> `kv` table, warming throttle kept as a FILE (a lock, not state), AND a
   **store-threading refactor** (user-directed, from-scratch shape): each command invocation opens ONE

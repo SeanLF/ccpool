@@ -1,9 +1,6 @@
 # Point every data path into the sandbox so nothing touches the real ~/.ccpool. CCPOOL_HOME is the
 # writable store dir (HOME is /no-home here): status/check open an empty DB -> the warm-up path.
 env CCPOOL_HOME=$WORK
-env CCPOOL_HISTORY=$WORK/history.jsonl
-env CCPOOL_CALIB_CACHE=$WORK/calib.json
-env CCPOOL_BLOCKS_CACHE=$WORK/blocks.json
 env CCPOOL_STATUSLINE_LOG=$WORK/statusline.log
 
 # status with no snapshots: the warmup guidance, exit 0 (on-demand read, reports rather than errors)
