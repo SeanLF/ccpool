@@ -1,41 +1,30 @@
-// Package history appends the rate-limit history log (rate-limit-history.jsonl) that calibration
-// and burn projection read. One JSON object per line; see docs/GO-MIGRATION.md "on-disk contract".
-// The append is flock-guarded with per-session dedup and a min-interval throttle, exactly as the
-// Ruby seed_history, so Go and Ruby statuslines can interleave writes without corrupting the log.
+// Package history appends the rate-limit history (weekly/5h used% + resets) that calibration and burn
+// projection read. Records go to the SQLite store (internal/store); the append is per-session
+// deduped and 5h-throttled so a per-render statusline does not bloat the log. Best-effort throughout:
+// no history is never fatal, and nothing here panics (it runs on the statusline hot path).
 package history
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
-	"os"
-	"syscall"
-
 	"github.com/SeanLF/ccpool/internal/env"
-	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/rb"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // minIntervalDefault throttles 5h-only writes (wk flat) to curb log growth.
 const minIntervalDefault = 60
 
-// row is the history record. Field order matches the Ruby hash literal so json.Marshal emits the
-// same key order (t, wk, wk_reset, ses, ses_reset, tier, cost, session) byte-for-byte. Numeric
-// fields stay json.Number so the on-disk literal matches the payload's (int vs float preserved).
-type row struct {
-	T        int64        `json:"t"`
-	Wk       json.Number  `json:"wk"`
-	WkReset  *json.Number `json:"wk_reset"`
-	Ses      *json.Number `json:"ses"`
-	SesReset *json.Number `json:"ses_reset"`
-	Tier     string       `json:"tier"`
-	Cost     *json.Number `json:"cost"`
-	Session  *string      `json:"session"`
-}
+// maxResetAhead bounds a sane reset epoch. A single far-future reset (e.g. the 9999999999 sentinel
+// found in live data) would become the weekly/5h envelope's latest = max(reset) and collapse the
+// window, and skew calibration's reset grouping, since burn/calib -- unlike pool.GetWindow -- trust
+// the reset with no upper bound. Legit weekly/5h resets are always within ~7d/5h ahead, so 30d is a
+// wide "clearly absurd" cutoff that never false-rejects. Only the far-future case poisons (max picks
+// it); a past reset is inert (never the max, and the 300s jitter bucket drops it), so we do not bound
+// below -- a lower bound would needlessly drop legit rows at every 5h reset boundary.
+const maxResetAhead = 30 * 86400
 
-// Seed appends a history row for this render. No-op (returns nil) unless the payload carries a
-// numeric seven_day used_percentage, mirroring the Ruby guard. Best-effort: any error is returned
-// for the caller to log, never panics.
+// Seed appends a history row for this render. No-op (returns nil) unless the payload carries a numeric
+// seven_day used_percentage. Dedup + throttle drop redundant rows; the sanity guard drops a row whose
+// reset is absurd. Fail-open: a non-OK store or a read failure skips the write, never crashes.
 func Seed(payload map[string]any, now int64) error {
 	rl, ok := payload["rate_limits"].(map[string]any)
 	if !ok {
@@ -45,179 +34,124 @@ func Seed(payload map[string]any, now int64) error {
 	if !ok {
 		return nil
 	}
-	wk, ok := sd["used_percentage"].(json.Number)
+	wk, ok := rb.Num(sd["used_percentage"])
 	if !ok {
 		return nil
 	}
 
-	var sid *string
-	if s, ok := payload["session_id"].(string); ok {
-		sid = &s
-	}
-
-	r := row{
-		T:        now,
-		Wk:       wk,
-		WkReset:  numPtr(sd["resets_at"]),
-		Ses:      nil,
-		SesReset: nil,
-		Tier:     tier(),
-		Cost:     cost(payload),
-		Session:  sid,
+	r := store.HistoryRow{
+		T:       now,
+		Wk:      wk,
+		WkReset: intPtr(sd["resets_at"]),
+		Tier:    tier(),
+		Cost:    costPtr(payload),
+		Session: sessionPtr(payload),
 	}
 	if fh, ok := rl["five_hour"].(map[string]any); ok {
-		r.Ses = numPtr(fh["used_percentage"])
-		r.SesReset = numPtr(fh["resets_at"])
+		r.Ses = floatPtr(fh["used_percentage"])
+		r.SesReset = intPtr(fh["resets_at"])
 	}
 
-	line, err := marshalRow(r)
-	if err != nil {
-		return err
+	// Sanity guard: null just the offending reset, per window, rather than drop the whole row. A
+	// far-future reset would otherwise become the envelope's latest=max(reset) and collapse the
+	// window; nulling it excludes the row from THAT window's envelope (and calibration's reset
+	// grouping) while preserving the other window's good sample -- weekly keys off wk_reset only, 5h
+	// off ses_reset only. This keeps the 9999999999 sentinel bug from recurring on live ingest.
+	if r.WkReset != nil && *r.WkReset > now+maxResetAhead {
+		r.WkReset = nil
+	}
+	if r.SesReset != nil && *r.SesReset > now+maxResetAhead {
+		r.SesReset = nil
 	}
 
-	f, err := os.OpenFile(paths.History(), os.O_RDWR|os.O_CREATE, 0o644)
-	if err != nil {
-		return err
+	// Fail-open: a non-OK store or unreadable last row skips this render's write, never crashes. The
+	// user-facing signal for a persistently broken/unwritable DB is the loud status/check commands
+	// (Task 10 surfaces StateCorrupt/StateTransient); the statusline hot path stays silent by design.
+	s, st := store.Open()
+	if st != store.StateOK {
+		return nil
 	}
-	defer f.Close()
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		return err
-	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	defer s.Close()
 
-	last, err := lastSessionRow(f, sid)
-	if err != nil {
-		return err
+	last, lst := s.LastSessionRow(r.Session)
+	if lst != store.StateOK {
+		return nil // can't read the last row to dedup -> skip rather than risk a bad append
 	}
 	if skip(last, r, now) {
 		return nil
 	}
-
-	if _, err := f.Seek(0, io.SeekEnd); err != nil {
-		return err
-	}
-	_, err = f.Write(append(line, '\n'))
-	return err
+	return s.AppendHistory(r)
 }
 
-// skip reports whether the dedup/throttle rules drop this row. Matches the Ruby check: if the last
-// row for this session has the same wk + wk_reset, drop it when nothing moved (same ses) or when
-// only the 5h % moved but we wrote too recently (throttle).
-func skip(last map[string]any, r row, now int64) bool {
+// skip reports whether dedup/throttle drops this row: if the last row for this session has the same
+// weekly % and reset, drop it when the 5h % also matches (nothing moved) or when only the 5h % moved
+// but we wrote too recently (throttle). Typed comparison over the stored values -- the retired Ruby
+// numEqual/json.Number dance is gone (float64 equality is identical, epochs round-trip exactly).
+func skip(last *store.HistoryRow, r store.HistoryRow, now int64) bool {
 	if last == nil {
 		return false
 	}
-	if !numEqual(last["wk"], r.Wk) || !numEqualPtr(last["wk_reset"], r.WkReset) {
+	if last.Wk != r.Wk || !int64PtrEq(last.WkReset, r.WkReset) {
 		return false
 	}
-	if numEqualPtr(last["ses"], r.Ses) {
+	if float64PtrEq(last.Ses, r.Ses) {
 		return true // nothing moved
 	}
-	return now-toI(last["t"]) < int64(minInterval()) // only the 5h % moved -> throttle
-}
-
-// lastSessionRow scans the tail (last 64 KB) for this session's most recent row. A nil sid matches
-// any row (takes the last overall). Only the tail is read because it runs under the lock on every
-// render; a missed older line just appends a harmless duplicate.
-func lastSessionRow(f *os.File, sid *string) (map[string]any, error) {
-	size, err := f.Seek(0, io.SeekEnd)
-	if err != nil {
-		return nil, err
-	}
-	off := size - 65536
-	if off < 0 {
-		off = 0
-	}
-	if _, err := f.Seek(off, io.SeekStart); err != nil {
-		return nil, err
-	}
-	buf, err := io.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
-	lines := bytes.Split(buf, []byte{'\n'})
-	for i := len(lines) - 1; i >= 0; i-- {
-		if len(bytes.TrimSpace(lines[i])) == 0 {
-			continue
-		}
-		e := rb.ParseObject(lines[i])
-		if e == nil {
-			continue
-		}
-		if sid == nil {
-			return e, nil
-		}
-		if s, ok := e["session"].(string); ok && s == *sid {
-			return e, nil
-		}
-	}
-	return nil, nil
+	return now-last.T < int64(minInterval()) // only the 5h % moved -> throttle
 }
 
 // --- helpers ---
 
-// marshalRow serializes without Go's default HTML escaping (Ruby JSON.generate does not escape
-// <, >, &), and without the trailing newline the encoder adds.
-func marshalRow(r row) ([]byte, error) {
-	var b bytes.Buffer
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(r); err != nil {
-		return nil, err
-	}
-	return bytes.TrimRight(b.Bytes(), "\n"), nil
-}
-
-func numPtr(v any) *json.Number {
-	if n, ok := v.(json.Number); ok {
-		return &n
+// intPtr / floatPtr read a payload field (json.Number via rb.Num) as an *int64 / *float64, nil when
+// absent or non-numeric. resets_at is an integer epoch (< 2^53, so int64(f) is exact).
+func intPtr(v any) *int64 {
+	if f, ok := rb.Num(v); ok {
+		i := int64(f)
+		return &i
 	}
 	return nil
+}
+
+func floatPtr(v any) *float64 {
+	if f, ok := rb.Num(v); ok {
+		return &f
+	}
+	return nil
+}
+
+func sessionPtr(payload map[string]any) *string {
+	if s, ok := payload["session_id"].(string); ok {
+		return &s
+	}
+	return nil
+}
+
+func costPtr(payload map[string]any) *float64 {
+	c, ok := payload["cost"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return floatPtr(c["total_cost_usd"])
 }
 
 func tier() string {
 	return env.String("USAGE_TIER", "max_20x")
 }
 
-func cost(payload map[string]any) *json.Number {
-	c, ok := payload["cost"].(map[string]any)
-	if !ok {
-		return nil
-	}
-	return numPtr(c["total_cost_usd"])
-}
-
 func minInterval() int {
 	return env.Int("CCPOOL_HISTORY_MIN_INTERVAL", minIntervalDefault)
 }
 
-// numEqual compares a parsed value against a fresh json.Number the way Ruby == does (45 == 45.0).
-func numEqual(a any, b json.Number) bool {
-	an, ok := a.(json.Number)
-	if !ok {
-		return false
+func int64PtrEq(a, b *int64) bool {
+	if a == nil || b == nil {
+		return a == b // both-nil equal; one-nil unequal
 	}
-	af, err1 := an.Float64()
-	bf, err2 := b.Float64()
-	return err1 == nil && err2 == nil && af == bf
+	return *a == *b
 }
 
-// numEqualPtr compares a parsed value against a fresh *json.Number, treating both-nil as equal.
-func numEqualPtr(a any, b *json.Number) bool {
-	if b == nil {
-		return a == nil
+func float64PtrEq(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
 	}
-	return numEqual(a, *b)
-}
-
-func toI(v any) int64 {
-	if n, ok := v.(json.Number); ok {
-		if i, err := n.Int64(); err == nil {
-			return i
-		}
-		if f, err := n.Float64(); err == nil {
-			return int64(f)
-		}
-	}
-	return 0
+	return *a == *b
 }

@@ -8,43 +8,45 @@ import (
 	"github.com/SeanLF/ccpool/internal/rb"
 )
 
-// FuzzSeed fuzzes the history seed/dedup/parse path with a random payload map and a random
-// pre-existing history file. Seed runs on every render (fail-open hot path via the statusline), so
-// no input may panic: the doc contract says "any error is returned for the caller to log, never
-// panics". CCPOOL_HISTORY points at a temp file rewritten each iteration.
+// FuzzSeed fuzzes the history seed/dedup/guard path. Seed runs on every render (fail-open hot path
+// via the statusline), so no input may panic. Both fuzz inputs are decoded via rb.ParseObject and fed
+// through Seed (the first as random pre-existing state, the second as the row under test), exercising
+// the LastSessionRow/skip/guard path against a real temp DB reset each iteration.
 func FuzzSeed(f *testing.F) {
-	histPath := filepath.Join(f.TempDir(), "hist.jsonl")
-	f.Setenv("CCPOOL_HISTORY", histPath)
+	dbPath := filepath.Join(f.TempDir(), "ccpool.db")
+	f.Setenv("CCPOOL_DB", dbPath)
 
-	// Seeds: (existing-file-content, payload-JSON). The payload is decoded via rb.ParseObject to a
-	// map, matching how the real caller hands Seed its parsed CC payload.
-	type seed struct{ hist, payload string }
+	// Seeds: (pre-existing-state payload, row-under-test payload), both CC-shaped JSON.
+	type seed struct{ pre, payload string }
 	seeds := []seed{
 		{"", `{"session_id":"s1","rate_limits":{"seven_day":{"used_percentage":45,"resets_at":1720345600},"five_hour":{"used_percentage":30,"resets_at":1720003600}}}`},
 		{
-			`{"t":1719999970,"wk":45,"wk_reset":1720345600,"ses":30,"ses_reset":1720003600,"tier":"max_20x","cost":null,"session":"s1"}` + "\n",
+			`{"session_id":"s1","rate_limits":{"seven_day":{"used_percentage":45,"resets_at":1720345600},"five_hour":{"used_percentage":30,"resets_at":1720003600}}}`,
 			`{"session_id":"s1","rate_limits":{"seven_day":{"used_percentage":45,"resets_at":1720345600},"five_hour":{"used_percentage":30,"resets_at":1720003600}}}`,
 		},
-		{"garbage\n{\"partial\":\n", `{"rate_limits":{"seven_day":{"used_percentage":"nan"}}}`},
-		{"{}\n", `{"rate_limits":{"seven_day":{"used_percentage":1e400,"resets_at":1e400}}}`},
+		{"garbage{partial", `{"rate_limits":{"seven_day":{"used_percentage":"nan"}}}`},
+		{"{}", `{"rate_limits":{"seven_day":{"used_percentage":1e400,"resets_at":1e400}}}`},
 		{"", `{"rate_limits":{"seven_day":{"used_percentage":50},"five_hour":[]},"cost":{"total_cost_usd":12.5}}`},
-		{"\x00\xff\n", `{"rate_limits":null}`},
+		{"", `{"rate_limits":null}`},
 		{"", `not-an-object`},
 	}
 	for _, s := range seeds {
-		f.Add([]byte(s.hist), []byte(s.payload))
+		f.Add([]byte(s.pre), []byte(s.payload))
 	}
 
 	const now = int64(1720000000)
-	f.Fuzz(func(t *testing.T, hist, payloadJSON []byte) {
+	f.Fuzz(func(t *testing.T, preJSON, payloadJSON []byte) {
+		// Reset the DB each iteration so state does not leak across inputs.
+		for _, p := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
+			_ = os.Remove(p)
+		}
+		if pre := rb.ParseObject(preJSON); pre != nil {
+			_ = Seed(pre, now) // random pre-existing state; must never panic
+		}
 		payload := rb.ParseObject(payloadJSON)
 		if payload == nil {
 			return // Seed's caller always hands it a parsed object
 		}
-		if err := os.WriteFile(histPath, hist, 0o644); err != nil {
-			t.Skip()
-		}
-		// Must never panic; an error return is fine (the contract).
-		_ = Seed(payload, now)
+		_ = Seed(payload, now+1) // must never panic
 	})
 }
