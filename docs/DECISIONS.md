@@ -406,6 +406,23 @@ Then a config-file feature emerged from a conversation about how users actually 
 - **Hook payload has no plan/tier field** (verified against a live snapshot: it carries
   session_id/model/version/effort/thinking/fast_mode/cost/context_window/rate_limits{five_hour,
   seven_day}). So `tier` can't be auto-detected; it stays a plain user-set value.
+- **Storage data model — three durability tiers (Sprint B).** The SQLite DB holds only regenerable
+  data: DURABLE INPUTS from the CC payload (`history` time series, `snapshots`) that regrow if lost,
+  and CACHES of ccusage-derived state (`kv`: calibration `$/1%`, `blocks`, the `warming` marker) that
+  recompute. Neither is source-of-truth, which is why `store.Open` self-heals a corrupt DB by
+  recreating it empty (Task 4) and why `ccpool.json` — the one irreplaceable user intent — stays a
+  hand-editable FILE, never a DB row. Corollary ("store the inputs we get from CC, not ccusage"): we
+  persist the CC payload's `cost.total_cost_usd` (Claude Code's own session cost, a stable input) but
+  never a ccusage-derived `$` as durable data — that is a TTL'd cache. The write-only `tier` history
+  column (env config, never read; see the plan/tier note above) was dropped for the same reason.
+- **ccusage pinned `@20` not `@latest` — verified reason is SCHEMA, not pricing (2026-07-12).** ccusage
+  `@20` (20.0.17) defaults to `--mode auto` (uses Claude Code's logged session-time `costUSD`, else
+  recomputes) and `--offline=false` (fetches CURRENT pricing from the API). So pricing stays current
+  regardless of the pinned version — floating to `@latest` buys no `$` accuracy and only risks a
+  breaking change to the `blocks[]` shape ccpool parses. Pin for schema stability; the fail-loud shape
+  probe (`compute.go` stderr warning: `$` disabled, not silently zeroed) backstops a surprise change.
+  Graceful degradation confirmed: no ccusage / no network -> `npx` fails -> empty output -> `%` shown
+  without `$`, never a crash.
 - **Critical latent bug found + fixed:** `internal/env` was never git-tracked on `main` — the user's
   global `~/.gitignore_global` `ENV/` (Python venv) matched `internal/env/` case-insensitively
   (macOS `core.ignorecase=true`), so `git add` silently skipped it since A2. A clean clone of main
