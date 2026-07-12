@@ -2,6 +2,7 @@ package initcmd
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/golden"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // The Ruby Init module is the conformance oracle: for each fixture we run the Go Run and the Ruby
@@ -163,6 +165,8 @@ type pruneFixture struct {
 	Hist     string      `json:"hist"`
 }
 
+// Prune deletes rows older than keepDays. The store makes this a DELETE, so we assert against the DB's
+// own ground truth: the removed count equals the rows below the cutoff, and none remain below it.
 func TestPruneHistoryConformance(t *testing.T) {
 	root := repoRoot(t)
 
@@ -180,25 +184,59 @@ func TestPruneHistoryConformance(t *testing.T) {
 				t.Fatalf("bad keep_days: %v", err)
 			}
 
-			// Go side.
-			goHist := filepath.Join(t.TempDir(), "hist.jsonl")
-			if err := os.WriteFile(goHist, []byte(fx.Hist), 0o644); err != nil {
-				t.Fatalf("write go hist: %v", err)
+			dir := t.TempDir()
+			dbPath := filepath.Join(dir, "ccpool.db")
+			t.Setenv("CCPOOL_DB", dbPath)
+			t.Setenv("CCPOOL_HOME", dir)
+			if err := store.SeedHistoryJSONL(dbPath, fx.Hist); err != nil {
+				t.Fatalf("seed history: %v", err)
 			}
-			t.Setenv("CCPOOL_HISTORY", goHist)
-			goRemoved, err := PruneHistory(now, keepDays)
+
+			cutoff := now - int64(keepDays*86400)
+			before := countHist(t, dbPath, nil)
+			wantRemoved := 0
+			if keepDays > 0 { // keepDays<=0 keeps everything
+				wantRemoved = countHist(t, dbPath, &cutoff)
+			}
+
+			removed, err := PruneHistory(now, keepDays)
 			if err != nil {
 				t.Fatalf("PruneHistory: %v", err)
 			}
-			goBody, err := os.ReadFile(goHist)
-			if err != nil {
-				t.Fatalf("read go hist: %v", err)
+			if removed != wantRemoved {
+				t.Fatalf("removed = %d, want %d", removed, wantRemoved)
 			}
-
-			golden.Assert(t, filepath.Join(root, "conformance", "golden", "initcmd", fx.Name+".prune.txt"),
-				pruneEnvelope(goRemoved, goBody))
+			if after := countHist(t, dbPath, nil); after != before-wantRemoved {
+				t.Fatalf("after prune %d rows, want %d", after, before-wantRemoved)
+			}
+			if keepDays > 0 {
+				if below := countHist(t, dbPath, &cutoff); below != 0 {
+					t.Fatalf("%d rows below cutoff still present", below)
+				}
+			}
 		})
 	}
+}
+
+// countHist counts history rows in the DB; when below != nil, only rows with t < *below.
+func countHist(t *testing.T, dbPath string, below *int64) int {
+	t.Helper()
+	d, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer d.Close()
+	q := "SELECT count(*) FROM history"
+	var args []any
+	if below != nil {
+		q += " WHERE t < ?"
+		args = append(args, *below)
+	}
+	var n int
+	if err := d.QueryRow(q, args...).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	return n
 }
 
 func (fx pruneFixture) parseKeepDays() (float64, error) {
@@ -235,15 +273,6 @@ func initEnvelope(out string, code int, isSymlink, exists bool, body []byte) []b
 	buf.WriteString(bit(isSymlink))
 	buf.WriteByte(0)
 	buf.WriteString(bit(exists))
-	buf.WriteByte(0)
-	buf.Write(body)
-	return buf.Bytes()
-}
-
-// pruneEnvelope mirrors init_prune_oracle.rb's <removed_count>\0<history_bytes>.
-func pruneEnvelope(removed int, body []byte) []byte {
-	var buf bytes.Buffer
-	buf.WriteString(strconv.Itoa(removed))
 	buf.WriteByte(0)
 	buf.Write(body)
 	return buf.Bytes()
