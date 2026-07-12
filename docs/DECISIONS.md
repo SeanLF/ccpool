@@ -473,6 +473,32 @@ Then a config-file feature emerged from a conversation about how users actually 
   stored-epoch dance for no benefit. `paths.CalibCache`/`BlocksCache` and the
   `CCPOOL_CALIB_CACHE`/`CCPOOL_BLOCKS_CACHE` env overrides were deleted (the cache location is
   `CCPOOL_DB` now). The kv value blob shapes are unchanged, so nothing downstream re-parses differently.
+- **Corrupt DB now heals-WITH-RESTORE, not to empty (reverses T4; 2026-07-12).** T4 shipped
+  "corruption -> quarantine + recreate EMPTY (fresh install and post-corruption share the path)". A
+  corruption PoC (5k-row DB, 5 corruption types) + prior-art research (`docs/db-recovery-design.md`)
+  showed that was too aggressive AND had a real bug: the auto-wipe fires on header/truncation corruption
+  and then `check` printed the **fresh-install message** — disguising a data-loss event as a new
+  install. And history is NOT cheaply regenerable (weeks to rebuild calibration/burn), unlike the T4
+  rationale assumed. So, following the Firefox `places.sqlite` pattern (quarantine + restore the
+  valuable table from a rolling backup; let the cheap data regenerate): (1) a rolling last-known-good
+  **`VACUUM INTO` backup** (`store.Backup`, gated ~daily from the detached warm process, self-validating
+  since VACUUM INTO fails on a corrupt source); (2) **`Open` auto-restores history** from that `.bak`
+  after quarantining, and drops a `<db>.recovered` breadcrumb; (3) `status`/`check` show a truthful
+  show-once recovery notice naming the quarantine + a `sqlite3 .recover` recipe, never the fresh-install
+  copy. **`ccpool doctor` was considered and DROPPED** — with auto-restore-from-daily-backup, a recovery
+  command only salvages the sub-24h gap from the quarantine (marginal); the breadcrumb's recipe covers
+  the rare manual case, so no ladder-carrying command is worth it. Fail-open is preserved: the hot path
+  still recreates-and-renders; the change is that it no longer *silently* accepts empty when a backup
+  exists. `modernc` can't call `.recover` (extension not ported) or the backup C API, so the backup is
+  pure-SQL `VACUUM INTO` and restore is `ATTACH`+`INSERT..SELECT`. Kept `synchronous=NORMAL` (FULL is
+  marginal for our write pattern; WAL+NORMAL already survives crash-mid-COMMIT).
+- **No cobra (Sprint C reconsidered, 2026-07-12).** The roadmap's Sprint C proposed a cobra CLI for
+  completions/`--help`/man-pages. Reviewed against the near-stdlib invariant and the tool's actual shape
+  (hook-driven; ~8 human commands; a hand-crafted `usage()` cobra would replace with boilerplate): the
+  one genuine gap was per-command `--help`, hand-rolled in ~a file (`helptext.go`, `commandHelp` map +
+  `wantsHelp` that stops at `--` so `run -- foo --help` stays the child's). Completions/man-pages are low
+  value for this shape. Invariant upheld; the roadmap's "adoption UX earns cobra" assumption didn't
+  survive contact with the tool.
 - **Critical latent bug found + fixed:** `internal/env` was never git-tracked on `main` — the user's
   global `~/.gitignore_global` `ENV/` (Python venv) matched `internal/env/` case-insensitively
   (macOS `core.ignorecase=true`), so `git add` silently skipped it since A2. A clean clone of main

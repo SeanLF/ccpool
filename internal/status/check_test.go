@@ -10,6 +10,49 @@ import (
 	"github.com/SeanLF/ccpool/internal/store"
 )
 
+// After a corruption heal: `check` (automation) shows a brief pointer WITHOUT consuming the breadcrumb,
+// and `status` (human) shows the full notice and clears it. The regression guarded here is that an
+// autonomous check must not silently eat the one recovery notice before a human sees it.
+func TestRecoveryNudgeCheckDoesNotConsumeStatusClears(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "ccpool.db")
+	t.Setenv("CCPOOL_HOME", dir)
+	t.Setenv("CCPOOL_DB", dbPath)
+	t.Setenv("CCPOOL_CONFIG", filepath.Join(dir, "no-config.json"))
+
+	// Heal an empty store to create the breadcrumb: seed, back up, corrupt-header, reopen.
+	s, _ := store.Open()
+	_ = s.AppendHistory(store.HistoryRow{T: 1, Wk: 1})
+	_, _ = s.BackupIfStale(1000, 86400)
+	s.Close()
+	if err := os.WriteFile(dbPath, make([]byte, 100), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h, _ := store.Open()
+	h.Close() // heals + drops the breadcrumb
+
+	// An autonomous `check` first: points at status, must NOT clear the breadcrumb.
+	chk, _ := Report(1720000000)
+	cj := strings.Join(chk, "\n")
+	if !strings.Contains(cj, "corrupted and rebuilt") || !strings.Contains(cj, "ccpool status") {
+		t.Fatalf("check should point at status, got:\n%s", cj)
+	}
+	// A second check still shows it (not consumed).
+	if chk2, _ := Report(1720000000); !strings.Contains(strings.Join(chk2, "\n"), "corrupted and rebuilt") {
+		t.Fatal("check must not consume the recovery notice")
+	}
+
+	// Now a human `status`: full detail (restored count + quarantine), and it clears.
+	sj := strings.Join(Status(1720000000), "\n")
+	if !strings.Contains(sj, "history rows restored") || strings.Contains(sj, "no data yet. Wire") {
+		t.Fatalf("status should show the full recovery detail:\n%s", sj)
+	}
+	// Cleared: check and status are now quiet.
+	if chk3, _ := Report(1720000000); strings.Contains(strings.Join(chk3, "\n"), "corrupted and rebuilt") {
+		t.Fatal("breadcrumb should clear after status shows it")
+	}
+}
+
 // An unreadable store (locked/corrupt) is not a fresh install: Status must name it, not tell the user
 // to wire up a statusline that is already wired. Regression guard for the LOUD-command misdirection.
 func TestStatusUnreadableStoreIsNotFreshInstall(t *testing.T) {

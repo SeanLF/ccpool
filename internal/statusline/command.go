@@ -86,10 +86,15 @@ func Command(now int64, embed bool) {
 func WarmCalib(now int64) {
 	defer func() { _ = recover() }()
 	s, _ := store.Open()
-	if s != nil {
-		defer s.Close()
+	if s == nil {
+		return
 	}
+	defer s.Close()
 	calib.DollarPerPct(s, now, false)
+	// Roll a last-known-good backup from this DETACHED process (never the render hot path), gated to
+	// ~daily. VACUUM INTO reads every page so it doubles as a health check; see
+	// docs/db-recovery-design.md -- this is what makes corruption auto-recovery reliable.
+	_, _ = s.BackupIfStale(now, env.Int64("CCPOOL_BACKUP_SECS", 86400))
 }
 
 // bestEffort runs a hot-path side effect, swallowing and logging any panic so it can never blank

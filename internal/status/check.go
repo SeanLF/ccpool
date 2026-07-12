@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -38,6 +39,11 @@ func Report(now int64) (lines []string, code int) {
 	}
 	snaps, snapSt := readSnapshots(s, sSt)
 	if len(snaps) == 0 {
+		// A just-healed DB has no snapshots yet (they regenerate next render) -> don't disguise a
+		// corruption recovery as a fresh install; point at `status` for the detail (don't clear here).
+		if line, ok := recoveryNudgeBrief(); ok {
+			return []string{line}, 2
+		}
 		return []string{absentOrCorrupt(snapSt)}, 2
 	}
 
@@ -67,6 +73,9 @@ func Report(now int64) (lines []string, code int) {
 	paceWarn := weeklyLines(&out, wk, wkOK, wkHist, histState, now)
 	out = append(out, "")
 	out = append(out, "VERDICT  "+verdict(ses, sesOK, wk, wkOK, sesSoon, paceWarn, now))
+	if line, ok := recoveryNudgeBrief(); ok { // a recovery can co-exist with live data (snapshots repopulated)
+		out = append([]string{line, ""}, out...)
+	}
 	return out, 0
 }
 
@@ -78,6 +87,59 @@ func readSnapshots(s *store.Store, sSt store.ReadState) ([]map[string]any, store
 		return nil, sSt
 	}
 	return s.Snapshots()
+}
+
+// recoveryNudgeFull is the human-facing recovery notice for `status`: it names how many history rows
+// the automatic restore recovered from the rolling backup, where the corrupt original is quarantined,
+// and a salvage recipe that recovers into a SCRATCH db (never the live DB -- .recover would duplicate
+// the already-restored rows). It CLEARS the breadcrumb: a human ran status, they've been told. `check`
+// uses recoveryNudgeBrief and does NOT clear, so an autonomous `check` loop -- the expected first caller
+// after a heal -- can never silently consume the one notice before a human sees it.
+func recoveryNudgeFull() ([]string, bool) {
+	rows, pending := store.RecoveryPending()
+	if !pending {
+		return nil, false
+	}
+	defer store.ClearRecoveryMark()
+	var head string
+	switch {
+	case rows > 0:
+		head = "recovered ·  the usage database was corrupted and rebuilt; " + strconv.Itoa(rows) + " history rows restored from the last backup."
+	case rows < 0:
+		head = "recovered ·  the usage database was corrupted and rebuilt; a backup existed but could not be read."
+	default:
+		head = "recovered ·  the usage database was corrupted and rebuilt; no backup was available to restore history."
+	}
+	lines := []string{head}
+	if q := latestQuarantine(); q != "" {
+		scratch := paths.DB() + ".salvage.db"
+		lines = append(lines,
+			"             the corrupt copy is kept at "+q,
+			"             salvage it into a scratch db to inspect:  sqlite3 "+q+" .recover | sqlite3 "+scratch)
+	}
+	return lines, true
+}
+
+// recoveryNudgeBrief is the one-line pointer `check` prints. It does NOT clear the breadcrumb, so the
+// notice survives autonomous `check` runs (which route to stderr on the post-heal no-data path) until a
+// human runs `status` and is shown the full detail.
+func recoveryNudgeBrief() (string, bool) {
+	if _, pending := store.RecoveryPending(); !pending {
+		return "", false
+	}
+	return "recovered ·  the usage database was corrupted and rebuilt -- run `ccpool status` for details.", true
+}
+
+// latestQuarantine returns the newest `<db>.corrupt-*` file Open set aside, or "" if none.
+func latestQuarantine() string {
+	matches, _ := filepath.Glob(paths.DB() + ".corrupt-*")
+	newest, newestT := "", int64(-1)
+	for _, m := range matches {
+		if fi, err := os.Stat(m); err == nil && fi.ModTime().Unix() > newestT {
+			newest, newestT = m, fi.ModTime().Unix()
+		}
+	}
+	return newest
 }
 
 // absentOrCorrupt is check's no-data message, keyed off the store read state (snapshots live in the DB

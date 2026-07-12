@@ -46,6 +46,14 @@ func dispatch(args []string) int {
 		cmd = args[0]
 	}
 
+	// `ccpool <cmd> --help` / `-h` prints that command's detailed help (hand-rolled, no cobra).
+	if wantsHelp(args[1:]) {
+		if h, ok := commandHelp[cmd]; ok {
+			fmt.Println(h)
+			return 0
+		}
+	}
+
 	switch cmd {
 	case "", "status":
 		printLines(os.Stdout, status.Status(now))
@@ -198,7 +206,9 @@ Commands:
   statusline --embed compact $-left + pace only, to embed in another statusline (e.g. a
                      ccstatusline custom-command widget). Keep your line, add ccpool's gauge.
   warn               Claude Code hook: warn mid-turn on pace / 5h / context (stdin = payload).
-  prune [--history]  delete stale snapshots (add --history to also compact the history file).
+  prune [--history]  delete stale snapshot rows (add --history to also compact old history rows).
+
+Run 'ccpool <command> --help' for details on any command.
   version            print version, commit, and build date.
   help               this message (also -h, --help).
 

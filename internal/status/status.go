@@ -38,6 +38,11 @@ func Status(now int64) []string {
 		if sSt != store.StateOK {
 			return []string{absentOrCorrupt(sSt)}
 		}
+		// A just-healed DB has no snapshots yet -> show the full recovery notice (and clear it: a human
+		// ran status), not the fresh-install copy.
+		if nudge, ok := recoveryNudgeFull(); ok {
+			return nudge
+		}
 		return []string{
 			"weekly pool: no data yet. Wire `ccpool statusline` as your Claude Code",
 			"statusLine command (settings.json) so it can capture rate_limits, then use CC once.",
@@ -95,5 +100,8 @@ func Status(now int64) []string {
 		}
 	}
 
+	if nudge, ok := recoveryNudgeFull(); ok {
+		lines = append(append(nudge, ""), lines...)
+	}
 	return lines
 }

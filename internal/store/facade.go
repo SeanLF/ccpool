@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/rb"
@@ -187,6 +189,74 @@ func (s *Store) GetKV(key string) ([]byte, bool, ReadState) {
 // JSON value blob, e.g. calibration's {dpp,at}), so wall-clock time is fine and non-load-bearing.
 func (s *Store) PutKV(key string, value []byte) error {
 	return s.q.PutKV(context.Background(), db.PutKVParams{Key: key, Value: string(value), UpdatedAt: time.Now().Unix()})
+}
+
+// Backup writes a last-known-good copy of the DB to "<path>.bak" via VACUUM INTO. VACUUM INTO reads
+// every page, so it FAILS on a corrupt source -- a successful run is provably clean, and we only ever
+// replace .bak on success (last-known-good semantics). VACUUM INTO requires a non-existent target, so
+// we write a temp sibling and rename over .bak. NOT for the hot path (full-page read); the caller gates
+// it. modernc's driver has no backup C API, so this pure-SQL path is the pure-Go equivalent.
+func (s *Store) Backup() error {
+	if s == nil || s.path == "" {
+		return errors.New("store: no path for backup")
+	}
+	// Per-PID tmp so two concurrent detached warm processes can't clobber each other's in-flight VACUUM
+	// target (the loser would just error harmlessly, but a distinct name removes the race entirely).
+	tmp := s.path + ".bak." + strconv.Itoa(os.Getpid()) + ".tmp"
+	_ = os.Remove(tmp)
+	// The target is an identifier expression; bind it as a parameter (SQLite evaluates it) so a path
+	// with quotes/specials can't break the statement. CCPOOL_DB is user config, but binding is cleaner.
+	if _, err := s.sqlDB.Exec("VACUUM INTO ?", tmp); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, s.path+".bak")
+}
+
+// BackupIfStale runs Backup only when the last backup is older than minInterval (kv 'last_backup'
+// epoch). Returns whether it ran. Best-effort gate for the detached warm path -- never the render hot
+// path. A failed backup leaves the previous .bak untouched and does not advance the timestamp.
+func (s *Store) BackupIfStale(now, minInterval int64) (bool, error) {
+	if s == nil {
+		return false, nil
+	}
+	if v, ok, _ := s.GetKV(backupKey); ok {
+		if last, err := strconv.ParseInt(strings.TrimSpace(string(v)), 10, 64); err == nil && now-last < minInterval {
+			return false, nil
+		}
+	}
+	if err := s.Backup(); err != nil {
+		return false, err
+	}
+	_ = s.PutKV(backupKey, []byte(strconv.FormatInt(now, 10)))
+	return true, nil
+}
+
+const backupKey = "last_backup" // kv row: epoch of the last successful rolling backup
+
+// restoreHistoryFrom copies the history rows from a backup DB (bak) into this (fresh) store, preserving
+// arrival order via the source id. ATTACH + INSERT..SELECT on one pinned connection (ATTACH is
+// connection-scoped). Best-effort: a corrupt/unreadable backup errors on the SELECT and yields 0 rows
+// restored, never a panic. Returns the number of rows restored.
+func (s *Store) restoreHistoryFrom(bak string) (int, error) {
+	ctx := context.Background()
+	conn, err := s.sqlDB.Conn(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "ATTACH DATABASE ? AS bak", bak); err != nil {
+		return 0, err
+	}
+	defer func() { _, _ = conn.ExecContext(ctx, "DETACH DATABASE bak") }()
+	res, err := conn.ExecContext(ctx,
+		"INSERT INTO history(t,wk,wk_reset,ses,ses_reset,cost,session) "+
+			"SELECT t,wk,wk_reset,ses,ses_reset,cost,session FROM bak.history ORDER BY id")
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 // PruneHistory / PruneSnapshots delete rows older than cutoff and report the count removed.

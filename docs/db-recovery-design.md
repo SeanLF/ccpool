@@ -64,16 +64,18 @@ kv = Firefox's history (let them regenerate).**
    needed for the common case. One-time cost on the rare corrupt Open; fail-open on any error (empty DB +
    breadcrumb).
 
-3. **`ccpool doctor`** — the manual escalation when auto-restore wasn't enough (no `.bak` yet, or the
-   backup is stale and the quarantine holds newer rows). Ladder, never deleting the original:
-   (a) `integrity_check` + report; (b) pure-Go salvage from the newest quarantine into the live DB;
-   (c) if the file won't open and `sqlite3` is on PATH and capable, shell out to `.recover` (runtime
-   probe, never assume); (d) re-import from `rate-limit-history.jsonl` if present; (e) else keep the
-   quarantine and print its path. `--reset` = the destructive recreate-empty, opt-in only.
+3. **~~`ccpool doctor`~~ — DROPPED.** Once auto-restore-from-daily-backup exists, a recovery command
+   only adds salvaging the *gap* (rows written since the last daily backup) from the quarantine — losing
+   up to ~24h of history out of weeks barely moves calibration/burn, and the no-backup case only hits a
+   near-fresh install. So instead of a command carrying a recovery ladder, the **breadcrumb message
+   names the quarantine file and prints the one-line `sqlite3 .recover` recipe** — a user (or their
+   Claude) runs that for the rare manual salvage. "Give Claude a chance to fix it" is satisfied by the
+   informative message, not a built-in ladder. (If real usage shows the gap matters, revisit.)
 
-4. **Honest messaging** (breadcrumb): post-heal, `status`/`check`/statusline say "recovered from
-   corruption — run `ccpool doctor` for deeper recovery" (or, if auto-restore fully succeeded, a quiet
-   note), NOT the fresh-install copy. Clears when `doctor` finishes or the DB re-populates.
+4. **Honest messaging** (breadcrumb): post-heal, `status`/`check` show "the usage database was corrupted
+   and rebuilt; N history rows restored from the last backup; the corrupt copy is kept at <path>
+   (salvage recipe)", NOT the fresh-install copy. SHOW-ONCE: cleared after it's displayed so it doesn't
+   nag.
 
 5. **Quarantine audit**: never rename/unlink the DB while another ccpool process may hold it open
    (undefined behaviour per SQLite §2.5) — the current `quarantine` runs inside `Open` before the fresh
@@ -90,13 +92,12 @@ That was too optimistic about history's regenerability and disguised the loss. N
 blocking); the change is that we no longer *silently* accept empty when a backup or salvage exists.
 Recorded in `docs/DECISIONS.md`.
 
-## Build order (each tested + committed)
+## Build order — SHIPPED (2026-07-12)
 
-1. Rolling `VACUUM INTO` backup + the gate (store method + statusline wiring). Test: backup created,
-   gated, self-validates.
-2. Auto heal-with-restore in `Open` + breadcrumb. Test: seed history, corrupt-header, Open → restored
-   from `.bak`; no `.bak` → empty + breadcrumb.
-3. `ccpool doctor` recovery ladder + `--reset`. Test: salvage from a quarantined truncated DB (the PoC's
-   2,306-row case) via the pure-Go path; JSONL re-import; sqlite3 `.recover` when present.
-4. Honest post-heal messaging (breadcrumb → status/check/statusline).
-5. Per-command `--help` registry (the one real Sprint-C win, hand-rolled, no cobra).
+1. ✅ Rolling `VACUUM INTO` backup + gate (`store.Backup`/`BackupIfStale`, wired into the detached
+   `WarmCalib`, gated ~daily via kv `last_backup`). Self-validating.
+2. ✅ Auto heal-with-restore in `Open` (`healFromBackup` → `restoreHistoryFrom` via ATTACH) + the
+   `<db>.recovered` breadcrumb (`RecoveryPending`/`ClearRecoveryMark`).
+3. ❌ `ccpool doctor` — DROPPED (see above); the breadcrumb names the quarantine + `.recover` recipe.
+4. ✅ Honest post-heal messaging (`status`/`check` `recoveryNudge`, show-once).
+5. ✅ Per-command `--help` (hand-rolled `commandHelp` registry, no cobra).

@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	sqlite "modernc.org/sqlite"
@@ -39,6 +41,7 @@ const (
 type Store struct {
 	q     *db.Queries
 	sqlDB *sql.DB
+	path  string // the resolved DB path, for sidecar files (the rolling .bak, WAL/SHM)
 }
 
 // SQLite primary result codes are a permanent part of its public API (never renumbered), so we match
@@ -64,8 +67,55 @@ func Open() (*Store, ReadState) {
 			return nil, StateCorrupt // could not move the corrupt file aside; do not recreate over it
 		}
 		s, st = openAt(path) // recreate empty over the now-quarantined path
+		if st == StateOK && s != nil {
+			s.healFromBackup() // best-effort restore history from the rolling .bak + drop a breadcrumb
+		}
 	}
 	return s, st
+}
+
+// healFromBackup runs after a corrupt DB was quarantined and recreated empty. It best-effort restores
+// the HISTORY rows (the expensive-to-rebuild tier) from the rolling .bak into the fresh DB -- snapshots
+// and kv regenerate on their own, so they are intentionally not restored -- and always drops a
+// breadcrumb (<db>.recovered, holding the restored-row count) so on-demand commands surface the
+// recovery instead of a "fresh install" message and `doctor` can do the deeper salvage from the
+// quarantine. Every failure degrades to the empty DB (fail-open); the corrupt original is never touched.
+func (s *Store) healFromBackup() {
+	restored := 0 // >0: rows restored from .bak; 0: no .bak existed; -1: .bak present but unreadable
+	if bak := s.path + ".bak"; fileExists(bak) {
+		if n, err := s.restoreHistoryFrom(bak); err != nil {
+			restored = -1 // a backup was there but couldn't be read -- distinct from "no backup"
+		} else {
+			restored = n
+		}
+	}
+	_ = os.WriteFile(s.path+recoveredSuffix, []byte(strconv.Itoa(restored)), 0o644)
+}
+
+const recoveredSuffix = ".recovered" // breadcrumb dropped after a heal; doctor clears it
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+// RecoveryPending reports whether the last Open healed from corruption -- a breadcrumb `doctor` hasn't
+// cleared yet -- and how many history rows the auto-restore recovered from the backup (0 if there was
+// no usable .bak). On-demand commands read this to tell the user "recovered from corruption, run
+// `ccpool doctor`" rather than disguising a corruption event as a fresh install.
+func RecoveryPending() (rows int, pending bool) {
+	b, err := os.ReadFile(paths.DB() + recoveredSuffix)
+	if err != nil {
+		return 0, false
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+	return n, true
+}
+
+// ClearRecoveryMark removes the breadcrumb (doctor calls it once the user has been served / recovery
+// is resolved). A missing marker is not an error.
+func ClearRecoveryMark() {
+	_ = os.Remove(paths.DB() + recoveredSuffix)
 }
 
 // openAt opens (or creates) the DB at path with the WAL pragmas and applies the idempotent schema.
@@ -97,7 +147,7 @@ func openAt(path string) (*Store, ReadState) {
 		_ = sqlDB.Close()
 		return nil, classify(err)
 	}
-	return &Store{q: db.New(sqlDB), sqlDB: sqlDB}, StateOK
+	return &Store{q: db.New(sqlDB), sqlDB: sqlDB, path: path}, StateOK
 }
 
 // classify maps a driver error to a ReadState. Only a definitive corruption code earns the
