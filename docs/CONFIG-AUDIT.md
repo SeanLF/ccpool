@@ -10,7 +10,7 @@ per knob. Paired with `ccpool init` making the happy path zero-config.
 a working default. ~45 vars exist, but they split cleanly:
 
 **Update (2026-07-10):** the bucket-2 documented user choices below now also persist to
-`~/.claude/ccpool.json` (resolved `env > file > default`), seeded by `ccpool config init` (or
+`~/.ccpool/ccpool.json` (resolved `env > file > default`), seeded by `ccpool config init` (or
 `ccpool init --apply`, which seeds both the hooks and the config). A user no longer needs env vars
 exported to keep a choice across shells/machines; the file carries it. Bucket 1 (paths) and bucket
 3 (threshold escape hatches) stay env-only by design. See `docs/config-file-design.md` for the full
@@ -38,12 +38,12 @@ Never a user-facing "setting."
 | var | default | role |
 |---|---|---|
 | `USAGE_CACHE` | `~/.claude/usage-cache.json` | snapshot path base (glob `-*.json`) |
-| `CCPOOL_HISTORY` | `~/.claude/rate-limit-history.jsonl` | wk%/5h% history log |
-| `CCPOOL_CALIB_CACHE` | `~/.claude/ccpool-calibration.json` | cached `$/1%` |
-| `CCPOOL_BLOCKS_CACHE` | `~/.claude/ccpool-blocks-cache.json` | cached ccusage `blocks` |
+| `CCPOOL_HISTORY` | `~/.ccpool/rate-limit-history.jsonl` | wk%/5h% history log |
+| `CCPOOL_CALIB_CACHE` | `~/.ccpool/ccpool-calibration.json` | cached `$/1%` |
+| `CCPOOL_BLOCKS_CACHE` | `~/.ccpool/ccpool-blocks-cache.json` | cached ccusage `blocks` |
 | `CCPOOL_PROJECTS` | `~/.claude/projects` | transcript root (review/rhythm) |
 | `CCPOOL_SETTINGS` | `~/.claude/settings.json` | `init` target |
-| `CCPOOL_STATUSLINE_LOG` | `~/.claude/statusline.log` | anomaly log |
+| `CCPOOL_STATUSLINE_LOG` | `~/.ccpool/statusline.log` | anomaly log |
 | `USAGE_TIER` | `max_20x` | pool tier tag stamped into history |
 
 **Verdict: KEEP all.** Good defaults confirmed. `USAGE_TIER` is the only one a non-Max-20x user
@@ -119,5 +119,5 @@ encodes a contestable judgment call (`CHECK_*`/`WARN_*`) or has a real tuning/te
 The config surface is **not** the liability the red-team assumed. Zero vars are required; the
 documented ones are genuine user-shape choices; the rest are invisible escape hatches. `ccpool
 init` delivers the zero-config happy path the principle demands, and the bucket-2 choices now
-persist to `~/.claude/ccpool.json` too, so a user doesn't need to keep them exported to make a
+persist to `~/.ccpool/ccpool.json` too, so a user doesn't need to keep them exported to make a
 choice stick. **Action: none required**, keep defaults, hold the documented surface where it is.

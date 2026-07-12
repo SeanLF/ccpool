@@ -83,7 +83,7 @@ func dispatch(args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		// Seed ~/.claude/ccpool.json too (fill-missing-only via Merge, so re-running init is
+		// Seed ~/.ccpool/ccpool.json too (fill-missing-only via Merge, so re-running init is
 		// idempotent and never clobbers a value the user already set in the file). This is a
 		// best-effort bonus on top of init's real job (hook wiring, already done above): print
 		// whatever configcmd.Init reports (including a corrupt-file warning) but don't let its
@@ -179,9 +179,9 @@ Usage: ccpool <command> [args]        (no command -> status)
 
 Commands:
   init [--apply]     wire ccpool into Claude Code (dry-run diff by default; --apply writes) and
-                     seed ~/.claude/ccpool.json from your detected rhythm (same dry-run/--apply).
+                     seed ~/.ccpool/ccpool.json from your detected rhythm (same dry-run/--apply).
   config show        effective value of every setting + which layer supplied it (env/file/default).
-  config init        (re-)seed ~/.claude/ccpool.json from your detected rhythm; dry-run by default,
+  config init        (re-)seed ~/.ccpool/ccpool.json from your detected rhythm; dry-run by default,
                      --apply writes, --force re-detects and overwrites instead of fill-missing-only.
   status             % used, ~$ API-equiv left, and pace vs how far through the week you are.
   check              time + budget + a keep-going/stop VERDICT, for long or autonomous loops.

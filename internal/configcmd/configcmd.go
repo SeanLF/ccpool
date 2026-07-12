@@ -1,5 +1,5 @@
 // Package configcmd implements `ccpool config show` / `ccpool config init`, plus the Detect logic
-// `ccpool init` calls to seed ~/.claude/ccpool.json on first setup. It sits above internal/config
+// `ccpool init` calls to seed ~/.ccpool/ccpool.json on first setup. It sits above internal/config
 // (imports rhythm, clock, env, paths -- none of which internal/config or internal/env may import
 // back), so it is deliberately NOT imported by internal/env: only main wires it in. Detection lives
 // here rather than in internal/config to keep that package a leaf.

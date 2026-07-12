@@ -128,7 +128,7 @@ func stageReadout(t *testing.T, fx readoutFixture, fakeCmd string) []string {
 	// Shared inputs on the Go process env (inherited by the oracle via os.Environ).
 	t.Setenv("USAGE_CACHE", filepath.Join(inputDir, "usage-cache.json"))
 	t.Setenv("CCPOOL_HISTORY", histPath)
-	t.Setenv("CCPOOL_CONFIG", filepath.Join(inputDir, "no-config.json")) // isolate: never read the dev's real ~/.claude/ccpool.json
+	t.Setenv("CCPOOL_CONFIG", filepath.Join(inputDir, "no-config.json")) // isolate: never read the dev's real ~/.ccpool/ccpool.json
 	t.Setenv("CCPOOL_CCUSAGE_CMD", fakeCmd)
 	t.Setenv("CCUSAGE_FIXTURE", blocksPath)
 	t.Setenv("CCPOOL_BLOCKS_CACHE", filepath.Join(goDir, "blocks-cache.json"))

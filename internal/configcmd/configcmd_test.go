@@ -101,7 +101,7 @@ func TestDetectFromScheduleAppliesViaGating(t *testing.T) {
 	// Round-trip through profile.Load the way a real read would (file > env is irrelevant here --
 	// env.String checks os env first, so setting CCPOOL_* directly simulates "this is what the file
 	// holds" for profile.Load's purposes). Point CCPOOL_CONFIG at an empty temp path too, so
-	// profile.Load's own fail-open file read can't pick up a real ~/.claude/ccpool.json.
+	// profile.Load's own fail-open file read can't pick up a real ~/.ccpool/ccpool.json.
 	t.Setenv("CCPOOL_CONFIG", filepath.Join(t.TempDir(), "ccpool.json"))
 	t.Setenv("CCPOOL_PACE_PROFILE", "") // detectFrom leaves profile unset; confirm Load agrees it's absent
 	t.Setenv("CCPOOL_WORK_DAYS", *c.Pace.WorkDays)

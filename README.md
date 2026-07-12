@@ -143,7 +143,7 @@ bar together — they can't disagree.
 
 ## Config file
 
-ccpool reads a config file at `~/.claude/ccpool.json` (override `CCPOOL_CONFIG`). Zero-config still
+ccpool reads a config file at `~/.ccpool/ccpool.json` (override `CCPOOL_CONFIG`). Zero-config still
 works, every setting below has a default; the file just persists your choices so they survive
 without keeping env vars exported. Resolution order is **env > file > default**; env stays the
 override/escape hatch, the file is where a chosen or detected value lives.

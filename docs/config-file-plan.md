@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Persist a user's durable choices to `~/.claude/ccpool.json` (resolved `env > file > default`), seeded by one-time detection off the hot path, with a top-level kill-switch.
+**Goal:** Persist a user's durable choices to `~/.ccpool/ccpool.json` (resolved `env > file > default`), seeded by one-time detection off the hot path, with a top-level kill-switch.
 
 **Architecture:** `internal/env` becomes the single resolution point (`os env → config file → default`); because A2 already routes numeric knobs through it, they get file support for free. A new `internal/config` owns the JSON schema (pointer fields for presence), a fail-open cached load, the friendly↔env key mapping, `Enabled()`, detection, and the `config show`/`config init` commands. Four string call-sites reroute through a new `env.String`.
 
@@ -44,7 +44,7 @@
 - Test: `internal/paths/paths_test.go` (create)
 
 **Interfaces:**
-- Produces: `paths.Config() string` — `CCPOOL_CONFIG` or `~/.claude/ccpool.json`, `~`-expanded.
+- Produces: `paths.Config() string` — `CCPOOL_CONFIG` or `~/.ccpool/ccpool.json`, `~`-expanded.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -84,10 +84,10 @@ Expected: FAIL, `undefined: Config`.
 In `internal/paths/paths.go`, after the `StatuslineLog` func, add:
 
 ```go
-// Config is the ccpool config file (CCPOOL_CONFIG || ~/.claude/ccpool.json). The one file a user's
+// Config is the ccpool config file (CCPOOL_CONFIG || ~/.ccpool/ccpool.json). The one file a user's
 // persisted choices live in; read fresh per process so the hermetic test env is honoured.
 func Config() string {
-	return resolve("CCPOOL_CONFIG", "~/.claude/ccpool.json")
+	return resolve("CCPOOL_CONFIG", "~/.ccpool/ccpool.json")
 }
 ```
 
@@ -212,7 +212,7 @@ Expected: FAIL, package `config` does not exist.
 Create `internal/config/config.go`:
 
 ```go
-// Package config reads a user's persisted ccpool choices from ~/.claude/ccpool.json. It is the
+// Package config reads a user's persisted ccpool choices from ~/.ccpool/ccpool.json. It is the
 // middle layer of env > file > default: internal/env consults it after os env, before the builtin
 // default. Fail-open: a missing OR corrupt file yields an empty, usable Config (hot-path callers
 // ignore the error), while on-demand callers (config show/init) surface it. Detection seeds it once
@@ -717,7 +717,7 @@ git commit -m "feat(config): enabled kill-switch no-ops the statusline + warn ho
 In each harness's staging function, alongside the existing `t.Setenv("CCPOOL_HISTORY", ...)` lines, add:
 
 ```go
-t.Setenv("CCPOOL_CONFIG", filepath.Join(inputDir, "no-config.json")) // isolate: never read the dev's real ~/.claude/ccpool.json
+t.Setenv("CCPOOL_CONFIG", filepath.Join(inputDir, "no-config.json")) // isolate: never read the dev's real ~/.ccpool/ccpool.json
 ```
 
 Add `CCPOOL_CONFIG` to the `readoutEnvKeys` cleared-before-each-case slice in `internal/status/conformance_test.go` (and any equivalent in the statusline harness).
@@ -725,7 +725,7 @@ Add `CCPOOL_CONFIG` to the `readoutEnvKeys` cleared-before-each-case slice in `i
 - [ ] **Step 2: Verify hermetic + green**
 
 Run: `unset GOROOT && TZ=UTC go test ./internal/status/ ./internal/statusline/ -count=1`
-Expected: PASS. Prove isolation by temporarily creating `~/.claude/ccpool.json` with `{"enabled":false}` locally and re-running: tests must STILL pass (config ignored). Delete that file afterward.
+Expected: PASS. Prove isolation by temporarily creating `~/.ccpool/ccpool.json` with `{"enabled":false}` locally and re-running: tests must STILL pass (config ignored). Delete that file afterward.
 
 - [ ] **Step 3: Commit**
 
@@ -1020,7 +1020,7 @@ Expected: PASS (the config.txtar script + configcmd unit tests). Confirm no impo
 - [ ] **Step 6: Full gate + real-run check**
 
 Run: `unset GOROOT && make check`
-Then verify on the real machine: `./ccpool config init` (dry-run shows a detected plan), `./ccpool config init --apply`, `./ccpool config show` (values + sources), `cat ~/.claude/ccpool.json`. Confirm `ccpool statusline`/`check` still render with the file present. Delete or keep the file as desired.
+Then verify on the real machine: `./ccpool config init` (dry-run shows a detected plan), `./ccpool config init --apply`, `./ccpool config show` (values + sources), `cat ~/.ccpool/ccpool.json`. Confirm `ccpool statusline`/`check` still render with the file present. Delete or keep the file as desired.
 
 - [ ] **Step 7: Commit**
 

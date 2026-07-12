@@ -13,9 +13,9 @@ import (
 const maxLogLines = 200
 
 // diag is the statusline hot path's diagnostic logger: structured slog records appended to the
-// capped anomaly log (~/.claude/statusline.log). The happy path writes NOTHING -- only a CC
+// capped anomaly log (~/.ccpool/statusline.log). The happy path writes NOTHING -- only a CC
 // payload-schema change or a recovered panic lands here, so a silently dropped segment still leaves a
-// greppable trail (`tail -f ~/.claude/statusline.log`, or `grep field=... ~/.claude/statusline.log`).
+// greppable trail (`tail -f ~/.ccpool/statusline.log`, or `grep field=... ~/.ccpool/statusline.log`).
 // Fail-open: the backing writer swallows every I/O error and never panics, so logging a diagnostic
 // can never itself blank the line.
 var diag = slog.New(slog.NewTextHandler(cappedLog{}, &slog.HandlerOptions{Level: slog.LevelInfo}))

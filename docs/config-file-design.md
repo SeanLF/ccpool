@@ -53,7 +53,7 @@ non-finite-float rejection and fail-open-to-default. One parsing path, no diverg
 
 ## File
 
-- Location: `~/.claude/ccpool.json` (override `CCPOOL_CONFIG`, resolved fresh per process like the
+- Location: `~/.ccpool/ccpool.json` (override `CCPOOL_CONFIG`, resolved fresh per process like the
   other paths in `internal/paths`).
 - Format: JSON (stdlib, zero new deps, consistent with every other on-disk artifact ccpool
   reads/writes). No comments; `ccpool config show` + the README carry the explanations.
@@ -156,7 +156,7 @@ finding), so it defaults to truecolor and is a manual choice.
 - `internal/env` matrix test: `env > file > default` for a representative int and string knob.
 - Kill-switch: `statusline.Command` / `warn.Hook` no-op when `enabled:false`; still render when absent.
 - **Conformance isolation:** the readout/statusline harness must set `CCPOOL_CONFIG` to a nonexistent
-  temp path so the developer's real `~/.claude/ccpool.json` can't leak into hermetic tests (add it to
+  temp path so the developer's real `~/.ccpool/ccpool.json` can't leak into hermetic tests (add it to
   the redirected-env set alongside `USAGE_CACHE`/`CCPOOL_HISTORY`). Existing goldens stay green: the
   suite sets env, and env still wins.
 - `ccpool config show` / `config init` golden or `.txtar` (dry-run detection with staged fixtures).

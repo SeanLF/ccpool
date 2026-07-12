@@ -1,4 +1,4 @@
-# A corrupt ~/.claude/ccpool.json must still fail LOUD when the user invokes `config init`
+# A corrupt ~/.ccpool/ccpool.json must still fail LOUD when the user invokes `config init`
 # directly (on-demand command), but must NOT override `ccpool init`'s own exit code: init's real
 # job is hook wiring, and the config seed underneath it is a best-effort bonus (see main.go's
 # "init" case). A script checking $? after `ccpool init` needs to trust it reflects hook wiring,

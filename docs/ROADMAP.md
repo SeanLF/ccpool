@@ -114,7 +114,7 @@ control), not a critical fix — sequence after the A2–A5 cleanups.
 
 Not originally on this roadmap; came out of a conversation about how outside users actually configure
 ccpool (env-only was fragile — choices don't survive without exported env vars, and detection is too
-expensive to redo per render). Shipped: `~/.claude/ccpool.json`, resolved **env > file > default**,
+expensive to redo per render). Shipped: `~/.ccpool/ccpool.json`, resolved **env > file > default**,
 with `ccpool config show`/`config init` (detect + seed, dry-run/`--apply`/`--force`), an `enabled`
 kill-switch, and `ccpool init --apply` seeding it too. Detection (pace via `rhythm`, clock via the OS)
 runs once off the hot path. This is a config FILE, distinct from the rejected config framework (see

@@ -1,4 +1,4 @@
-// Package config reads a user's persisted ccpool choices from ~/.claude/ccpool.json. It is the
+// Package config reads a user's persisted ccpool choices from ~/.ccpool/ccpool.json. It is the
 // middle layer of env > file > default: internal/env consults it after os env, before the builtin
 // default. Fail-open: a missing OR corrupt file yields an empty, usable Config (hot-path callers
 // ignore the error), while on-demand callers (config show/init) surface it. Detection seeds it once

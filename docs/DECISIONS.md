@@ -375,7 +375,7 @@ All of Sprint A landed (A0 `resets_at`-jitter fix, A1 termenv colour, A2 env-con
 shims, A3 slog anomaly trail, A4 rapid property tests + testscript e2e, A5 blocksArray fail-loud).
 Then a config-file feature emerged from a conversation about how users actually configure ccpool.
 
-- **Config FILE shipped (not a config framework).** `~/.claude/ccpool.json`, resolved **env > file >
+- **Config FILE shipped (not a config framework).** `~/.ccpool/ccpool.json`, resolved **env > file >
   default**. This refines, not contradicts, the "no config framework" decision: no multi-source
   precedence matrix, no schema-validation engine, no live reload; just a persistence layer so a
   user's chosen/detected values survive without exported env vars. A2 made it cheap — every numeric

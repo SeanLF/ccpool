@@ -1,5 +1,5 @@
 // Package burn projects weekly and 5h burn rates from the rate-limit history log the statusline
-// records (~/.claude/rate-limit-history.jsonl). Reset-robust by design: a DROP in % (or a change of
+// records (~/.ccpool/rate-limit-history.jsonl). Reset-robust by design: a DROP in % (or a change of
 // reset window) is treated as a reset boundary, so a surprise Anthropic reset can never produce a
 // phantom negative burn or a doom projection — it just restarts the clock. Flat / just-reset history
 // yields no projection, not a guess. Fail-soft: Read never panics and distinguishes an UNREADABLE /
