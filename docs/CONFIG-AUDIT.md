@@ -37,17 +37,18 @@ Never a user-facing "setting."
 
 | var | default | role |
 |---|---|---|
-| `USAGE_CACHE` | `~/.claude/usage-cache.json` | snapshot path base (glob `-*.json`) |
-| `CCPOOL_HISTORY` | `~/.ccpool/rate-limit-history.jsonl` | wk%/5h% history log |
-| `CCPOOL_CALIB_CACHE` | `~/.ccpool/ccpool-calibration.json` | cached `$/1%` |
-| `CCPOOL_BLOCKS_CACHE` | `~/.ccpool/ccpool-blocks-cache.json` | cached ccusage `blocks` |
+| `CCPOOL_HOME` | `~/.ccpool` | ccpool-owned state dir (the DB, config, warm-up marker, anomaly log) |
+| `CCPOOL_DB` | `$CCPOOL_HOME/ccpool.db` | the SQLite store: history, snapshots, and the `kv` cache tier ($/1% + ccusage blocks) |
+| `CCPOOL_HISTORY` | `$CCPOOL_HOME/rate-limit-history.jsonl` | LEGACY JSONL path; read only by the one-time cutover guard now (history lives in the DB) |
 | `CCPOOL_PROJECTS` | `~/.claude/projects` | transcript root (review/rhythm) |
 | `CCPOOL_SETTINGS` | `~/.claude/settings.json` | `init` target |
-| `CCPOOL_STATUSLINE_LOG` | `~/.ccpool/statusline.log` | anomaly log |
-| `USAGE_TIER` | `max_20x` | pool tier tag stamped into history |
+| `CCPOOL_STATUSLINE_LOG` | `$CCPOOL_HOME/statusline.log` | anomaly log |
+| `USAGE_TIER` | `max_20x` | pool tier label (env config; not stored in history) |
 
-**Verdict: KEEP all.** Good defaults confirmed. `USAGE_TIER` is the only one a non-Max-20x user
-might set, but it's a label, not a behaviour — fine as an env default.
+**Verdict: KEEP all.** Good defaults confirmed. The Sprint B SQLite move retired the per-file cache
+overrides (`USAGE_CACHE` snapshot files, `CCPOOL_CALIB_CACHE`, `CCPOOL_BLOCKS_CACHE`): snapshots and
+both caches are rows in the one store now, so the cache location is just `CCPOOL_DB`. `USAGE_TIER` is
+the only one a non-Max-20x user might set, but it's a label, not a behaviour — fine as an env default.
 
 ## Bucket 2 — documented user choices (keep; earn their keep)
 

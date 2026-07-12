@@ -199,7 +199,7 @@ user-shape settings.
 | `CCPOOL_HISTORY_MIN_INTERVAL` | `60` | min seconds between 5h-only history writes (curbs file growth) |
 | `CCPOOL_CLOCK` | `24` | wall-clock time format everywhere: `24` · `12` · `auto` (best-effort OS detect, macOS-only, falls back to 24) |
 | `NO_COLOR` / `TERM=dumb` | — | standard contract ([no-color.org](https://no-color.org)): any **non-empty** `NO_COLOR` (or `TERM=dumb`) strips all ANSI from the statusline (degrades to plain text) |
-| `USAGE_CACHE`, `CCPOOL_HISTORY`, `CCPOOL_CALIB_CACHE` | `~/.claude/...` | data paths (test isolation) |
+| `CCPOOL_HOME`, `CCPOOL_DB` | `~/.ccpool`, `$HOME/ccpool.db` | ccpool state dir + SQLite store path (test isolation) |
 
 ## Honest limitations
 

@@ -124,7 +124,18 @@ Also fixed a critical latent bug found along the way: `internal/env` was never g
 
 ---
 
-## Sprint B — SQLite storage (on the release path; sequence after A)
+## Sprint B — SQLite storage — SHIPPED (2026-07-12)
+
+Done and live: history, per-session snapshots, and the calibration/blocks caches (the `kv` tier) all
+live in one SQLite DB (`modernc`, no cgo; sqlc-typed queries; WAL). One `*store.Store` is threaded per
+command (a render opens the DB once), fail-open on the hot path, three-state read (OK/Corrupt/Transient)
+with self-heal. The one-off importer moved this machine's 57k history rows in; the golden suite stayed
+green (the couple of intentional shifts — the unified-store `store-unreadable` case, the truthful
+unreadable-store `status` message — are recorded in `docs/DECISIONS.md`). Contention regression (0 drops
+at 2/4/8 concurrent writers) + fail-open fuzz committed. The warm-up throttle + anomaly log stay files.
+Full record: `docs/sqlite-storage-plan.md` (STATUS block) + `docs/DECISIONS.md` (Sprint B entries).
+
+Original plan (for reference):
 
 Not a bugfix (flock passes 8-way concurrency) but it dissolves the subtlest bespoke code (tail-dedup,
 glob reconcile, prune, and `Burn.envelope` → the query above) — worth it for a tool about to have

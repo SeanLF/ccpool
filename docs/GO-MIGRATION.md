@@ -55,6 +55,12 @@ MUST read/write these exact shapes so it interoperates with any Ruby still runni
 - **ccusage blocks cache** — `ccpool-blocks-cache.json` = `{"raw":"<ccusage stdout>", "at":<int>}`.
 - **Anomaly log** — `statusline.log`, capped ~200 lines.
 
+> **SUPERSEDED by Sprint B (SQLite storage).** The file formats above were the state through the Go
+> port. Sprint B moved history, per-session snapshots, and both caches (calibration + blocks, as the
+> `kv` tier keeping the same `{dpp,at}`/`{raw,at}` blob shapes) into one SQLite DB at `CCPOOL_DB`; the
+> flock/tmp-rename/glob machinery is gone. The warm-up throttle and the anomaly log stay files. See
+> `docs/sqlite-storage-design.md` + `docs/DECISIONS.md` (Sprint B entries).
+
 `$/1%` is derived by delegating to `ccusage blocks --json` (pinned `@20`) over monotonic no-reset
 runs in the history — never hand-rolled. The reset cadence is never modelled; read the reported
 number.
