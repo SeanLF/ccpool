@@ -50,8 +50,6 @@ func TestCcpoolOwnedDefaultsUnderHome(t *testing.T) {
 	}{
 		{"History", "CCPOOL_HISTORY", History, "rate-limit-history.jsonl"},
 		{"Config", "CCPOOL_CONFIG", Config, "ccpool.json"},
-		{"CalibCache", "CCPOOL_CALIB_CACHE", CalibCache, "ccpool-calibration.json"},
-		{"BlocksCache", "CCPOOL_BLOCKS_CACHE", BlocksCache, "ccpool-blocks-cache.json"},
 		{"StatuslineLog", "CCPOOL_STATUSLINE_LOG", StatuslineLog, "statusline.log"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -61,5 +59,10 @@ func TestCcpoolOwnedDefaultsUnderHome(t *testing.T) {
 				t.Fatalf("%s() = %q, want %q", tc.name, got, want)
 			}
 		})
+	}
+
+	// WarmMarker has no env override -- it is always under Home (calibration + blocks moved to the DB).
+	if got, want := WarmMarker(), "/tmp/ccpool-home-z/calib.warming"; got != want {
+		t.Fatalf("WarmMarker() = %q, want %q", got, want)
 	}
 }

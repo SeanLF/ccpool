@@ -1,9 +1,10 @@
 package calib
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // blocksArray accepts only the documented shapes (a bare array, or doc["blocks"]). A ccusage schema
@@ -33,47 +34,65 @@ func TestBlocksArrayRejectsRenamedField(t *testing.T) {
 // recompute) skips — the exact paths a float64-vs-json.Number decode bug silently disabled.
 
 func TestCacheFreshPaths(t *testing.T) {
-	cache := filepath.Join(t.TempDir(), "calib.json")
-	t.Setenv("CCPOOL_CALIB_CACHE", cache)
+	dir := t.TempDir()
+	t.Setenv("CCPOOL_HOME", dir)
+	t.Setenv("CCPOOL_DB", filepath.Join(dir, "ccpool.db"))
+	s, st := store.Open()
+	if st != store.StateOK || s == nil {
+		t.Fatalf("open = %v", st)
+	}
+	defer s.Close()
 
 	const now = 1_000_000
-	write := func(content string) {
-		if err := os.WriteFile(cache, []byte(content), 0o644); err != nil {
+	seed := func(blob string) {
+		if err := s.PutKV(calibKey, []byte(blob)); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	// Fresh cache (at == now, well within the 6h TTL).
-	write(`{"dpp":2.5,"at":1000000}`)
-	if Stale(now) {
-		t.Error("Stale(now) = true for a fresh cache, want false")
+	seed(`{"dpp":2.5,"at":1000000}`)
+	if Stale(s, now) {
+		t.Error("Stale = true for a fresh cache, want false")
 	}
-	if dpp, ok := DPP(); !ok || dpp != 2.5 {
+	if dpp, ok := DPP(s); !ok || dpp != 2.5 {
 		t.Errorf("DPP() = (%v, %v), want (2.5, true)", dpp, ok)
 	}
 	// force=false must hit the cache and return without recomputing (no history / ccusage present).
-	if dpp, ok := DollarPerPct(now, false); !ok || dpp != 2.5 {
+	if dpp, ok := DollarPerPct(s, now, false); !ok || dpp != 2.5 {
 		t.Errorf("DollarPerPct(now,false) = (%v, %v), want (2.5, true)", dpp, ok)
 	}
 
 	// Integer dpp (a Go-written cache drops the .0) must still read back as numeric.
-	write(`{"dpp":3,"at":1000000}`)
-	if dpp, ok := DPP(); !ok || dpp != 3 {
+	seed(`{"dpp":3,"at":1000000}`)
+	if dpp, ok := DPP(s); !ok || dpp != 3 {
 		t.Errorf("DPP() with integer dpp = (%v, %v), want (3, true)", dpp, ok)
 	}
 
 	// Stale cache (older than the 6h TTL).
-	write(`{"dpp":2.5,"at":900000}`)
-	if !Stale(now) {
-		t.Error("Stale(now) = false for a cache older than TTL, want true")
+	seed(`{"dpp":2.5,"at":900000}`)
+	if !Stale(s, now) {
+		t.Error("Stale = false for a cache older than TTL, want true")
 	}
 
-	// Missing cache.
-	os.Remove(cache)
-	if !Stale(now) {
-		t.Error("Stale(now) = false for a missing cache, want true")
+	// Missing cache: a fresh store with no calibration row, and the nil store, both fail open.
+	dir2 := t.TempDir()
+	t.Setenv("CCPOOL_HOME", dir2)
+	t.Setenv("CCPOOL_DB", filepath.Join(dir2, "ccpool.db"))
+	empty, st2 := store.Open()
+	if st2 != store.StateOK || empty == nil {
+		t.Fatalf("open empty = %v", st2)
 	}
-	if _, ok := DPP(); ok {
-		t.Error("DPP() ok = true for a missing cache, want false")
+	defer empty.Close()
+	for _, tc := range []struct {
+		name string
+		s    *store.Store
+	}{{"empty store", empty}, {"nil store", nil}} {
+		if !Stale(tc.s, now) {
+			t.Errorf("Stale(%s) = false, want true", tc.name)
+		}
+		if _, ok := DPP(tc.s); ok {
+			t.Errorf("DPP(%s) ok = true, want false", tc.name)
+		}
 	}
 }

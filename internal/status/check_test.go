@@ -1,12 +1,35 @@
 package status
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/SeanLF/ccpool/internal/pool"
 	"github.com/SeanLF/ccpool/internal/store"
 )
+
+// An unreadable store (locked/corrupt) is not a fresh install: Status must name it, not tell the user
+// to wire up a statusline that is already wired. Regression guard for the LOUD-command misdirection.
+func TestStatusUnreadableStoreIsNotFreshInstall(t *testing.T) {
+	dir := t.TempDir()
+	dbDir := filepath.Join(dir, "ccpool.db") // a directory at the DB path -> store.Open non-OK
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CCPOOL_HOME", dir)
+	t.Setenv("CCPOOL_DB", dbDir)
+	t.Setenv("CCPOOL_CONFIG", filepath.Join(dir, "no-config.json"))
+
+	joined := strings.Join(Status(1720000000), "\n")
+	if strings.Contains(joined, "no data yet") || strings.Contains(joined, "Wire `ccpool") {
+		t.Errorf("unreadable store showed the fresh-install message:\n%s", joined)
+	}
+	if !strings.Contains(joined, "unreadable") {
+		t.Errorf("unreadable store not named in output:\n%s", joined)
+	}
+}
 
 // absentOrCorrupt keys off the store read state now that snapshots live in the DB: StateOK (zero rows)
 // is warm-up; a non-OK store is genuinely unreadable, and we keep the truthful busy-vs-corrupt split

@@ -46,16 +46,21 @@ func TestComputeConformance(t *testing.T) {
 				t.Fatalf("bad now: %v", err)
 			}
 
-			// Shared env; distinct cache files per side so neither reads the other's.
+			// The calibration + blocks caches live in the store now (kv), so the isolated CCPOOL_DB is
+			// the only cache staging needed -- the forced recompute writes both kv rows into it.
 			t.Setenv("CCPOOL_DB", dbPath)
 			t.Setenv("CCPOOL_HOME", dir)
 			t.Setenv("CCPOOL_CCUSAGE_CMD", fakeCmd)
 			t.Setenv("CCUSAGE_FIXTURE", blocksFixture)
-			t.Setenv("CCPOOL_BLOCKS_CACHE", filepath.Join(dir, "go-blocks.json"))
-			t.Setenv("CCPOOL_CALIB_CACHE", filepath.Join(dir, "go-calib.json"))
+
+			s, st := store.Open()
+			if st != store.StateOK || s == nil {
+				t.Fatalf("open = %v", st)
+			}
+			defer s.Close()
 
 			goOut := "nil"
-			if dpp, ok := DollarPerPct(now, true); ok {
+			if dpp, ok := DollarPerPct(s, now, true); ok {
 				goOut = fmt.Sprintf("%.4f", dpp)
 			}
 

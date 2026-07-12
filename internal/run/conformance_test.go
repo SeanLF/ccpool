@@ -53,25 +53,24 @@ func TestDownshiftConformance(t *testing.T) {
 				t.Fatalf("bad now: %v", err)
 			}
 
-			// Shared inputs. Snapshots live in the store DB now; isolate CCPOOL_HOME/CCPOOL_DB so the
-			// downshift decision reads the fixture's snapshots and never the dev's real ~/.ccpool.
+			// Shared inputs. Snapshots + the calibration cache live in the store DB now; isolate
+			// CCPOOL_HOME/CCPOOL_DB so the downshift reads the fixture's data, never the dev's ~/.ccpool.
 			dir := t.TempDir()
+			dbPath := filepath.Join(dir, "ccpool.db")
 			t.Setenv("CCPOOL_HOME", dir)
-			t.Setenv("CCPOOL_DB", filepath.Join(dir, "ccpool.db"))
+			t.Setenv("CCPOOL_DB", dbPath)
 			seedSnaps(t, dir, fx.Snaps)
+			if fx.Calib != "" {
+				if err := store.SeedKV(dbPath, "calibration", []byte(fx.Calib)); err != nil {
+					t.Fatalf("seed calib: %v", err)
+				}
+			}
 			blocksFixture := filepath.Join(dir, "blocks.json")
 			mustWrite(t, blocksFixture, fx.Blocks)
-			calibPath := filepath.Join(dir, "calib.json")
-			if fx.Calib != "" {
-				mustWrite(t, calibPath, fx.Calib)
-			}
 
-			// Go side. History is an empty store (no rows) so the calib compute never spawns anything;
-			// the blocks cache is per-side so the two runs' ccusage caches don't collide.
+			// History is an empty store (no rows) so the calib compute never spawns anything.
 			t.Setenv("CCPOOL_CCUSAGE_CMD", fakeCmd)
 			t.Setenv("CCUSAGE_FIXTURE", blocksFixture)
-			t.Setenv("CCPOOL_CALIB_CACHE", calibPath)
-			t.Setenv("CCPOOL_BLOCKS_CACHE", filepath.Join(dir, "go-blocks.json"))
 			env, msg := DownshiftEnv(now)
 			goOut := formatDS(t, env, msg)
 

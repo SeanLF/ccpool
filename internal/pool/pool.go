@@ -32,12 +32,19 @@ type Window struct {
 	Reset int64
 }
 
-// LoadSnapshots reads every per-session snapshot from the store, each parsed to a map (store.Snapshots
-// drops unparseable rows). FAILS OPEN: a nil/non-OK store yields an empty slice so the hot-path callers
-// (warn) degrade to "no data" and never panic. Callers reduce over the whole set (max used%, newest
-// reset/captured_at, or a session match), so row order is irrelevant.
-func LoadSnapshots() []map[string]any {
-	snaps, _ := store.ReadSnapshots()
+// LoadSnapshots reads every per-session snapshot from the already-open store, each parsed to a map
+// (store.Snapshots drops unparseable rows). FAILS OPEN: a nil store (open failed) or a non-OK read
+// yields an empty slice, so the hot-path callers (warn) degrade to "no data" and never panic. Callers
+// reduce over the whole set (max used%, newest reset/captured_at, or a session match) -> order-free.
+// The store handle is threaded in so one command invocation opens the DB once, not once per read.
+func LoadSnapshots(s *store.Store) []map[string]any {
+	if s == nil {
+		return nil
+	}
+	snaps, st := s.Snapshots()
+	if st != store.StateOK {
+		return nil
+	}
 	return snaps
 }
 

@@ -38,12 +38,15 @@ func TestCaptureWritesSnapshotAndHistory(t *testing.T) {
 	raw := []byte(fmt.Sprintf(`{"session_id":"s1","rate_limits":{"seven_day":{"used_percentage":45,"resets_at":%d}}}`, reset))
 	data := rb.ParseObject(raw)
 
-	capture(raw, data, now)
-
+	// capture takes the invocation's open store now (Command opens it once and threads it in).
 	s, st := store.Open()
 	if st != store.StateOK || s == nil {
 		t.Fatalf("open = %v", st)
 	}
+	defer s.Close()
+
+	capture(s, raw, data, now)
+
 	snaps, sst := s.Snapshots()
 	if sst != store.StateOK || len(snaps) != 1 {
 		t.Fatalf("snapshots = %d state %v, want 1", len(snaps), sst)
@@ -58,19 +61,16 @@ func TestCaptureWritesSnapshotAndHistory(t *testing.T) {
 	if lst != store.StateOK || last == nil || last.Wk != 45 {
 		t.Fatalf("paired history row = %+v state %v", last, lst)
 	}
-	s.Close()
 	if n := histCount(t, dbPath); n != 1 {
 		t.Fatalf("history rows = %d, want 1", n)
 	}
 
 	// Identical second render: history deduped (still 1), snapshot upserted (still 1 session).
-	capture(raw, data, now+1)
+	capture(s, raw, data, now+1)
 	if n := histCount(t, dbPath); n != 1 {
 		t.Fatalf("after duplicate capture history = %d, want 1 (deduped)", n)
 	}
-	s2, _ := store.Open()
-	defer s2.Close()
-	if snaps, _ := s2.Snapshots(); len(snaps) != 1 {
+	if snaps, _ := s.Snapshots(); len(snaps) != 1 {
 		t.Fatalf("snapshots after upsert = %d, want 1", len(snaps))
 	}
 }

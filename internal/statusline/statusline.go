@@ -21,6 +21,7 @@ import (
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/profile"
 	"github.com/SeanLF/ccpool/internal/rb"
+	"github.com/SeanLF/ccpool/internal/store"
 	"github.com/muesli/termenv"
 )
 
@@ -117,8 +118,10 @@ func noColorEnv() bool {
 	return (ok && v != "") || os.Getenv("TERM") == "dumb"
 }
 
-// Render builds the whole line from the CC payload. now is unix seconds.
-func Render(data map[string]any, now int64) string {
+// Render builds the whole line from the CC payload. now is unix seconds. The store is threaded in for
+// the (read-only, cache-only) $ lookup, so a render reads the calibration through the invocation's
+// single open (nil store -> no $, fail open).
+func Render(s *store.Store, data map[string]any, now int64) string {
 	pal := loadPalette()
 	prof := profile.Load()
 
@@ -126,7 +129,7 @@ func Render(data map[string]any, now int64) string {
 	if rl == nil {
 		rl = map[string]any{}
 	}
-	dppVal, hasDPP := calib.DPP()
+	dppVal, hasDPP := calib.DPP(s)
 
 	var nowGrp, sesGrp, wkGrp []string
 
@@ -209,7 +212,7 @@ func Render(data map[string]any, now int64) string {
 // RenderCompact is the one-segment render for embedding in another statusline: ONLY ccpool's
 // differentiator (pool $-left + pace), leaving ctx/5h/model/git to the host. "" when there's no
 // weekly window to speak to.
-func RenderCompact(data map[string]any, now int64) string {
+func RenderCompact(s *store.Store, data map[string]any, now int64) string {
 	pal := loadPalette()
 	prof := profile.Load()
 
@@ -229,7 +232,7 @@ func RenderCompact(data map[string]any, now int64) string {
 	r := rb.RoundToInt(used)
 	parts := []string{"pool " + sev(fmt.Sprintf("%d%%", r), r, 75, 90, pal)}
 
-	if dppVal, hasDPP := calib.DPP(); hasDPP {
+	if dppVal, hasDPP := calib.DPP(s); hasDPP {
 		left := (100 - used) * dppVal
 		parts = append(parts, pal.dim+fmtDollars(left)+pal.reset)
 	}

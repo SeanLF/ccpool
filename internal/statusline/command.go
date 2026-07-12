@@ -37,9 +37,19 @@ func Command(now int64, embed bool) {
 		return
 	}
 
+	// One store open for the whole render path -- capture (write), warm's staleness probe, and the $
+	// read all share it, so a render opens the DB once instead of once per read. (The opt-in
+	// CCPOOL_PRUNE sweep still opens its own; it is off by default and retired in T14.) Best-effort --
+	// store.Open never returns a usable handle on a non-OK state (it returns nil), and every consumer is
+	// nil-safe, so a failed open just degrades the optional bits; it never blanks the line.
+	s, _ := store.Open()
+	if s != nil {
+		defer s.Close()
+	}
+
 	// No CC payload on a terminal stdin (reading it would hang) -> preview from the newest snapshot.
 	if isTTY(os.Stdin) {
-		preview(now, embed)
+		preview(s, now, embed)
 		return
 	}
 
@@ -55,17 +65,17 @@ func Command(now int64, embed bool) {
 	// Each best-effort step is isolated (like Ruby's per-method rescue) so the render always prints
 	// once the payload parses; a panic in one can't blank the line. capture writes the snapshot and
 	// (when not deduped) the history row in one store transaction.
-	bestEffort("capture", func() { capture(raw, data, now) })
-	bestEffort("warm", func() { warm(now) })
+	bestEffort("capture", func() { capture(s, raw, data, now) })
+	bestEffort("warm", func() { warm(s, now) })
 	if os.Getenv("CCPOOL_PRUNE") == "1" { // opt-in only: deleting files is never silent-by-default
 		bestEffort("prune", func() { PruneCaches(now) })
 	}
 
 	var line string
 	if embed {
-		line = RenderCompact(data, now)
+		line = RenderCompact(s, data, now)
 	} else {
-		line = Render(data, now)
+		line = Render(s, data, now)
 	}
 	if line != "" {
 		fmt.Print(line)
@@ -73,10 +83,15 @@ func Command(now int64, embed bool) {
 }
 
 // WarmCalib is the internal `__warm-calib` subcommand: the detached background $/1% recompute the
-// warm-up spawns. Fail-open: never propagates an error.
+// warm-up spawns. Fail-open: never propagates an error. Opens its own store (it runs as a fresh
+// detached process, not under Command's open).
 func WarmCalib(now int64) {
 	defer func() { _ = recover() }()
-	calib.DollarPerPct(now, false)
+	s, _ := store.Open()
+	if s != nil {
+		defer s.Close()
+	}
+	calib.DollarPerPct(s, now, false)
 }
 
 // bestEffort runs a hot-path side effect, swallowing and logging any panic so it can never blank
@@ -95,7 +110,10 @@ func bestEffort(name string, fn func()) {
 // so a reader never sees a snapshot without its history row. Only when session_id is a string.
 // Fail-open: any non-OK store or write error is swallowed except a genuine append failure, which is
 // logged to the anomaly log (the hot path stays silent otherwise).
-func capture(raw []byte, data map[string]any, now int64) {
+func capture(s *store.Store, raw []byte, data map[string]any, now int64) {
+	if s == nil {
+		return // fail-open: no usable store this render (store.Open returned non-OK)
+	}
 	sid, ok := data["session_id"].(string)
 	if !ok {
 		return
@@ -104,12 +122,6 @@ func capture(raw []byte, data map[string]any, now int64) {
 	if !ok {
 		return
 	}
-	s, st := store.Open()
-	if st != store.StateOK {
-		return // fail-open: no capture this render
-	}
-	defer s.Close()
-
 	if row, appendRow := history.Prepare(s, data, now); appendRow {
 		if err := s.CaptureAndAppend(sid, now, body, row); err != nil {
 			diag.Warn("capture+append failed", "err", err)
@@ -144,17 +156,20 @@ func spliceCapturedAt(raw []byte, now int64) ([]byte, bool) {
 // warm kicks off a DETACHED background $/1% recompute when the calibration is stale, so a
 // statusline-only user still gets a $ without a render ever blocking on ccusage. Throttled to one
 // attempt / 5 min via a marker file. Fail-open throughout.
-func warm(now int64) {
+func warm(s *store.Store, now int64) {
 	defer func() { _ = recover() }()
 
 	self, err := os.Executable()
 	if err != nil || strings.HasSuffix(self, ".test") {
 		return // don't fork from a test binary (the Ruby $PROGRAM_NAME guard's intent)
 	}
-	if !calib.Stale(now) {
+	if !calib.Stale(s, now) {
 		return
 	}
-	mark := paths.CalibCache() + ".warming"
+	// The warming throttle stays a FILE, not a kv row: it is a 5-minute "don't re-fork" LOCK, not
+	// durable state, and its natural check is a filesystem mtime (kv has no mtime). Same rationale as
+	// warn's /tmp throttle markers.
+	mark := paths.WarmMarker()
 	if fi, err := os.Stat(mark); err == nil && now-fi.ModTime().Unix() < 300 {
 		return
 	}
@@ -183,8 +198,8 @@ func warm(now int64) {
 // preview renders `ccpool statusline` in a terminal from the freshest snapshot the real statusLine
 // captured, so you can see the line without Claude Code. The rate_limits % is account-global so an
 // old snapshot's % is still current; only ctx/cache are session-local (hence the stderr caveat).
-func preview(now int64, embed bool) {
-	data, ok := NewestSnapshot()
+func preview(s *store.Store, now int64, embed bool) {
+	data, ok := NewestSnapshot(s)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "ccpool: no statusline snapshot yet. Wire `ccpool statusline` as your Claude Code statusLine first (see README), then it self-populates.")
 		return
@@ -192,9 +207,9 @@ func preview(now int64, embed bool) {
 	age := now - SnapshotCapturedAt(data)
 	var line string
 	if embed {
-		line = RenderCompact(data, now)
+		line = RenderCompact(s, data, now)
 	} else {
-		line = Render(data, now)
+		line = Render(s, data, now)
 	}
 	fmt.Fprintf(os.Stderr, "[preview from a %s-old snapshot -- ctx/cache may be stale; live values come from Claude Code]\n", fmtx.Dur(age))
 	if line != "" {
@@ -206,8 +221,14 @@ func preview(now int64, embed bool) {
 // read from the store. ok=false when there is none or the store is unreadable -- the preview is a
 // terminal convenience, so it degrades to a "wire it up" note rather than surfacing store internals.
 // Exported so initcmd's post-install preview reads the newest snapshot the same way (one source).
-func NewestSnapshot() (map[string]any, bool) {
-	snaps, _ := store.ReadSnapshots()
+func NewestSnapshot(s *store.Store) (map[string]any, bool) {
+	if s == nil {
+		return nil, false
+	}
+	snaps, st := s.Snapshots()
+	if st != store.StateOK {
+		return nil, false
+	}
 	var newest map[string]any
 	newestAt := int64(-1)
 	for _, d := range snaps {

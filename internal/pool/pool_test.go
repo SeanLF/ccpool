@@ -25,7 +25,13 @@ func TestLoadSnapshotsFromStore(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	snaps := LoadSnapshots()
+	s, st := store.Open()
+	if st != store.StateOK || s == nil {
+		t.Fatalf("open = %v", st)
+	}
+	defer s.Close()
+
+	snaps := LoadSnapshots(s)
 	if len(snaps) != 2 {
 		t.Fatalf("LoadSnapshots = %d rows, want 2", len(snaps))
 	}
@@ -43,13 +49,22 @@ func TestLoadSnapshotsFromStore(t *testing.T) {
 	}
 }
 
-// A store that never got a snapshot (fresh install / warm-up) yields no snapshots and fails open.
+// A store that never got a snapshot (fresh install / warm-up) yields no snapshots, and a nil store
+// (open failed) fails open to the same empty result.
 func TestLoadSnapshotsEmptyStore(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CCPOOL_HOME", dir)
 	t.Setenv("CCPOOL_DB", filepath.Join(dir, "ccpool.db"))
-	if snaps := LoadSnapshots(); len(snaps) != 0 {
+	s, st := store.Open()
+	if st != store.StateOK || s == nil {
+		t.Fatalf("open = %v", st)
+	}
+	defer s.Close()
+	if snaps := LoadSnapshots(s); len(snaps) != 0 {
 		t.Fatalf("LoadSnapshots on empty store = %d, want 0", len(snaps))
+	}
+	if snaps := LoadSnapshots(nil); len(snaps) != 0 {
+		t.Fatalf("LoadSnapshots(nil) = %d, want 0 (fail open)", len(snaps))
 	}
 }
 

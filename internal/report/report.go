@@ -16,6 +16,7 @@ import (
 	"github.com/SeanLF/ccpool/internal/pool"
 	"github.com/SeanLF/ccpool/internal/profile"
 	"github.com/SeanLF/ccpool/internal/rb"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // Confidence tiers the freshness of the resolved weekly window.
@@ -45,9 +46,10 @@ func coast() int64 {
 }
 
 // ResolveWeekly is the 3-tier read: fresh official snapshot > stale-but-extrapolated-from-accrued-
-// cost > stale-shown-with-warning. ok=false when no plausible weekly window exists at all.
-func ResolveWeekly(now int64) (Weekly, bool) {
-	snaps := pool.LoadSnapshots()
+// cost > stale-shown-with-warning. ok=false when no plausible weekly window exists at all. The store
+// is threaded in from the command so snapshots and the calibration/blocks caches share one open.
+func ResolveWeekly(s *store.Store, now int64) (Weekly, bool) {
+	snaps := pool.LoadSnapshots(s)
 	w, ok := pool.GetWindow(snaps, "seven_day", now, pool.Week+86400)
 	if !ok {
 		return Weekly{}, false
@@ -58,8 +60,8 @@ func ResolveWeekly(now int64) (Weekly, bool) {
 		return res, true
 	}
 	// Stale: try to extrapolate the % forward from accrued ccusage cost since the snapshot.
-	if dpp, ok := calib.DollarPerPct(now, false); ok {
-		if accrued, ok := calib.CostSince(now-age, now); ok && accrued >= 0 {
+	if dpp, ok := calib.DollarPerPct(s, now, false); ok {
+		if accrued, ok := calib.CostSince(s, now-age, now); ok && accrued >= 0 {
 			res.Used = clamp(w.Used+accrued/dpp, 0, 100)
 			res.Confidence = Estimated
 			return res, true

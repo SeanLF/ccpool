@@ -8,10 +8,9 @@ import (
 
 // FuzzRender feeds arbitrary JSON, decoded into the payload map via the shared rb.ParseObject, into
 // the full Render + RenderCompact. These are the fail-open hot path (a panic escapes to Claude
-// Code), so no input may panic. calib cache is pointed at a nonexistent temp path so DPP() fails
-// open rather than reading real ~/.claude.
+// Code), so no input may panic. A nil store is passed so DPP() takes the cold-cache/fail-open branch
+// (the exact state when store.Open fails on a render) rather than reading the dev's real DB.
 func FuzzRender(f *testing.F) {
-	f.Setenv("CCPOOL_CALIB_CACHE", f.TempDir()+"/nonexistent-calib.json")
 	f.Setenv("NO_COLOR", "1")
 
 	seeds := []string{
@@ -36,7 +35,7 @@ func FuzzRender(f *testing.F) {
 		if data == nil {
 			return // not an object -> nothing to render
 		}
-		_ = Render(data, now)
-		_ = RenderCompact(data, now)
+		_ = Render(nil, data, now)
+		_ = RenderCompact(nil, data, now)
 	})
 }

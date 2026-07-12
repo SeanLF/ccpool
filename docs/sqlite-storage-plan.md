@@ -5,12 +5,17 @@
 ## STATUS (updated mid-sprint)
 
 - **DONE + committed + gate-green:** Phase 1 (T1-T2), Phase 2 (T3-T5), Phase 3 (T6-T10, incl. the
-  live import + parity proof), Phase 4 **T11-T12**. Phase 3 is live-verified (57,055 rows imported;
-  `check` byte-identical on history-derived lines). T12 (snapshot readers -> store) is done: all reads
-  now come from the DB (`pool.LoadSnapshots`, `statusline`/`initcmd` preview via a shared
-  `statusline.NewestSnapshot`); `store.SeedSnapshots` seeds conformance DBs; `check.absentOrCorrupt`
-  keys off the store read state.
-- **REMAINING:** Phase 4 T13 (kv), T14 (snapshot prune). Phase 5 (T15-T19).
+  live import + parity proof), Phase 4 **T11-T13**. Phase 3 is live-verified (57,055 rows imported;
+  `check` byte-identical on history-derived lines). T12 = snapshot readers -> store. T13 = calibration
+  + blocks caches -> `kv` table, warming throttle kept as a FILE (a lock, not state), AND a
+  **store-threading refactor** (user-directed, from-scratch shape): each command invocation opens ONE
+  `*store.Store` and threads it through the leaves (`pool.LoadSnapshots(s)`, the whole `calib` API,
+  `report.ResolveWeekly(s)`, `statusline` render/capture/warm/preview), so a render opens the DB once
+  (was ~4x). The per-call `store.Open` sites and the T12 `store.ReadSnapshots`/`GetKVValue` wrappers
+  are gone; `paths.CalibCache`/`BlocksCache` deleted (warming -> `paths.WarmMarker`).
+- **REMAINING:** Phase 4 T14 (snapshot prune). Phase 5 (T15-T19). **T19 must scrub docs/demo:** the
+  demo (`demo/setup.sh`) + `README`/`CONFIG-AUDIT`/`GO-MIGRATION` still describe the file-based caches
+  and the removed `CCPOOL_CALIB_CACHE`/`CCPOOL_BLOCKS_CACHE` env vars (already stale since T6-T12).
 - **DEVIATIONS from the task text below (locked, reasoned):** `cost` kept / `tier` dropped from
   history; **added T7b** (calib wkRuns = SQL GROUP BY + Go run-split); envelope `reset` is
   `interface{}` -> facade-normalized (sqlc can't type it), `DataAge` = `CAST(COALESCE(max,0))`;
@@ -561,11 +566,19 @@ git commit -m "feat(pool): snapshots + data-age from store; GetWindow reconcile 
 **Interfaces:**
 - Consumes: `store.GetKV`, `store.PutKV`. Value blobs are the SAME JSON shapes as today (`{dpp,at}`, `{raw,at}`, warming epoch).
 
-- [ ] **Step 1: Update calib cache tests** to round-trip `{dpp,at}` through `kv` (temp DB); assert the same read-back + staleness behaviour.
-- [ ] **Step 2: Run to verify fail** -> FAIL.
-- [ ] **Step 3: Reimplement the cache read/write** over `kv`; keep the JSON payload shapes identical so no downstream parsing changes. Fail-open on the hot path (a missing kv row = cold cache, recompute).
-- [ ] **Step 4: Run to verify pass** -> PASS.
-- [ ] **Step 5: Gate + commit**
+**DEVIATION (user-directed): store-threading, not just kv.** Rather than the planned self-contained
+`store.GetKV`-inside-calib, T13 threaded one `*store.Store` per command through the leaves (the
+from-scratch Go shape, killing the per-call opens across T12+T13). Calibration + blocks -> `kv` (blob
+shapes unchanged); the **warming marker stayed a FILE** (`paths.WarmMarker`), NOT `kv 'warming'` -- it
+is a 5-min "don't re-fork" lock, not durable state, and its natural check is the file mtime kv lacks
+(same shape as warn's /tmp throttle markers). `paths.CalibCache`/`BlocksCache` + the
+`CCPOOL_CALIB_CACHE`/`CCPOOL_BLOCKS_CACHE` env overrides were deleted.
+
+- [x] **Step 1: Update calib cache tests** to round-trip `{dpp,at}` through `kv` (temp DB); assert the same read-back + staleness behaviour. (Also threaded the store through every calib/pool/report/statusline caller + rewired the status/run/statusline conformance staging to seed kv via `store.SeedKV`.)
+- [x] **Step 2: Run to verify fail** -> FAIL.
+- [x] **Step 3: Reimplement the cache read/write** over `kv`; JSON payload shapes identical so no downstream parsing changed. Fail-open: a nil/non-OK store or missing kv row = cold cache, recompute.
+- [x] **Step 4: Run to verify pass** -> PASS (332 tests, no golden change; end-to-end capture->render->$ verified against an isolated store; render now opens the DB once, was ~4x).
+- [x] **Step 5: Gate + commit**
 
 ```bash
 unset GOROOT && make check

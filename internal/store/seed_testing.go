@@ -94,6 +94,18 @@ func SeedSnapshots(dbPath string, payloads [][]byte) error {
 	return nil
 }
 
+// SeedKV upserts one kv row into the DB at dbPath -- the seed for the regenerable CACHE tier
+// (calibration {dpp,at}, blocks {raw,at}) that conformance suites stage instead of the retired cache
+// files. Mirrors SeedSnapshots/SeedHistoryJSONL: opens, writes, closes.
+func SeedKV(dbPath, key string, value []byte) error {
+	s, st := openAt(dbPath)
+	if st != StateOK || s == nil {
+		return fmt.Errorf("seed: open %s: state %v", dbPath, st)
+	}
+	defer s.Close()
+	return s.PutKV(key, value)
+}
+
 func jsonlIntPtr(v any) *int64 {
 	if f, ok := rb.Num(v); ok {
 		i := int64(f)

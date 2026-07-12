@@ -26,8 +26,21 @@ import (
 // 3-tier weekly read + $ value + pace + reset-robust burn projection + working-hours runway, then
 // the 5h-session and cleanup nudges when they apply.
 func Status(now int64) []string {
-	wk, ok := report.ResolveWeekly(now)
+	// One store open for the whole readout: the weekly resolve, calibration, burn envelope, and the
+	// 5h snapshot read all share it (fail open -- a nil/non-OK store degrades each to no-data).
+	s, sSt := store.Open()
+	if s != nil {
+		defer s.Close()
+	}
+
+	wk, ok := report.ResolveWeekly(s, now)
 	if !ok {
+		// A non-OK store (locked/corrupt) is NOT a fresh install -- don't tell a user whose DB is
+		// unreadable to wire up something already wired. Now that calibration shares the DB with
+		// snapshots, one bad store wipes the whole readout, so name it truthfully (as `check` does).
+		if sSt != store.StateOK {
+			return []string{absentOrCorrupt(sSt)}
+		}
 		return []string{
 			"weekly pool: no data yet. Wire `ccpool statusline` as your Claude Code",
 			"statusLine command (settings.json) so it can capture rate_limits, then use CC once.",
@@ -35,7 +48,7 @@ func Status(now int64) []string {
 	}
 
 	used := wk.Used
-	dpp, dppOK := calib.DollarPerPct(now, false)
+	dpp, dppOK := calib.DollarPerPct(s, now, false)
 	dollars := "  ·  ($ value calibrating -- needs ccusage + a few days of history)"
 	if dppOK {
 		dollars = "  ·  ~" + report.USD((100-used)*dpp) + " left of ~" + report.USD(100*dpp) + " (API-equiv)"
@@ -49,10 +62,6 @@ func Status(now int64) []string {
 
 	// Burn projection (reset-robust). The store window query collapses the raw multi-session log into
 	// the monotonic current-window series project() needs (else it sees phantom resets from concurrency).
-	s, sSt := store.Open()
-	if s != nil {
-		defer s.Close()
-	}
 	var pr burn.Projection
 	hasPr := false
 	if sSt == store.StateOK {
@@ -80,7 +89,7 @@ func Status(now int64) []string {
 		lines = append(lines, g)
 	}
 
-	snaps := pool.LoadSnapshots()
+	snaps := pool.LoadSnapshots(s)
 	if fh, ok := pool.GetWindow(snaps, "five_hour", now, 6*3600); ok {
 		age, _ := pool.DataAge(snaps, now) // 0 when none, matching Ruby `fh[:age] || 0`
 		if age <= pool.Stale() && fh.Used >= 70 {

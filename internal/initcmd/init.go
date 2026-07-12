@@ -22,6 +22,7 @@ import (
 
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/statusline"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // warnEvents are the Claude Code hook events ccpool wires its warn hook into, in the order the
@@ -404,13 +405,17 @@ func preview(now int64) {
 // previewStatusline renders the freshest per-session snapshot, mirroring CCPool.preview_statusline.
 // Best-effort: on no/unreadable snapshot it notes so on stderr and prints nothing to stdout.
 func previewStatusline(now int64) {
-	data, ok := statusline.NewestSnapshot()
+	s, _ := store.Open()
+	if s != nil {
+		defer s.Close()
+	}
+	data, ok := statusline.NewestSnapshot(s)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "ccpool: no statusline snapshot yet. Wire `ccpool statusline` as your Claude Code statusLine first (see README), then it self-populates.")
 		return
 	}
 	age := now - statusline.SnapshotCapturedAt(data)
-	line := statusline.Render(data, now)
+	line := statusline.Render(s, data, now)
 	fmt.Fprintf(os.Stderr, "[preview from a %s-old snapshot -- ctx/cache may be stale; live values come from Claude Code]\n", fmtx.Dur(age))
 	if line != "" {
 		fmt.Println(line)

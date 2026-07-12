@@ -39,14 +39,12 @@ func History() string {
 	return resolve("CCPOOL_HISTORY", filepath.Join(Home(), "rate-limit-history.jsonl"))
 }
 
-// CalibCache is the $/1% calibration cache (CCPOOL_CALIB_CACHE || $Home/ccpool-calibration.json).
-func CalibCache() string {
-	return resolve("CCPOOL_CALIB_CACHE", filepath.Join(Home(), "ccpool-calibration.json"))
-}
-
-// BlocksCache is the ccusage blocks cache (CCPOOL_BLOCKS_CACHE || $Home/ccpool-blocks-cache.json).
-func BlocksCache() string {
-	return resolve("CCPOOL_BLOCKS_CACHE", filepath.Join(Home(), "ccpool-blocks-cache.json"))
+// WarmMarker is the calibration warm-up throttle marker ($Home/calib.warming). It stays a FILE, not a
+// kv row: it is a short-lived "don't re-fork the recompute" lock whose natural check is the file mtime
+// (kv has no mtime), the same shape as warn's /tmp throttle markers. (The $/1% calibration itself and
+// the ccusage blocks cache moved into the store's kv table, so their old cache-file paths are gone.)
+func WarmMarker() string {
+	return filepath.Join(Home(), "calib.warming")
 }
 
 // StatuslineLog is the capped anomaly log (CCPOOL_STATUSLINE_LOG || $Home/statusline.log).

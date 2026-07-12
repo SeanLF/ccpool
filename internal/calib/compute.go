@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/env"
-	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/rb"
 	"github.com/SeanLF/ccpool/internal/store"
 )
@@ -23,6 +22,7 @@ const (
 	ttlDefault        = 21600 // 6h
 	blocksTTL         = 120   // don't re-spawn ccusage on every idle read
 	ccusageCmdDefault = "npx -y ccusage@20"
+	blocksKey         = "blocks" // kv row for the ccusage blocks cache ({raw,at}); regenerable
 )
 
 func ttl() int {
@@ -37,9 +37,10 @@ func ccusageCmd() string {
 }
 
 // DollarPerPct returns the cached $/1% or recomputes it, refreshing the cache. (0,false) only when
-// it was never computable (no ccusage / no history) -> caller shows % without $.
-func DollarPerPct(now int64, force bool) (float64, bool) {
-	cached := ReadCache()
+// it was never computable (no ccusage / no history) -> caller shows % without $. The store is threaded
+// in so the cache read/write and the wk-run history query share one open (nil store -> fail open).
+func DollarPerPct(s *store.Store, now int64, force bool) (float64, bool) {
+	cached := ReadCache(s)
 	if !force && cached != nil {
 		if at, ok := numField(cached, "at"); ok && now-int64(at) < int64(ttl()) {
 			if dpp, ok := cachedDPP(cached); ok {
@@ -47,8 +48,8 @@ func DollarPerPct(now int64, force bool) (float64, bool) {
 			}
 		}
 	}
-	if dpp, ok := compute(now); ok {
-		WriteCache(dpp, now)
+	if dpp, ok := compute(s, now); ok {
+		WriteCache(s, dpp, now)
 		return dpp, true
 	}
 	// recompute failed: fall back to a stale cached value if present.
@@ -62,8 +63,8 @@ func DollarPerPct(now int64, force bool) (float64, bool) {
 
 // Stale reports whether DollarPerPct would recompute (spawn ccusage) right now. Callers warm the
 // cache out-of-band so a render never blocks on the compute.
-func Stale(now int64) bool {
-	c := ReadCache()
+func Stale(s *store.Store, now int64) bool {
+	c := ReadCache(s)
 	if c == nil {
 		return true
 	}
@@ -74,8 +75,12 @@ func Stale(now int64) bool {
 	return now-int64(at) >= int64(ttl())
 }
 
-// WriteCache persists the calibration. Best-effort: a write failure is swallowed (fail open).
-func WriteCache(dpp float64, at int64) {
+// WriteCache persists the calibration to the kv table. Best-effort: a nil store or write error is
+// swallowed (fail open) -- the next read just recomputes.
+func WriteCache(s *store.Store, dpp float64, at int64) {
+	if s == nil {
+		return
+	}
 	b, err := json.Marshal(struct {
 		Dpp float64 `json:"dpp"`
 		At  int64   `json:"at"`
@@ -83,17 +88,17 @@ func WriteCache(dpp float64, at int64) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(paths.CalibCache(), b, 0o644)
+	_ = s.PutKV(calibKey, b)
 }
 
 // compute pools cost over monotonic wk runs. (0,false) when there is no history (fresh install; do
 // not even spawn ccusage) or ccusage is unavailable.
-func compute(now int64) (float64, bool) {
-	runs := wkRuns()
+func compute(s *store.Store, now int64) (float64, bool) {
+	runs := wkRuns(s)
 	if len(runs) == 0 {
 		return 0, false
 	}
-	blocks, ok := ccusageBlocks(now)
+	blocks, ok := ccusageBlocks(s, now)
 	if !ok || len(blocks) == 0 {
 		return 0, false
 	}
@@ -131,9 +136,9 @@ func costBetween(blocks []block, t0, t1 int64) float64 {
 }
 
 // CostSince is the Anthropic $ spent in [t0, t1] (for extrapolating a stale %). (0,false) if
-// ccusage is unavailable.
-func CostSince(t0, t1 int64) (float64, bool) {
-	blocks, ok := ccusageBlocks(time.Now().Unix())
+// ccusage is unavailable. The store is threaded in for the blocks cache read/write.
+func CostSince(s *store.Store, t0, t1 int64) (float64, bool) {
+	blocks, ok := ccusageBlocks(s, time.Now().Unix())
 	if !ok {
 		return 0, false
 	}
@@ -144,8 +149,8 @@ var anthropicRe = regexp.MustCompile(`(?i)claude|anthropic`)
 
 // ccusageBlocks returns the Anthropic-only 5h cost blocks. (nil,false) means ccusage is unavailable
 // or its shape changed (which is logged loud, then $ stays disabled rather than silently zeroed).
-func ccusageBlocks(now int64) ([]block, bool) {
-	out := ccusageRaw(now)
+func ccusageBlocks(s *store.Store, now int64) ([]block, bool) {
+	out := ccusageRaw(s, now)
 	if strings.TrimSpace(out) == "" {
 		return nil, false
 	}
@@ -223,15 +228,17 @@ func blocksArray(doc any) []any {
 // re-spawn npx on every idle read. Shells out via `sh -c` exactly like the Ruby backtick so
 // CCPOOL_CCUSAGE_CMD's full command string (which the user owns, e.g. a wrapper with pipes) is
 // honoured; the input is user config, not untrusted data.
-func ccusageRaw(now int64) string {
-	if b, err := os.ReadFile(paths.BlocksCache()); err == nil {
-		var c map[string]any
-		d := json.NewDecoder(bytes.NewReader(b))
-		d.UseNumber()
-		if d.Decode(&c) == nil {
-			if at, ok := numField(c, "at"); ok && now-int64(at) < blocksTTL {
-				if raw, ok := c["raw"].(string); ok && raw != "" {
-					return raw
+func ccusageRaw(s *store.Store, now int64) string {
+	if s != nil {
+		if b, ok, _ := s.GetKV(blocksKey); ok {
+			var c map[string]any
+			d := json.NewDecoder(bytes.NewReader(b))
+			d.UseNumber()
+			if d.Decode(&c) == nil {
+				if at, ok := numField(c, "at"); ok && now-int64(at) < blocksTTL {
+					if raw, ok := c["raw"].(string); ok && raw != "" {
+						return raw
+					}
 				}
 			}
 		}
@@ -239,9 +246,9 @@ func ccusageRaw(now int64) string {
 	cmd := exec.Command("sh", "-c", ccusageCmd()+" blocks --json 2>/dev/null") //nolint:gosec // user-owned command string, mirrors Ruby backtick
 	outBytes, _ := cmd.Output()                                                // npx failure -> empty output -> caller fails open
 	raw := string(outBytes)
-	if strings.TrimSpace(raw) != "" {
+	if s != nil && strings.TrimSpace(raw) != "" {
 		if b, err := json.Marshal(map[string]any{"raw": raw, "at": now}); err == nil {
-			_ = os.WriteFile(paths.BlocksCache(), b, 0o644)
+			_ = s.PutKV(blocksKey, b)
 		}
 	}
 	return raw
@@ -262,12 +269,10 @@ type wkPoint struct {
 // reconstructs runs over those pre-aggregated points, recording wk CHANGES only (skipping flat
 // ses-padded minutes) and splitting at a hard fall (a reset). Runs shorter than 3pts / 1h, or
 // starting after their own boundary (+300s), are dropped. Fail-soft: no store / no data -> nil runs.
-func wkRuns() []wkRun {
-	s, st := store.Open()
-	if st != store.StateOK {
+func wkRuns(s *store.Store) []wkRun {
+	if s == nil {
 		return nil
 	}
-	defer s.Close()
 	pts, pst := s.WkPoints()
 	if pst != store.StateOK {
 		return nil

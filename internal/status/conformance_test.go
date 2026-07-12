@@ -88,10 +88,9 @@ func runReadoutConformance(t *testing.T, which, fixturesFile string, goRender fu
 }
 
 // stageReadout writes the shared inputs (snapshots, history, blocks fixture) into a temp dir and
-// points the Go process env at them + Go-private cache files. It returns the env slice the Ruby
-// oracle should run with: the shared inputs (inherited) plus Ruby-private cache files so the two
-// processes never write over each other's calibration / blocks caches.
-func stageReadout(t *testing.T, fx readoutFixture, fakeCmd string) []string {
+// points the Go process env at them. Everything ccpool-owned (snapshots, history, calibration, blocks)
+// lives in the isolated CCPOOL_DB store; only the fake-ccusage input and USAGE_CACHE remain files.
+func stageReadout(t *testing.T, fx readoutFixture, fakeCmd string) {
 	t.Helper()
 	inputDir := t.TempDir()
 
@@ -132,33 +131,22 @@ func stageReadout(t *testing.T, fx readoutFixture, fakeCmd string) []string {
 	blocksPath := filepath.Join(inputDir, "blocks.json")
 	writeFile(t, blocksPath, fx.Blocks)
 
-	goDir := t.TempDir()
-	rubyDir := t.TempDir()
+	// The calibration + blocks caches are kv rows in the store now, so the only calibration staging is
+	// seeding kv 'calibration' into the isolated DB. A db_unreadable case has no real DB to seed (and
+	// no CalibDPP anyway); a case with no CalibDPP leaves the row absent -> no $.
+	if !fx.DbUnbr && fx.CalibDPP != nil {
+		blob := `{"dpp":` + fx.CalibDPP.String() + `,"at":` + fx.Now.String() + `}`
+		if err := store.SeedKV(dbPath, "calibration", []byte(blob)); err != nil {
+			t.Fatalf("seed calib: %v", err)
+		}
+	}
 
-	// Shared inputs on the Go process env (inherited by the oracle via os.Environ).
 	t.Setenv("USAGE_CACHE", filepath.Join(inputDir, "usage-cache.json"))
 	t.Setenv("CCPOOL_DB", dbPath)
 	t.Setenv("CCPOOL_HOME", inputDir)                                    // isolate every ~/.ccpool-derived path (e.g. Status's historyCleanup stat of paths.History())
 	t.Setenv("CCPOOL_CONFIG", filepath.Join(inputDir, "no-config.json")) // isolate: never read the dev's real ~/.ccpool/ccpool.json
 	t.Setenv("CCPOOL_CCUSAGE_CMD", fakeCmd)
 	t.Setenv("CCUSAGE_FIXTURE", blocksPath)
-	t.Setenv("CCPOOL_BLOCKS_CACHE", filepath.Join(goDir, "blocks-cache.json"))
-
-	goCalib := filepath.Join(goDir, "calib.json")
-	rubyCalib := filepath.Join(rubyDir, "calib.json")
-	if fx.CalibDPP != nil {
-		body := `{"dpp":` + fx.CalibDPP.String() + `,"at":` + fx.Now.String() + `}`
-		writeFile(t, goCalib, body)
-		writeFile(t, rubyCalib, body)
-	}
-	t.Setenv("CCPOOL_CALIB_CACHE", goCalib) // missing file -> ReadCache nil -> no $
-
-	// Ruby-private cache files; everything else (snapshots, history, ccusage) is shared/inherited.
-	return append(
-		os.Environ(),
-		"CCPOOL_BLOCKS_CACHE="+filepath.Join(rubyDir, "blocks-cache.json"),
-		"CCPOOL_CALIB_CACHE="+rubyCalib,
-	)
 }
 
 func loadReadoutFixtures(t *testing.T, path string) []readoutFixture {

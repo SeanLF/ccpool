@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/golden"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // The statusline render must be byte-identical to the Ruby statusline.rb (ANSI included), which is
@@ -39,21 +40,29 @@ func TestStatuslineConformance(t *testing.T) {
 	root := repoRoot(t)
 
 	fixtures := loadFixtures(t, filepath.Join(root, "conformance", "fixtures.json"))
-	calibPath := filepath.Join(t.TempDir(), "calib.json")
-	t.Setenv("CCPOOL_CALIB_CACHE", calibPath)
 
 	for _, fx := range fixtures {
 		t.Run(fx.Name, func(t *testing.T) {
 			applyEnv(t, fx.Env)
-			writeCalib(t, calibPath, fx)
+			// The calibration cache lives in the store (kv) now, so each case gets a fresh isolated DB
+			// and seeds the $/1% into it (a case with no dpp leaves the row absent -> DPP fails open).
+			dir := t.TempDir()
+			t.Setenv("CCPOOL_HOME", dir)
+			t.Setenv("CCPOOL_DB", filepath.Join(dir, "ccpool.db"))
+			s, st := store.Open()
+			if st != store.StateOK || s == nil {
+				t.Fatalf("open = %v", st)
+			}
+			defer s.Close()
+			seedCalib(t, s, fx)
 
 			now, err := fx.Now.Int64()
 			if err != nil {
 				t.Fatalf("bad now %q: %v", fx.Now, err)
 			}
 
-			goRender := Render(fx.Payload, now)
-			goCompact := RenderCompact(fx.Payload, now)
+			goRender := Render(s, fx.Payload, now)
+			goCompact := RenderCompact(s, fx.Payload, now)
 
 			golden.Assert(t, filepath.Join(root, "conformance", "golden", "statusline", fx.Name+".render.txt"), []byte(goRender))
 			golden.Assert(t, filepath.Join(root, "conformance", "golden", "statusline", fx.Name+".compact.txt"), []byte(goCompact))
@@ -92,16 +101,16 @@ func applyEnv(t *testing.T, env map[string]string) {
 	t.Setenv("CCPOOL_CONFIG", filepath.Join(t.TempDir(), "no-config.json")) // isolate: never read the dev's real ~/.ccpool/ccpool.json
 }
 
-// writeCalib writes (or removes) the calibration cache so both sides read the same $/1%.
-func writeCalib(t *testing.T, path string, fx fixture) {
+// seedCalib puts the fixture's $/1% into the kv calibration row (same {dpp,at} blob the file held).
+// A case with no dpp leaves the row absent, so DPP() reads a cold cache and fails open.
+func seedCalib(t *testing.T, s *store.Store, fx fixture) {
 	t.Helper()
 	if fx.CalibDPP == nil {
-		os.Remove(path)
 		return
 	}
-	content := `{"dpp":` + fx.CalibDPP.String() + `,"at":` + fx.Now.String() + `}`
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write calib: %v", err)
+	blob := `{"dpp":` + fx.CalibDPP.String() + `,"at":` + fx.Now.String() + `}`
+	if err := s.PutKV("calibration", []byte(blob)); err != nil {
+		t.Fatalf("seed calib: %v", err)
 	}
 }
 

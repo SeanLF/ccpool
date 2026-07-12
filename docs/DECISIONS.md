@@ -448,6 +448,31 @@ Then a config-file feature emerged from a conversation about how users actually 
   signature (opens its own store, fails open) so `report`/`warn`/`run` migrated with zero edits; the
   triple store-open in `status` (ResolveWeekly + burn + snapshots) is accepted for an on-demand command
   and left for a possible T13/T17 consolidation. Byte-identical was NOT chased here (user call).
+- **Thread ONE store per command, not per-call opens (Sprint B T13, 2026-07-12).** The migration
+  initially kept each reader self-contained (every function `store.Open`s its own handle) because that
+  mirrored the retired file world, where each function independently read its own FILE -- cheap for
+  files, wasteful for a DB (a `schema Exec` per open). Moving calibration into the DB the same
+  self-contained way would have made the statusline RENDER open the DB ~4x (capture, warm's staleness
+  probe, and `DPP` in both Render and RenderCompact). T13 instead threaded a single `*store.Store` from
+  each command entry (`statusline.Command`, `status.Status`, `check.Report`, `run.DownshiftEnv`,
+  `warn.Run`, `initcmd` preview, the detached `WarmCalib`) down through the leaves
+  (`pool.LoadSnapshots(s)`, the whole `calib` API, `report.ResolveWeekly(s)`, the render/preview/capture/
+  warm functions). A render now opens once. Every leaf is nil-safe (nil store -> fail open: no
+  snapshots / cold cache / no $), so the hot path still degrades silently when `store.Open` fails. This
+  is the shape a from-scratch Go+SQLite build would have; the earlier same-signature self-contained
+  reads were migration-conservatism (small reviewable steps), retired once the file world was gone.
+  A per-command `store.OpenForCommand()` helper was considered for the `s, _ := store.Open(); if s !=
+  nil { defer s.Close() }` boilerplate but the explicit 3-liner reads clearer for a handful of sites.
+- **Warming throttle stays a FILE; calibration + blocks are kv CACHE rows (T13).** The $/1%
+  calibration (`{dpp,at}`) and the ccusage blocks cache (`{raw,at}`) moved into the `kv` table (the
+  regenerable CACHE tier -- recomputed from ccusage/history, never source-of-truth). The warm-up
+  throttle marker did NOT: it is a 5-minute "don't re-fork the recompute" LOCK, not durable state, and
+  its natural check is a filesystem mtime that `kv` has no equivalent for (`updated_at` is bookkeeping
+  only). It stays a file (`paths.WarmMarker` = `$Home/calib.warming`), the same shape as warn's `/tmp`
+  throttle markers -- forcing it into `kv` would trade an mtime check for a store round-trip and a
+  stored-epoch dance for no benefit. `paths.CalibCache`/`BlocksCache` and the
+  `CCPOOL_CALIB_CACHE`/`CCPOOL_BLOCKS_CACHE` env overrides were deleted (the cache location is
+  `CCPOOL_DB` now). The kv value blob shapes are unchanged, so nothing downstream re-parses differently.
 - **Critical latent bug found + fixed:** `internal/env` was never git-tracked on `main` — the user's
   global `~/.gitignore_global` `ENV/` (Python venv) matched `internal/env/` case-insensitively
   (macOS `core.ignorecase=true`), so `git add` silently skipped it since A2. A clean clone of main

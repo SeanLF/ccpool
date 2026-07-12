@@ -21,6 +21,7 @@ import (
 	"github.com/SeanLF/ccpool/internal/pool"
 	"github.com/SeanLF/ccpool/internal/rb"
 	"github.com/SeanLF/ccpool/internal/report"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // ErrUsage signals "no command after --"; the caller maps it to exit 2 (Ruby `exit 2`) without
@@ -54,13 +55,20 @@ func deffort() string { return env.String("CCPOOL_DOWNSHIFT_EFFORT", "low") }
 // DownshiftEnv is the pace-aware decision: the subagent env to inject (empty = no downshift) and a
 // one-line human explanation. Fails OPEN — missing/stale data yields no downshift, never an error.
 func DownshiftEnv(now int64) (map[string]string, string) {
-	wk, ok := report.ResolveWeekly(now)
+	// One store open for the decision: the weekly resolve (snapshots + calibration) and the 5h read
+	// share it. Fail open -- a nil/non-OK store degrades to no usable data -> no downshift.
+	s, _ := store.Open()
+	if s != nil {
+		defer s.Close()
+	}
+
+	wk, ok := report.ResolveWeekly(s, now)
 	if !ok || wk.Confidence == report.Stale {
 		return map[string]string{}, "no usable usage data -> no downshift (fail open)"
 	}
 
 	p := pool.GetPace(wk.Used, wk.Reset, now)
-	snaps := pool.LoadSnapshots()
+	snaps := pool.LoadSnapshots(s)
 	fh, fhOK := pool.FiveHour(snaps, now)
 	age, ageOK := pool.DataAge(snaps, now) // Ruby: fh[:age] || 0
 	if !ageOK {

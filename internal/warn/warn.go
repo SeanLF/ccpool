@@ -27,6 +27,7 @@ import (
 	"github.com/SeanLF/ccpool/internal/pool"
 	"github.com/SeanLF/ccpool/internal/profile"
 	"github.com/SeanLF/ccpool/internal/rb"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // sig is one applicable warning: its throttle key, min gap between PostToolUse repeats, and text.
@@ -85,7 +86,13 @@ func Hook(now int64) {
 func Run(payload map[string]any, now int64) string {
 	defer func() { _ = recover() }()
 
-	snaps := pool.LoadSnapshots()
+	// Open the store once for this hook invocation (fail open: a nil/non-OK store -> no snapshots ->
+	// silent no-op, which is exactly warn's contract on missing data).
+	s, _ := store.Open()
+	if s != nil {
+		defer s.Close()
+	}
+	snaps := pool.LoadSnapshots(s)
 	if len(snaps) == 0 {
 		return ""
 	}
