@@ -19,6 +19,7 @@ import (
 	"github.com/SeanLF/ccpool/internal/rb"
 	"github.com/SeanLF/ccpool/internal/report"
 	"github.com/SeanLF/ccpool/internal/runway"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // Status is the full `ccpool status` readout: the lines a caller prints (one per element). The
@@ -46,13 +47,18 @@ func Status(now int64) []string {
 		"Pace         ·  " + report.PacePhrase(pool.GetPace(used, wk.Reset, now)),
 	}
 
-	// Burn projection (reset-robust). envelope() first: the raw log interleaves concurrent sessions,
-	// so project() needs the collapsed monotonic current-window series or it sees phantom resets.
-	entries, readable := burn.Read(paths.History(), now)
+	// Burn projection (reset-robust). The store window query collapses the raw multi-session log into
+	// the monotonic current-window series project() needs (else it sees phantom resets from concurrency).
+	s, sSt := store.Open()
+	if s != nil {
+		defer s.Close()
+	}
 	var pr burn.Projection
 	hasPr := false
-	if readable {
-		pr, hasPr = burn.Project(burn.Envelope(entries, "wk", "wk_reset"))
+	if sSt == store.StateOK {
+		if wkHist, st := burn.WeeklyEnvelope(s, now); st == store.StateOK {
+			pr, hasPr = burn.Project(wkHist)
+		}
 	}
 	if hasPr {
 		// cap from the FRESH used (same basis Runway uses), not the last log sample.

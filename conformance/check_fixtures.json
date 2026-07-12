@@ -169,7 +169,7 @@
   {
     "name": "history-unreadable",
     "now": 1720000000,
-    "hist": "garbage not json\nmore garbage\n",
+    "db_unreadable": true,
     "snaps": [
       {
         "session_id": "s1",

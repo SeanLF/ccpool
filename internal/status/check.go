@@ -17,6 +17,7 @@ import (
 	"github.com/SeanLF/ccpool/internal/profile"
 	"github.com/SeanLF/ccpool/internal/rb"
 	"github.com/SeanLF/ccpool/internal/runway"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // Report is `ccpool check`: time + remaining budget + a keep-going/stop VERDICT. Returns
@@ -39,9 +40,18 @@ func Report(now int64) (lines []string, code int) {
 	ses, sesOK := pool.GetWindow(snaps, "five_hour", now, 6*3600)
 	wk, wkOK := pool.GetWindow(snaps, "seven_day", now, pool.Week+86400)
 
-	entries, readable := burn.Read(paths.History(), now)
-	wkHist := burn.Envelope(entries, "wk", "wk_reset")
-	sesHist := burn.Envelope(entries, "ses", "ses_reset")
+	s, sSt := store.Open()
+	if s != nil {
+		defer s.Close()
+	}
+	var wkHist, sesHist []burn.Entry
+	readable := sSt == store.StateOK
+	if readable {
+		var wkSt, sesSt store.ReadState
+		wkHist, wkSt = burn.WeeklyEnvelope(s, now)
+		sesHist, sesSt = burn.FiveHourEnvelope(s, now)
+		readable = wkSt == store.StateOK && sesSt == store.StateOK
+	}
 
 	t := time.Unix(now, 0).Local()
 	out := []string{

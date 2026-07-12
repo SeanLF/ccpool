@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/golden"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // The status + check readouts must be byte-identical to the Ruby CCPool.status / Check.report, which
@@ -24,10 +25,11 @@ type readoutFixture struct {
 	Now      json.Number       `json:"now"`
 	Env      map[string]string `json:"env"`
 	Snaps    []map[string]any  `json:"snaps"`
-	RawSnaps []string          `json:"raw_snaps"` // verbatim snapshot file bodies (for corrupt cases)
-	Hist     string            `json:"hist"`      // history JSONL body; empty -> no history file
-	CalibDPP *json.Number      `json:"calib_dpp"` // seed the $/1% cache; nil -> no cache
-	Blocks   string            `json:"blocks"`    // fake-ccusage blocks JSON (for CostSince)
+	RawSnaps []string          `json:"raw_snaps"`     // verbatim snapshot file bodies (for corrupt cases)
+	Hist     string            `json:"hist"`          // history JSONL body seeded into the store DB; empty -> empty DB
+	DbUnbr   bool              `json:"db_unreadable"` // force a non-OK store read (CCPOOL_DB -> a dir) for the "history unreadable" path
+	CalibDPP *json.Number      `json:"calib_dpp"`     // seed the $/1% cache; nil -> no cache
+	Blocks   string            `json:"blocks"`        // fake-ccusage blocks JSON (for CostSince)
 }
 
 // readoutEnvKeys are every CCPOOL_* knob a fixture may set; cleared before each case so cases don't
@@ -110,11 +112,21 @@ func stageReadout(t *testing.T, fx readoutFixture, fakeCmd string) []string {
 		idx++
 	}
 
-	// History (absent when empty -> Burn.read returns []).
-	histPath := filepath.Join(inputDir, "missing-history.jsonl")
-	if fx.Hist != "" {
-		histPath = filepath.Join(inputDir, "history.jsonl")
-		writeFile(t, histPath, fx.Hist)
+	// History: seed the store DB (readouts read history from the store now, not a JSONL file). Always
+	// point CCPOOL_DB at an isolated temp DB so the readout never touches the dev's real ~/.ccpool; an
+	// empty fx.Hist leaves an empty DB (warm-up), matching the old absent-file "Burn.read returns []".
+	dbPath := filepath.Join(inputDir, "ccpool.db")
+	switch {
+	case fx.DbUnbr:
+		// Make the DB path a directory so store.Open returns a non-OK read state -> the readout's
+		// "history unreadable" path (the store-world analogue of the old garbled-JSONL case).
+		if err := os.MkdirAll(dbPath, 0o755); err != nil {
+			t.Fatalf("stage unreadable db: %v", err)
+		}
+	case fx.Hist != "":
+		if err := store.SeedHistoryJSONL(dbPath, fx.Hist); err != nil {
+			t.Fatalf("seed history: %v", err)
+		}
 	}
 
 	// Blocks fixture for the fake ccusage (always present so CCUSAGE_FIXTURE resolves; empty -> the
@@ -127,7 +139,8 @@ func stageReadout(t *testing.T, fx readoutFixture, fakeCmd string) []string {
 
 	// Shared inputs on the Go process env (inherited by the oracle via os.Environ).
 	t.Setenv("USAGE_CACHE", filepath.Join(inputDir, "usage-cache.json"))
-	t.Setenv("CCPOOL_HISTORY", histPath)
+	t.Setenv("CCPOOL_DB", dbPath)
+	t.Setenv("CCPOOL_HOME", inputDir)                                    // isolate every ~/.ccpool-derived path (e.g. Status's historyCleanup stat of paths.History())
 	t.Setenv("CCPOOL_CONFIG", filepath.Join(inputDir, "no-config.json")) // isolate: never read the dev's real ~/.ccpool/ccpool.json
 	t.Setenv("CCPOOL_CCUSAGE_CMD", fakeCmd)
 	t.Setenv("CCUSAGE_FIXTURE", blocksPath)

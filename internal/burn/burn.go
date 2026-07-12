@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/SeanLF/ccpool/internal/rb"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // Entry is one history sample (or an envelope row): the raw parsed object, numbers kept as
@@ -114,6 +115,44 @@ func Read(path string, now int64) (entries []Entry, readable bool) {
 	}
 	sort.SliceStable(kept, func(i, j int) bool { return tof(kept[i]["t"]) < tof(kept[j]["t"]) })
 	return kept, true
+}
+
+// WeeklyEnvelope / FiveHourEnvelope are the store-backed replacements for Read + Envelope: the SQL
+// window query in internal/store computes the same running-max-over-the-current-window series that
+// Envelope did in Go (proven byte-identical on real data), adapted into the []Entry shape Project /
+// ProjectRecent / currentRun already consume. The caller opens the store once (status/check are
+// on-demand, not the render hot path) and passes a non-nil StateOK store; the returned ReadState
+// distinguishes StateOK (rows, possibly empty warm-up) from a non-OK read the command layer renders
+// (Task 10 splits Corrupt "unreadable" from Transient "unknown, retry").
+func WeeklyEnvelope(s *store.Store, now int64) ([]Entry, store.ReadState) {
+	rows, st := s.EnvelopeWeekly(now)
+	if st != store.StateOK {
+		return nil, st
+	}
+	return envRowsToEntries(rows, "wk", "wk_reset"), store.StateOK
+}
+
+func FiveHourEnvelope(s *store.Store, now int64) ([]Entry, store.ReadState) {
+	rows, st := s.EnvelopeFiveHour(now)
+	if st != store.StateOK {
+		return nil, st
+	}
+	return envRowsToEntries(rows, "ses", "ses_reset"), store.StateOK
+}
+
+// envRowsToEntries adapts EnvRows to the map[string]any Entry shape (t + field=running-max +
+// resetField=the window reset when present), mirroring Envelope's output rows exactly so downstream
+// projection needs no change; num() already reads the int64/float64 values.
+func envRowsToEntries(rows []store.EnvRow, field, resetField string) []Entry {
+	out := make([]Entry, 0, len(rows))
+	for _, r := range rows {
+		e := Entry{"t": r.T, field: r.Value}
+		if r.Reset.Valid {
+			e[resetField] = r.Reset.Int64
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // parse validates one line: a JSON object with numeric t and wk. A bad line is dropped (nil), not
