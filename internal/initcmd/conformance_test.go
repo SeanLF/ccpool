@@ -31,7 +31,7 @@ type initFixture struct {
 }
 
 // initEnvKeys are cleared before each case so fixtures don't leak env into one another.
-var initEnvKeys = []string{"CCPOOL_CCUSAGE_CMD", "CCPOOL_SETTINGS", "USAGE_CACHE", "CCPOOL_HOME", "CCPOOL_DB"}
+var initEnvKeys = []string{"CCPOOL_CCUSAGE_CMD", "CCPOOL_SETTINGS", "CCPOOL_HOME", "CCPOOL_DB"}
 
 func TestInitConformance(t *testing.T) {
 	// Pin the zone (the preview's fmt_dur/pace math is local-zone sensitive; goldens captured under UTC).

@@ -89,7 +89,7 @@ func runReadoutConformance(t *testing.T, which, fixturesFile string, goRender fu
 
 // stageReadout writes the shared inputs (snapshots, history, blocks fixture) into a temp dir and
 // points the Go process env at them. Everything ccpool-owned (snapshots, history, calibration, blocks)
-// lives in the isolated CCPOOL_DB store; only the fake-ccusage input and USAGE_CACHE remain files.
+// lives in the isolated CCPOOL_DB store; only the fake-ccusage input remains a file.
 func stageReadout(t *testing.T, fx readoutFixture, fakeCmd string) {
 	t.Helper()
 	inputDir := t.TempDir()
@@ -141,9 +141,8 @@ func stageReadout(t *testing.T, fx readoutFixture, fakeCmd string) {
 		}
 	}
 
-	t.Setenv("USAGE_CACHE", filepath.Join(inputDir, "usage-cache.json"))
 	t.Setenv("CCPOOL_DB", dbPath)
-	t.Setenv("CCPOOL_HOME", inputDir)                                    // isolate every ~/.ccpool-derived path (e.g. Status's historyCleanup stat of paths.History())
+	t.Setenv("CCPOOL_HOME", inputDir)                                    // isolate every ~/.ccpool-derived path off the dev's real state
 	t.Setenv("CCPOOL_CONFIG", filepath.Join(inputDir, "no-config.json")) // isolate: never read the dev's real ~/.ccpool/ccpool.json
 	t.Setenv("CCPOOL_CCUSAGE_CMD", fakeCmd)
 	t.Setenv("CCUSAGE_FIXTURE", blocksPath)

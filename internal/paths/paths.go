@@ -1,8 +1,8 @@
 // Package paths resolves the on-disk file locations ccpool reads and writes. ccpool-owned state
-// lives under Home() (~/.ccpool by default); reads of Claude Code's own data (projects transcripts,
-// the legacy usage-cache snapshots) stay under ~/.claude. The env overrides and default names match
-// the Ruby modules exactly (the on-disk contract; see docs/GO-MIGRATION.md). Resolved fresh per call
-// so the hermetic CCPOOL_*/USAGE_* test env is honoured.
+// lives under Home() (~/.ccpool by default) -- the SQLite DB plus the few remaining files (config,
+// the warm-up throttle marker, the anomaly log); reads of Claude Code's own data (projects
+// transcripts) stay under ~/.claude. Resolved fresh per call so the hermetic CCPOOL_* test env is
+// honoured.
 package paths
 
 import (
@@ -18,21 +18,6 @@ func Home() string { return resolve("CCPOOL_HOME", "~/.ccpool") }
 // DB is the SQLite database path (CCPOOL_DB || $Home/ccpool.db).
 func DB() string { return resolve("CCPOOL_DB", filepath.Join(Home(), "ccpool.db")) }
 
-// SnapshotCache is the base per-session snapshot path (USAGE_CACHE || ~/.claude/usage-cache.json).
-// Real snapshots are written to the "-<session>.json" sibling; see SnapshotFor / SnapshotGlob.
-func SnapshotCache() string {
-	return resolve("USAGE_CACHE", "~/.claude/usage-cache.json")
-}
-
-// SnapshotGlob matches every per-session snapshot: the base with ".json" -> "-*.json".
-func SnapshotGlob() string {
-	return strings.TrimSuffix(SnapshotCache(), ".json") + "-*.json"
-}
-
-// SnapshotFor is the snapshot path for a specific (sanitized) session id.
-func SnapshotFor(sessionID string) string {
-	return strings.TrimSuffix(SnapshotCache(), ".json") + "-" + sessionID + ".json"
-}
 
 // History is the rate-limit history log (CCPOOL_HISTORY || $Home/rate-limit-history.jsonl).
 func History() string {
