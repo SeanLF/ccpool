@@ -19,6 +19,7 @@ import (
 	"github.com/SeanLF/ccpool/internal/run"
 	"github.com/SeanLF/ccpool/internal/status"
 	"github.com/SeanLF/ccpool/internal/statusline"
+	"github.com/SeanLF/ccpool/internal/store"
 	"github.com/SeanLF/ccpool/internal/warn"
 )
 
@@ -131,13 +132,18 @@ func configCommand(args []string, now int64) int {
 	return code
 }
 
-// prune deletes stale snapshots, and with --history compacts the history log too.
+// prune deletes stale snapshot rows, and with --history compacts the history rows too. One store open
+// serves both DELETEs (fail-open: a non-OK store prunes nothing).
 func prune(args []string, now int64) int {
-	n := statusline.PruneCaches(now)
+	s, _ := store.Open()
+	if s != nil {
+		defer s.Close()
+	}
+	n := statusline.PruneCaches(s, now)
 	msg := fmt.Sprintf("pruned %d stale snapshot(s)", n)
 	if hasFlag(args, "--history") {
 		keep := env.Float("CCPOOL_HISTORY_KEEP_DAYS", 30)
-		removed, _ := initcmd.PruneHistory(now, keep)
+		removed, _ := initcmd.PruneHistory(s, now, keep)
 		msg += fmt.Sprintf("; compacted %d old history row(s)", removed)
 	}
 	fmt.Printf("ccpool: %s\n", msg)

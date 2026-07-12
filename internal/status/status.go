@@ -6,15 +6,11 @@
 package status
 
 import (
-	"os"
-	"path/filepath"
 	"strconv"
 
 	"github.com/SeanLF/ccpool/internal/burn"
 	"github.com/SeanLF/ccpool/internal/calib"
-	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/fmtx"
-	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/pool"
 	"github.com/SeanLF/ccpool/internal/rb"
 	"github.com/SeanLF/ccpool/internal/report"
@@ -24,7 +20,8 @@ import (
 
 // Status is the full `ccpool status` readout: the lines a caller prints (one per element). The
 // 3-tier weekly read + $ value + pace + reset-robust burn projection + working-hours runway, then
-// the 5h-session and cleanup nudges when they apply.
+// the 5h-session nudge when it applies. (The old file-clutter "cleanup" nudges are gone: DB snapshots
+// don't litter the filesystem, and the history-size nudge stat'd a JSONL ccpool no longer writes.)
 func Status(now int64) []string {
 	// One store open for the whole readout: the weekly resolve, calibration, burn envelope, and the
 	// 5h snapshot read all share it (fail open -- a nil/non-OK store degrades each to no-data).
@@ -98,51 +95,5 @@ func Status(now int64) []string {
 		}
 	}
 
-	// Surface (never auto-delete) accumulating snapshots + an oversized history log.
-	if n := len(staleCaches(now)); n >= 20 {
-		lines = append(lines, "cleanup      ·  "+strconv.Itoa(n)+" stale session snapshots accumulating -- run `ccpool prune` to clean")
-	}
-	if line, ok := historyCleanup(now); ok {
-		lines = append(lines, line)
-	}
 	return lines
-}
-
-// staleCaches lists the per-session snapshot files (and their write-tmp siblings) older than the
-// keep window. Surfaced by status when they pile up; matches CCPool.stale_caches.
-func staleCaches(now int64) []string {
-	keep := env.Int64("CCPOOL_CACHE_KEEP_SECS", 3600)
-	glob := paths.SnapshotGlob()
-	files, _ := filepath.Glob(glob)
-	tmps, _ := filepath.Glob(glob + ".*.tmp")
-	var out []string
-	for _, f := range append(files, tmps...) {
-		info, err := os.Stat(f)
-		if err != nil {
-			continue // unreadable mtime -> skip (Ruby's `rescue false`)
-		}
-		if now-info.ModTime().Unix() > keep {
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
-// historyCleanup surfaces an oversized history log (opt-out via CCPOOL_HISTORY_KEEP_DAYS<=0).
-func historyCleanup(now int64) (string, bool) {
-	keepDays := env.Float("CCPOOL_HISTORY_KEEP_DAYS", 30)
-	if keepDays <= 0 {
-		return "", false
-	}
-	warnMB := env.Float("CCPOOL_HISTORY_WARN_MB", 20)
-	size := 0.0
-	if info, err := os.Stat(paths.History()); err == nil {
-		size = float64(info.Size())
-	}
-	mb := size / 1048576.0
-	if mb > warnMB {
-		return "cleanup      ·  usage history is " + strconv.Itoa(rb.RoundToInt(mb)) +
-			"MB -- `ccpool prune --history` compacts it to the last " + strconv.Itoa(rb.RoundToInt(keepDays)) + "d", true
-	}
-	return "", false
 }

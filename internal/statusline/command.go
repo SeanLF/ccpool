@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -37,11 +36,10 @@ func Command(now int64, embed bool) {
 		return
 	}
 
-	// One store open for the whole render path -- capture (write), warm's staleness probe, and the $
-	// read all share it, so a render opens the DB once instead of once per read. (The opt-in
-	// CCPOOL_PRUNE sweep still opens its own; it is off by default and retired in T14.) Best-effort --
-	// store.Open never returns a usable handle on a non-OK state (it returns nil), and every consumer is
-	// nil-safe, so a failed open just degrades the optional bits; it never blanks the line.
+	// One store open for the whole render path -- capture (write), warm's staleness probe, the opt-in
+	// prune, and the $ read all share it, so a render opens the DB once instead of once per read.
+	// Best-effort -- store.Open never returns a usable handle on a non-OK state (it returns nil), and
+	// every consumer is nil-safe, so a failed open just degrades the optional bits; never blanks the line.
 	s, _ := store.Open()
 	if s != nil {
 		defer s.Close()
@@ -67,8 +65,8 @@ func Command(now int64, embed bool) {
 	// (when not deduped) the history row in one store transaction.
 	bestEffort("capture", func() { capture(s, raw, data, now) })
 	bestEffort("warm", func() { warm(s, now) })
-	if os.Getenv("CCPOOL_PRUNE") == "1" { // opt-in only: deleting files is never silent-by-default
-		bestEffort("prune", func() { PruneCaches(now) })
+	if os.Getenv("CCPOOL_PRUNE") == "1" { // opt-in only: deleting rows is never silent-by-default
+		bestEffort("prune", func() { PruneCaches(s, now) })
 	}
 
 	var line string
@@ -252,27 +250,19 @@ func SnapshotCapturedAt(data map[string]any) int64 {
 	return 0
 }
 
-// PruneCaches deletes stale per-session snapshots (and orphaned tmp files) older than the keep
-// window. Opt-in (CCPOOL_PRUNE=1); returns the count removed.
-func PruneCaches(now int64) int {
-	keep := env.Int64("CCPOOL_CACHE_KEEP_SECS", 3600)
-	removed := 0
-	globs := []string{paths.SnapshotGlob(), paths.SnapshotGlob() + ".*.tmp"}
-	for _, g := range globs {
-		matches, _ := filepath.Glob(g)
-		for _, m := range matches {
-			fi, err := os.Stat(m)
-			if err != nil {
-				continue
-			}
-			if now-fi.ModTime().Unix() > keep {
-				if os.Remove(m) == nil {
-					removed++
-				}
-			}
-		}
+// PruneCaches deletes snapshot rows older than the keep window and returns the count removed. Snapshots
+// live in the store now (one UPSERTed row per session), so this is a single DELETE on the threaded
+// store, not a filesystem glob + the old write-tmp sweep (no snapshot files exist anymore). Fail-open:
+// a nil store (open failed) or a delete error prunes nothing. Uses the store the command already holds.
+func PruneCaches(s *store.Store, now int64) int {
+	if s == nil {
+		return 0
 	}
-	return removed
+	n, err := s.PruneSnapshots(now - env.Int64("CCPOOL_CACHE_KEEP_SECS", 3600))
+	if err != nil {
+		return 0
+	}
+	return int(n)
 }
 
 func isTTY(f *os.File) bool {

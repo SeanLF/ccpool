@@ -25,6 +25,40 @@ func histCount(t *testing.T, dbPath string) int {
 	return n
 }
 
+// PruneCaches deletes snapshot rows older than CCPOOL_CACHE_KEEP_SECS via the threaded store (no file
+// sweep). A row past the keep window goes; a fresh one stays; the deleted count is returned.
+func TestPruneCachesDeletesStaleRows(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CCPOOL_HOME", dir)
+	t.Setenv("CCPOOL_DB", filepath.Join(dir, "ccpool.db"))
+	t.Setenv("CCPOOL_CACHE_KEEP_SECS", "3600")
+
+	now := int64(1_800_000_000)
+	s, st := store.Open()
+	if st != store.StateOK || s == nil {
+		t.Fatalf("open = %v", st)
+	}
+	defer s.Close()
+	// old (2h ago, past the 1h keep) and fresh (1m ago) snapshots, distinct sessions.
+	if err := s.PutSnapshot("old", now-7200, []byte(`{"session_id":"old"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutSnapshot("fresh", now-60, []byte(`{"session_id":"fresh"}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	if n := PruneCaches(s, now); n != 1 {
+		t.Fatalf("PruneCaches removed %d, want 1 (the stale row)", n)
+	}
+	if snaps, _ := s.Snapshots(); len(snaps) != 1 {
+		t.Fatalf("remaining snapshots = %d, want 1 (the fresh row)", len(snaps))
+	}
+	// nil store fails open to 0.
+	if n := PruneCaches(nil, now); n != 0 {
+		t.Fatalf("PruneCaches(nil) = %d, want 0", n)
+	}
+}
+
 // capture writes the snapshot and (when not deduped) the paired history row in one store txn; a
 // repeat identical render dedups the history but still upserts the snapshot.
 func TestCaptureWritesSnapshotAndHistory(t *testing.T) {

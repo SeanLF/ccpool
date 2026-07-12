@@ -200,7 +200,12 @@ func TestPruneHistoryConformance(t *testing.T) {
 				wantRemoved = countHist(t, dbPath, &cutoff)
 			}
 
-			removed, err := PruneHistory(now, keepDays)
+			s, st := store.Open()
+			if st != store.StateOK || s == nil {
+				t.Fatalf("open = %v", st)
+			}
+			removed, err := PruneHistory(s, now, keepDays)
+			s.Close()
 			if err != nil {
 				t.Fatalf("PruneHistory: %v", err)
 			}

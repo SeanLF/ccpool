@@ -5,7 +5,7 @@
 ## STATUS (updated mid-sprint)
 
 - **DONE + committed + gate-green:** Phase 1 (T1-T2), Phase 2 (T3-T5), Phase 3 (T6-T10, incl. the
-  live import + parity proof), Phase 4 **T11-T13**. Phase 3 is live-verified (57,055 rows imported;
+  live import + parity proof), **Phase 4 CLOSED (T11-T14)**. Phase 3 is live-verified (57,055 rows imported;
   `check` byte-identical on history-derived lines). T12 = snapshot readers -> store. T13 = calibration
   + blocks caches -> `kv` table, warming throttle kept as a FILE (a lock, not state), AND a
   **store-threading refactor** (user-directed, from-scratch shape): each command invocation opens ONE
@@ -13,9 +13,13 @@
   `report.ResolveWeekly(s)`, `statusline` render/capture/warm/preview), so a render opens the DB once
   (was ~4x). The per-call `store.Open` sites and the T12 `store.ReadSnapshots`/`GetKVValue` wrappers
   are gone; `paths.CalibCache`/`BlocksCache` deleted (warming -> `paths.WarmMarker`).
-- **REMAINING:** Phase 4 T14 (snapshot prune). Phase 5 (T15-T19). **T19 must scrub docs/demo:** the
-  demo (`demo/setup.sh`) + `README`/`CONFIG-AUDIT`/`GO-MIGRATION` still describe the file-based caches
-  and the removed `CCPOOL_CALIB_CACHE`/`CCPOOL_BLOCKS_CACHE` env vars (already stale since T6-T12).
+  T14 = snapshot prune via `store.PruneSnapshots` (threaded), file/.tmp sweep gone; the misleading
+  file-stat status nudges (`staleCaches` glob, `historyCleanup` on the dead JSONL) removed.
+- **REMAINING (Phase 5, follow-up batch -- none blocks a working tool):** T15 (seeder -- mostly done,
+  verify/consolidate), T16 (behaviour verify), T17 (dead-code: `paths.SnapshotFor`/`SnapshotGlob`/
+  `SnapshotCache` are now dead, `USAGE_CACHE` env too), T18 (contention bench + fuzz), T19 (scrub
+  docs + fix the DB-backed demo). **Plus the LIVE REBUILD** (re-import the real JSONL + `make build`)
+  -- the running statusline is still the Phase-1 file binary; needs the user's go-ahead (touches real state).
 - **DEVIATIONS from the task text below (locked, reasoned):** `cost` kept / `tier` dropped from
   history; **added T7b** (calib wkRuns = SQL GROUP BY + Go run-split); envelope `reset` is
   `interface{}` -> facade-normalized (sqlc can't type it), `DataAge` = `CAST(COALESCE(max,0))`;
@@ -601,11 +605,10 @@ already mis-reports leftover `~/.claude` files as "stale snapshots" when `USAGE_
 - The `prune`/uninstall command path must also remove `ccpool.db-wal`/`-shm` if it removes the DB.
 - Modify: relevant tests (the prune test seeds snapshot rows with old/new `captured_at`, asserts the DELETE count).
 
-- [ ] **Step 1: Update prune tests** - snapshot rows older than `CCPOOL_CACHE_KEEP_SECS` deleted, newer kept; count returned. Seed via `store.SeedSnapshots`.
-- [ ] **Step 2: Run to verify fail** -> FAIL.
-- [ ] **Step 3: Reimplement `PruneCaches(s, now)`** as `store.PruneSnapshots`; remove the `.tmp`/glob sweep (no snapshot files exist now). Retire or thread `staleCaches`. Ensure the DB-removal path also drops `-wal`/`-shm`.
-- [ ] **Step 4: Run to verify pass** -> PASS. Drive `go run . prune` against a seeded isolated store and confirm the count.
-- [ ] **Step 5: Gate + commit**
+- [x] **Step 1: Prune test** - `TestPruneCachesDeletesStaleRows` seeds old+fresh snapshot rows, asserts 1 deleted + nil-store fails open to 0.
+- [x] **Step 3: Reimplemented `PruneCaches(s, now)`** as `store.PruneSnapshots`; `.tmp`/glob sweep gone; `initcmd.PruneHistory(s, ...)` + `main.go prune` threaded; `staleCaches` + `historyCleanup` (the dead JSONL-stat nudge) REMOVED. WAL-sidecar cleanup: `quarantine` already drops `-wal`/`-shm` on the corrupt-DB path; there is no uninstall command that removes the DB, so no new sidecar-cleanup site was needed.
+- [x] **Step 4: PASS** (334 tests, no golden change; `go run . prune --history` against a seeded store deleted 1 stale snapshot + 1 old history row, kept the fresh ones).
+- [x] **Step 5: Gate + commit**
 
 ```bash
 unset GOROOT && make check
