@@ -195,6 +195,30 @@ func TestPruneHistoryAndSnapshots(t *testing.T) {
 	}
 }
 
+func TestWkPoints(t *testing.T) {
+	s := freshStore(t)
+	r1, r2 := int64(1700500000), int64(1700600000)
+	// boundary r1, minute 60 ((100/60)*60): wk 10 then 25 -> max 25; minute 180: wk 30.
+	must(t, s.AppendHistory(store.HistoryRow{T: 100, Wk: 10, WkReset: &r1}))
+	must(t, s.AppendHistory(store.HistoryRow{T: 110, Wk: 25, WkReset: &r1}))
+	must(t, s.AppendHistory(store.HistoryRow{T: 200, Wk: 30, WkReset: &r1}))
+	must(t, s.AppendHistory(store.HistoryRow{T: 100, Wk: 5, WkReset: &r2})) // boundary r2
+	must(t, s.AppendHistory(store.HistoryRow{T: 100, Wk: 99}))              // NULL wk_reset -> excluded
+
+	pts, st := s.WkPoints()
+	if st != store.StateOK {
+		t.Fatalf("WkPoints state %v", st)
+	}
+	want := []store.WkPoint{
+		{Bnd: r1, Minute: 60, Wk: 25},
+		{Bnd: r1, Minute: 180, Wk: 30},
+		{Bnd: r2, Minute: 60, Wk: 5},
+	}
+	if !reflect.DeepEqual(pts, want) {
+		t.Fatalf("WkPoints = %+v, want %+v", pts, want)
+	}
+}
+
 func strptr(s string) *string { return &s }
 
 func must(t *testing.T, err error) {

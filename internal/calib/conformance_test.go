@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/SeanLF/ccpool/internal/golden"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // The $/1% calibration must match Ruby's compute (wk_runs run-detection, the Anthropic block
@@ -31,9 +32,13 @@ func TestComputeConformance(t *testing.T) {
 	for _, fx := range fixtures {
 		t.Run(fx.Name, func(t *testing.T) {
 			dir := t.TempDir()
-			histPath := filepath.Join(dir, "hist.jsonl")
+			dbPath := filepath.Join(dir, "ccpool.db")
 			blocksFixture := filepath.Join(dir, "blocks.json")
-			mustWrite(t, histPath, fx.Hist)
+			if fx.Hist != "" {
+				if err := store.SeedHistoryJSONL(dbPath, fx.Hist); err != nil {
+					t.Fatalf("seed history: %v", err)
+				}
+			}
 			mustWrite(t, blocksFixture, fx.Blocks)
 
 			now, err := fx.Now.Int64()
@@ -42,7 +47,8 @@ func TestComputeConformance(t *testing.T) {
 			}
 
 			// Shared env; distinct cache files per side so neither reads the other's.
-			t.Setenv("CCPOOL_HISTORY", histPath)
+			t.Setenv("CCPOOL_DB", dbPath)
+			t.Setenv("CCPOOL_HOME", dir)
 			t.Setenv("CCPOOL_CCUSAGE_CMD", fakeCmd)
 			t.Setenv("CCUSAGE_FIXTURE", blocksFixture)
 			t.Setenv("CCPOOL_BLOCKS_CACHE", filepath.Join(dir, "go-blocks.json"))

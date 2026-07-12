@@ -109,6 +109,28 @@ func (s *Store) EnvelopeFiveHour(now int64) ([]EnvRow, ReadState) {
 	return out, StateOK
 }
 
+// WkPoint is one (weekly reset boundary, minute) bucket's max wk%, for calibration's run
+// reconstruction. Bnd is the wk_reset epoch; Minute is the floored-to-minute write time.
+type WkPoint struct {
+	Bnd    int64
+	Minute int64
+	Wk     float64
+}
+
+// WkPoints returns the per-boundary-per-minute max wk% over the FULL history, ordered by boundary then
+// minute, for calib.wkRuns. The GROUP BY aggregation runs in SQL; the run-splitting stays in Go.
+func (s *Store) WkPoints() ([]WkPoint, ReadState) {
+	rows, err := s.q.WkPoints(context.Background())
+	if err != nil {
+		return nil, classify(err)
+	}
+	out := make([]WkPoint, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, WkPoint{Bnd: r.Bnd, Minute: r.Minute, Wk: r.Mx})
+	}
+	return out, StateOK
+}
+
 // PutSnapshot upserts one session's snapshot payload.
 func (s *Store) PutSnapshot(session string, capturedAt int64, payload []byte) error {
 	return s.q.PutSnapshot(context.Background(), db.PutSnapshotParams{Session: session, CapturedAt: capturedAt, Payload: string(payload)})

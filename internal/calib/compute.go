@@ -1,19 +1,18 @@
 package calib
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/rb"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // $/1%-of-weekly self-calibration. Every dollar is delegated to ccusage (authoritative pricing,
@@ -258,72 +257,58 @@ type wkPoint struct {
 	wk float64
 }
 
-// wkRuns reconstructs the monotonic wk% runs within each window from the history log: per
-// (boundary, minute) it keeps the max wk, then records wk CHANGES only (skipping flat ses-padded
-// minutes), splitting at a hard fall (a reset). Runs shorter than 3pts / 1h, or starting after
-// their own boundary (+300s), are dropped.
+// wkRuns reconstructs the monotonic wk% runs within each window from history. The per-(boundary,
+// minute) max-wk aggregation is a SQL GROUP BY (store.WkPoints, over the FULL history); this
+// reconstructs runs over those pre-aggregated points, recording wk CHANGES only (skipping flat
+// ses-padded minutes) and splitting at a hard fall (a reset). Runs shorter than 3pts / 1h, or
+// starting after their own boundary (+300s), are dropped. Fail-soft: no store / no data -> nil runs.
 func wkRuns() []wkRun {
-	f, err := os.Open(paths.History())
-	if err != nil {
+	s, st := store.Open()
+	if st != store.StateOK {
 		return nil
 	}
-	defer f.Close()
-
-	// boundary -> minute -> max wk. Keyed by float64: wk_reset is always an integer epoch, so int
-	// vs float representation never varies here (unlike Ruby's type-strict eql? hash keys).
-	by := map[float64]map[int64]float64{}
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		r := rb.ParseObject(sc.Bytes())
-		if r == nil {
-			continue
-		}
-		wk, ok1 := rb.Num(r["wk"])
-		bnd, ok2 := rb.Num(r["wk_reset"])
-		tv, ok3 := rb.Num(r["t"])
-		if !ok1 || !ok2 || !ok3 {
-			continue
-		}
-		m := (int64(tv) / 60) * 60
-		mins := by[bnd]
-		if mins == nil {
-			mins = map[int64]float64{}
-			by[bnd] = mins
-		}
-		if cur, seen := mins[m]; !seen || wk > cur {
-			mins[m] = wk
-		}
+	defer s.Close()
+	pts, pst := s.WkPoints()
+	if pst != store.StateOK {
+		return nil
 	}
 
+	// WkPoints is ordered by boundary then minute, so points for one boundary are contiguous.
 	var runs []wkRun
-	bounds := make([]float64, 0, len(by))
-	for b := range by {
-		bounds = append(bounds, b)
+	for i := 0; i < len(pts); {
+		bnd := pts[i].Bnd
+		j := i
+		for j < len(pts) && pts[j].Bnd == bnd {
+			j++
+		}
+		runs = append(runs, splitRuns(pts[i:j], float64(bnd))...)
+		i = j
 	}
-	sort.Float64s(bounds) // result set is order-independent; sorted for determinism
+	return runs
+}
 
-	for _, bnd := range bounds {
-		sorted := sortedPoints(by[bnd])
-		run := []wkPoint{sorted[0]}
-		commit := func() {
-			if r, ok := runFrom(run, bnd); ok {
-				runs = append(runs, r)
-			}
+// splitRuns reconstructs runs within one boundary's minute-sorted points: append on a real wk change,
+// commit-and-restart on a hard fall, keeping only runs that pass runFrom.
+func splitRuns(pts []store.WkPoint, bnd float64) []wkRun {
+	var runs []wkRun
+	run := []wkPoint{{m: pts[0].Minute, wk: pts[0].Wk}}
+	commit := func() {
+		if r, ok := runFrom(run, bnd); ok {
+			runs = append(runs, r)
 		}
-		for i := 1; i < len(sorted); i++ {
-			prev := sorted[i-1].wk
-			cur := sorted[i]
-			switch {
-			case cur.wk < prev-1: // wk fell hard -> a reset boundary
-				commit()
-				run = []wkPoint{cur}
-			case cur.wk != run[len(run)-1].wk: // a real wk CHANGE
-				run = append(run, cur)
-			}
-		}
-		commit()
 	}
+	for i := 1; i < len(pts); i++ {
+		prev := pts[i-1].Wk
+		cur := wkPoint{m: pts[i].Minute, wk: pts[i].Wk}
+		switch {
+		case cur.wk < prev-1: // wk fell hard -> a reset boundary
+			commit()
+			run = []wkPoint{cur}
+		case cur.wk != run[len(run)-1].wk: // a real wk CHANGE
+			run = append(run, cur)
+		}
+	}
+	commit()
 	return runs
 }
 
@@ -336,15 +321,6 @@ func runFrom(run []wkPoint, bnd float64) (wkRun, bool) {
 		return wkRun{}, false
 	}
 	return wkRun{t0: first.m, t1: last.m, dw: dw}, true
-}
-
-func sortedPoints(mins map[int64]float64) []wkPoint {
-	pts := make([]wkPoint, 0, len(mins))
-	for m, wk := range mins {
-		pts = append(pts, wkPoint{m, wk})
-	}
-	sort.Slice(pts, func(i, j int) bool { return pts[i].m < pts[j].m })
-	return pts
 }
 
 // --- small helpers ---

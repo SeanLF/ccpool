@@ -272,3 +272,46 @@ func (q *Queries) Snapshots(ctx context.Context) ([]Snapshot, error) {
 	}
 	return items, nil
 }
+
+const wkPoints = `-- name: WkPoints :many
+SELECT CAST(wk_reset AS INTEGER) AS bnd,
+       CAST((t / 60) * 60 AS INTEGER) AS minute,
+       CAST(max(wk) AS REAL) AS mx
+FROM history
+WHERE wk_reset IS NOT NULL
+GROUP BY wk_reset, (t / 60) * 60
+ORDER BY wk_reset, (t / 60) * 60
+`
+
+type WkPointsRow struct {
+	Bnd    int64
+	Minute int64
+	Mx     float64
+}
+
+// Per (weekly reset boundary, minute) the max wk%, feeding calib.wkRuns' run reconstruction over the
+// FULL history (no time cutoff, unlike the envelope). The bulky per-minute-max aggregation is SQL; the
+// run-splitting stays in Go. CAST the computed columns or sqlc emits interface{}; wk_reset is CAST too
+// (the WHERE guarantees non-null) so bnd is a clean int64. minute = (t/60)*60 mirrors the Go floor.
+func (q *Queries) WkPoints(ctx context.Context) ([]WkPointsRow, error) {
+	rows, err := q.db.QueryContext(ctx, wkPoints)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WkPointsRow{}
+	for rows.Next() {
+		var i WkPointsRow
+		if err := rows.Scan(&i.Bnd, &i.Minute, &i.Mx); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

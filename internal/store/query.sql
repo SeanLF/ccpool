@@ -50,6 +50,19 @@ SELECT kept.t,
        (SELECT r FROM latest) AS reset
 FROM kept ORDER BY kept.t, kept.id;
 
+-- name: WkPoints :many
+-- Per (weekly reset boundary, minute) the max wk%, feeding calib.wkRuns' run reconstruction over the
+-- FULL history (no time cutoff, unlike the envelope). The bulky per-minute-max aggregation is SQL; the
+-- run-splitting stays in Go. CAST the computed columns or sqlc emits interface{}; wk_reset is CAST too
+-- (the WHERE guarantees non-null) so bnd is a clean int64. minute = (t/60)*60 mirrors the Go floor.
+SELECT CAST(wk_reset AS INTEGER) AS bnd,
+       CAST((t / 60) * 60 AS INTEGER) AS minute,
+       CAST(max(wk) AS REAL) AS mx
+FROM history
+WHERE wk_reset IS NOT NULL
+GROUP BY wk_reset, (t / 60) * 60
+ORDER BY wk_reset, (t / 60) * 60;
+
 -- name: PutSnapshot :exec
 INSERT INTO snapshots (session, captured_at, payload) VALUES (?, ?, ?)
 ON CONFLICT(session) DO UPDATE SET captured_at = excluded.captured_at, payload = excluded.payload;
