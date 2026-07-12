@@ -40,7 +40,7 @@
 
 - **Gate (must be green before every commit):** `unset GOROOT && make check` (gofumpt + vet + staticcheck + govulncheck + `go test ./...`).
 - **Go commands:** prefix with `unset GOROOT`; add `unset GOBIN` for `go install`.
-- **Golden conformance:** on an *intentional* output change only, re-baseline with `CCPOOL_UPDATE_GOLDEN=1 TZ=UTC go test ./...` and review the diff. This migration targets **no** golden change (byte-identical is the proof); a golden shift is a regression to investigate.
+- **Golden conformance:** the goldens are the regression NET, not a byte-identical-to-Ruby contract (Ruby is retired; the goldens are Go-defined now). A golden shift must be *explained* -- either a deliberate, recorded output change (re-baseline with `CCPOOL_UPDATE_GOLDEN=1 TZ=UTC go test ./...` and note why in `docs/DECISIONS.md`) or a bug to fix. Do NOT reflexively re-baseline. Behavioural correctness outranks byte-identity: where the DB world genuinely changes behaviour (e.g. the unified-store `store-unreadable` case), an intentional golden change is correct. Most tasks still target *no* change; a surprise diff is the signal to stop and look.
 - **Fail OPEN on the hot path:** `warn` and `statusline` must NEVER panic. Every hot-path facade call degrades to empty on any non-OK state. On-demand commands (`status`, `check`, `init`) fail LOUD and distinguish states.
 - **Delegate every dollar to `ccusage`; never hand-roll pricing.** Untouched here.
 - **No em dashes** in prose/docs/commits. Conventional commits, no emoji, explain *why*. End AI-assisted commits with `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
@@ -48,6 +48,8 @@
 - **sqlc required tweaks (or codegen fails / emits `interface{}`):** qualify every column in the `latest` CTE (`history.t`, not `t`); `CAST(... AS REAL/INTEGER)` the window/aggregate/subquery result columns.
 - **Driver DSN pragmas:** `journal_mode=WAL`, `busy_timeout=5000`, `synchronous=NORMAL`.
 - **Location:** all ccpool-owned state under `~/.ccpool/` (`CCPOOL_HOME` override); DB at `CCPOOL_DB` else `$CCPOOL_HOME/ccpool.db` else `~/.ccpool/ccpool.db`. Tests set `CCPOOL_HOME`/`CCPOOL_DB` for hermeticity.
+- **Thread ONE store per command (from-scratch shape, adopted in T13).** Each command entry opens a single `*store.Store` and threads it through the leaves (`pool.LoadSnapshots(s)`, the `calib` API, `report.ResolveWeekly(s)`, the statusline render/capture/warm). Leaves are nil-safe (nil store -> fail open). Do NOT reintroduce per-call `store.Open` inside a reader; if a new command needs the store, open it at the entry and pass it down. Remaining tasks (T14 prune) follow this: use the store the command already holds, don't open a second.
+- **Not a literal port.** The plan text below was written before implementation; where the from-scratch Go+SQLite shape diverges (thread the store, kv is the cache tier but a throttle-lock stays a file, typed columns over re-parsed JSON blobs where it pays), take the cleaner shape and record it in `docs/DECISIONS.md` rather than cargo-culting the step text.
 
 ---
 
@@ -586,16 +588,23 @@ git add internal/calib/ internal/statusline/
 git commit -m "feat(calib): calibration/blocks/warming state in kv table"
 ```
 
-### Task 14: Snapshot prune via store; retire the file sweep
+### Task 14: Snapshot prune via store; retire the file sweep  ← NEXT
+
+The last file-glob readers/writers of snapshots live here. Since the write side moved to the DB (T11),
+`PruneCaches`/`staleCaches` now glob only pre-migration leftover files, then go inert -- a `status` run
+already mis-reports leftover `~/.claude` files as "stale snapshots" when `USAGE_CACHE` isn't isolated.
 
 **Files:**
-- Modify: `internal/statusline/command.go` (`PruneCaches` -> `store.PruneSnapshots(now - keepSecs)`; drop the snapshot-file + `.tmp` glob sweep), `internal/status/status.go` (`staleCaches` lists from the store or is removed)
-- Modify: relevant tests
+- Modify: `internal/statusline/command.go` (`PruneCaches` -> `store.PruneSnapshots(now - keepSecs)`; drop the snapshot-file + `.tmp` glob sweep entirely). **Thread the store**: `PruneCaches` runs inside `statusline.Command`, which already holds an open `s` -- pass it in (`PruneCaches(s, now)`), don't open a second (closes the code-reviewer's "opens the DB once" honesty gap).
+- Modify: `internal/status/status.go` (`staleCaches` -> a snapshot-row count older than the keep window via the threaded `s`, or just DELETE it: DB snapshots UPSERT one row per session, they don't accumulate like files, so the "N stale snapshots accumulating -> prune" nudge is largely obsolete -- prefer removing it over reworking).
+- Consider: `status.historyCleanup` still `os.Stat`s the legacy JSONL for a size nudge (a queued follow-up); T14 is the natural place to repoint it to DB size or retire it.
+- The `prune`/uninstall command path must also remove `ccpool.db-wal`/`-shm` if it removes the DB.
+- Modify: relevant tests (the prune test seeds snapshot rows with old/new `captured_at`, asserts the DELETE count).
 
-- [ ] **Step 1: Update prune tests** - snapshot rows older than `CCPOOL_CACHE_KEEP_SECS` deleted, newer kept; count returned.
+- [ ] **Step 1: Update prune tests** - snapshot rows older than `CCPOOL_CACHE_KEEP_SECS` deleted, newer kept; count returned. Seed via `store.SeedSnapshots`.
 - [ ] **Step 2: Run to verify fail** -> FAIL.
-- [ ] **Step 3: Reimplement `PruneCaches`** as a snapshots DELETE; remove the orphan `.tmp` sweep (no tmp files exist now). Ensure the uninstall/prune path also removes `ccpool.db-wal`/`-shm` if it removes the DB.
-- [ ] **Step 4: Run to verify pass** -> PASS.
+- [ ] **Step 3: Reimplement `PruneCaches(s, now)`** as `store.PruneSnapshots`; remove the `.tmp`/glob sweep (no snapshot files exist now). Retire or thread `staleCaches`. Ensure the DB-removal path also drops `-wal`/`-shm`.
+- [ ] **Step 4: Run to verify pass** -> PASS. Drive `go run . prune` against a seeded isolated store and confirm the count.
 - [ ] **Step 5: Gate + commit**
 
 ```bash
@@ -608,48 +617,57 @@ git commit -m "feat(statusline): snapshot prune via store DELETE; file/.tmp swee
 
 ## Phase 5 - Conformance seeder, verification, cleanup
 
-### Task 15: Conformance fixture -> temp DB seeder (tested)
+### Task 15: Conformance fixture -> temp DB seeder (tested)  ← MOSTLY DONE (pulled forward)
 
-**Files:**
-- Create: `internal/store/seed_testing.go` (a `Seed(t, fixtures)` helper that builds a temp DB and INSERTs history/snapshot fixtures in arrival order, matching the importer byte-for-byte)
-- Modify: `internal/*/conformance_test.go` suites that stage history/snapshot fixtures
-- Create: `internal/store/seed_testing_test.go` (tests the seeder itself)
+The seeders were built incrementally as each cutover needed them, so this is now a *verify/consolidate*
+task, not a build. Shipped: `internal/store/seed_testing.go` with `SeedHistoryJSONL(dbPath, jsonl)`
+(T7), `SeedSnapshots(dbPath, [][]byte)` (T12), `SeedKV(dbPath, key, value)` (T13) -- all shipped
+(non-`_test`) so cross-package suites import them; `seed_testing_test.go` tests the history seeder's
+arrival-order tie-break. Every conformance suite (status/check, warn, run, statusline, calib, initcmd)
+now seeds a temp DB instead of writing fixture files.
 
-**Interfaces:**
-- Produces: `func SeedHistory(t testing.TB, rows []HistoryRow) *Store`, `func SeedSnapshots(t testing.TB, payloads map[string][]byte) *Store`. Insert order == slice order == arrival order (load-bearing for the rowid tie-break).
+Note the API DIVERGED from the plan's prediction (`SeedHistory(t, rows) *Store` etc.): the real
+seeders take a `dbPath` and open/close their own store (they run BEFORE the command-under-test opens
+its store, so they can't share a handle), and history seeds from the JSONL fixture string, not typed
+rows. That's fine -- the load-bearing property (insert order == arrival order == rowid tie-break) holds.
 
-- [ ] **Step 1: Write the seeder's own test** - seed 3 tied-timestamp rows in a known order, assert `EnvelopeWeekly` running-max matches the arrival order (proves the seeder preserves the tie-break).
-- [ ] **Step 2: Run to verify fail** -> FAIL.
-- [ ] **Step 3: Implement the seeder**; point the conformance suites at it instead of writing JSON/JSONL fixture files.
-- [ ] **Step 4: Run to verify pass** `unset GOROOT && go test ./... -run Conformance -v` -> PASS with NO golden change.
-- [ ] **Step 5: Gate + commit**
+- [x] History seeder + arrival-order test (T7). Snapshot + kv seeders (T12/T13). Suites rewired.
+- [ ] **Verify/consolidate:** confirm no conformance suite still writes a fixture FILE that a reader no longer reads (grep `usage-cache-snap`, `CCPOOL_CALIB_CACHE`, `.json` fixture writes). Add a `SeedSnapshots` arrival-order unit test if the tie-break isn't already covered by the snapshot readers' tests.
+- [ ] **Gate; commit only if consolidation changed anything.**
 
-```bash
-unset GOROOT && make check
-git add internal/store/seed_testing.go internal/store/seed_testing_test.go internal/*/conformance_test.go
-git commit -m "test(conformance): seed fixtures into a temp DB in arrival order; seeder unit-tested"
-```
+### Task 16: Full golden + behaviour verification
 
-### Task 16: Full golden verification (expect NO change)
+Not "expect zero diffs" anymore -- the migration deliberately changed a couple of outputs (the
+unified-store `store-unreadable` case, the truthful `status` unreadable message). The goal is: the
+suite is green, and every golden that differs from the Ruby-era baseline is *accounted for* (either
+unchanged, or an intentional change with a `docs/DECISIONS.md` entry).
 
-- [ ] **Step 1: Run the whole suite** `unset GOROOT && TZ=UTC go test ./...`. Expected: all green, zero golden diffs.
-- [ ] **Step 2: If any golden differs**, STOP and investigate as a regression (do NOT `CCPOOL_UPDATE_GOLDEN` reflexively). Only re-baseline if the diff is a proven-intentional change and record why in `docs/DECISIONS.md`.
-- [ ] **Step 3: Drive the real commands** `unset GOROOT && go run . status`, `go run . check`, `./ccpool statusline` - confirm output matches the pre-migration behaviour.
+- [ ] **Step 1: Run the whole suite** `unset GOROOT && TZ=UTC go test ./...` -> all green.
+- [ ] **Step 2: Audit the intentional golden changes** since Sprint B start (`git log -p conformance/golden/`): confirm each shift is one we chose (store-unreadable, etc.) and recorded, not a silent drift. An UNEXPLAINED diff is the bug signal -- do NOT `CCPOOL_UPDATE_GOLDEN` reflexively.
+- [ ] **Step 3: Drive the real commands** the way a user does, against a seeded isolated store (`CCPOOL_HOME`): `go run . status`, `go run . check`, `./ccpool statusline`, `go run . run -- echo hi`, and the unreadable-store path (dir-as-DB) -> confirm each reads correctly and fails open/loud as designed.
 - [ ] **Step 4: No code change; no commit** unless an intentional golden update was made.
 
 ### Task 17: Remove now-dead file-storage code
 
-**Files:**
-- Modify/Delete: dead `flock`, tmp+rename snapshot write, glob reconcile, `marshalRow`, 64KB tail scan, snapshot-file path resolvers in `internal/paths` (`SnapshotFor`/`SnapshotGlob`/`SnapshotCache` if no longer referenced), the write-then-truncate prune helper.
+Much was already retired incrementally (flock/tmp-rename/glob reconcile in Phase 3; snapshot file readers
+in T12; `paths.CalibCache`/`BlocksCache` in T13). What LIKELY remains after T14 removes the last snapshot
+file-sweep:
 
-- [ ] **Step 1: Find dead code** `unset GOROOT && staticcheck ./...` + grep for the retired symbols; confirm zero references.
-- [ ] **Step 2: Delete** the unreferenced functions/paths; run `unset GOROOT && go build ./...`.
-- [ ] **Step 3: Gate** `unset GOROOT && make check` -> green (staticcheck must be clean; unused code fails the gate).
+**Files (verify each is actually unreferenced first -- some may already be gone):**
+- `internal/paths`: `SnapshotFor`/`SnapshotGlob`/`SnapshotCache` and the `USAGE_CACHE` env, once T14 drops the last glob. (`SnapshotFor` was already dead as of T12.)
+- `internal/status/conformance_test.go`: the `stageReadout` Ruby-oracle scaffolding is partly cleaned (the returned env slice + `RawSnaps` field were removed in T12); sweep for any remaining dead staging.
+- Any remaining file-era helpers staticcheck flags.
+
+**NOT dead (do not remove):** `paths.WarmMarker` (the warming throttle deliberately stays a file); the `kv`/history/snapshot seeders (test infra); the `diag` logger (see the separate follow-up to *extract* it, not delete it).
+
+- [ ] **Step 1: Find dead code** `unset GOROOT && staticcheck ./...` + grep the retired symbols; confirm zero references (staticcheck already fails the gate on unused unexported code, so most is caught).
+- [ ] **Step 2: Delete** the unreferenced functions/paths + their `paths_test` rows; `unset GOROOT && go build ./...`.
+- [ ] **Step 3: Gate** `unset GOROOT && make check` -> green.
 - [ ] **Step 4: Commit**
 
 ```bash
 git add -A
-git commit -m "refactor: retire flock/tmp-rename/glob file-storage code superseded by the store"
+git commit -m "refactor: retire the last file-storage code superseded by the store"
 ```
 
 ### Task 18: Contended-write regression bench + fail-open fuzz
@@ -669,19 +687,32 @@ git add internal/store/store_bench_test.go internal/store/store_fuzz_test.go
 git commit -m "test(store): contended-write regression bench (0 drops) + fail-open fuzz"
 ```
 
-### Task 19: Update the docs/roadmap
+### Task 19: Update the docs/roadmap + the broken demo (bigger than first scoped)
+
+The migration left the user-facing docs and the demo broadly stale (they still describe the file world),
+and prior tasks deferred all of it here. This is a real chunk of work, not a rubber-stamp.
 
 **Files:**
-- Modify: `docs/ROADMAP.md` (mark Sprint B done), `docs/DECISIONS.md` (record the actual outcome: envelope parity, contention bench numbers, sqlc tweaks, the live sentinel strip, config-stays-a-file)
-- Modify: `AGENTS.md` if any storage invariant wording needs updating (e.g. the flock note)
+- `docs/ROADMAP.md` (mark Sprint B done); `docs/DECISIONS.md` (already has the Sprint B entries as we went -- confirm complete).
+- **Stale docs to scrub** (describe the retired file caches / removed env vars): `README.md` (the `CCPOOL_CALIB_CACHE` data-path row + any `USAGE_CACHE`/`~/.claude` snapshot wording), `docs/CONFIG-AUDIT.md` (drop the `CCPOOL_CALIB_CACHE`/`CCPOOL_BLOCKS_CACHE` rows; fix `USAGE_CACHE`/`CCPOOL_HISTORY` descriptions -- they're DB-backed now), `docs/GO-MIGRATION.md` (the calibration/blocks/history "cache file" shape descriptions).
+- **`demo/setup.sh` is BROKEN** (has been since T12, not a T13 regression): it stages `USAGE_CACHE`/`CCPOOL_HISTORY`/calib FILES that ccpool no longer reads and doesn't isolate `CCPOOL_HOME`/`CCPOOL_DB` (so `make demo` reads the dev's real DB or shows nothing). Rework it to seed an isolated store: set `CCPOOL_HOME`/`CCPOOL_DB` to `.data`, pipe the payload through `ccpool statusline` (writes snapshot+history), then seed the demo history + `kv 'calibration'` via `sqlite3` (or a tiny seed step) so the `$`/burn/runway show.
+- `AGENTS.md`/`README.md`: any storage-invariant wording (flock note, "reads local `~/.claude` data") that a from-scratch reader would find false.
 
-- [ ] **Step 1: Update the docs** with what shipped and why.
-- [ ] **Step 2: Commit** (docs-only; commit-force marker eligible)
+- [ ] **Step 1: Scrub the docs**; verify each surviving env var / path claim by running the command, not from memory.
+- [ ] **Step 2: Fix + run the demo** (`make demo` or the setup script) and confirm it renders the fixed numbers from an isolated store.
+- [ ] **Step 3: Commit** (docs+demo; run the review gate if the demo script has logic).
 
 ```bash
-git add docs/ AGENTS.md
-git commit -m "docs: record Sprint B (SQLite storage) shipped; outcomes + decisions"
+git add docs/ README.md AGENTS.md demo/
+git commit -m "docs: record Sprint B shipped; scrub file-era env/paths; fix the DB-backed demo"
 ```
+
+### Deferred follow-up (post-Sprint-B): extract a shared `diag` logger
+
+`internal/statusline`'s package-private `diag` (capped anomaly log) can't be reached by `calib`, so
+`calib.WriteCache`/`ccusageRaw` swallow `PutKV` write failures with no trace (LOW, pre-existing; a
+persistent write failure -> perpetual recompute + ccusage re-spawn, invisible). Extract `diag` into a
+shared `internal/diag` and have calib log the kv-write failure like `capture` does. Not blocking Sprint B.
 
 ---
 
