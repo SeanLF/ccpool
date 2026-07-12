@@ -20,8 +20,7 @@ type HistoryRow struct {
 	WkReset  *int64
 	Ses      *float64
 	SesReset *int64
-	Tier     string
-	Cost     *float64
+	Cost     *float64 // CC payload cost.total_cost_usd; stored (a CC input) though not read yet
 	Session  *string
 }
 
@@ -195,7 +194,6 @@ func appendParams(r HistoryRow) db.AppendHistoryParams {
 		WkReset:  nullInt64Ptr(r.WkReset),
 		Ses:      nullFloat64Ptr(r.Ses),
 		SesReset: nullInt64Ptr(r.SesReset),
-		Tier:     r.Tier,
 		Cost:     nullFloat64Ptr(r.Cost),
 		Session:  nullStringPtr(r.Session),
 	}
@@ -210,7 +208,6 @@ func historyRowFromDB(r db.History) *HistoryRow {
 		WkReset:  int64PtrFromNull(r.WkReset),
 		Ses:      float64PtrFromNull(r.Ses),
 		SesReset: int64PtrFromNull(r.SesReset),
-		Tier:     r.Tier,
 		Cost:     float64PtrFromNull(r.Cost),
 		Session:  stringPtrFromNull(r.Session),
 	}

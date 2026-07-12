@@ -1,6 +1,6 @@
 -- name: AppendHistory :exec
-INSERT INTO history (t, wk, wk_reset, ses, ses_reset, tier, cost, session)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO history (t, wk, wk_reset, ses, ses_reset, cost, session)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: LastSessionRow :one
 SELECT * FROM history

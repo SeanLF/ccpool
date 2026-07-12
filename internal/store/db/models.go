@@ -15,7 +15,6 @@ type History struct {
 	WkReset  sql.NullInt64
 	Ses      sql.NullFloat64
 	SesReset sql.NullInt64
-	Tier     string
 	Cost     sql.NullFloat64
 	Session  sql.NullString
 }

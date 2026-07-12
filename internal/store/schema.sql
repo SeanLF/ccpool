@@ -5,9 +5,12 @@ CREATE TABLE IF NOT EXISTS history (
   wk_reset  INTEGER,               -- seven_day resets_at (nullable)
   ses       REAL,                  -- five_hour used_percentage (nullable)
   ses_reset INTEGER,               -- five_hour resets_at (nullable)
-  tier      TEXT    NOT NULL,
-  cost      REAL,                  -- nullable
-  session   TEXT                   -- nullable
+  cost      REAL,                  -- CC payload cost.total_cost_usd (nullable); a Claude Code input we
+                                    -- keep even though nothing reads it yet -- it is CC's own number,
+                                    -- not ccusage's. (The Ruby JSONL also carried a tier tag sourced
+                                    -- from the USAGE_TIER env, not from CC; it was never read, so it
+                                    -- is dropped -- config, not a stored input.)
+  session   TEXT                   -- nullable; dedup key
 );
 CREATE INDEX IF NOT EXISTS history_t ON history(t);
 

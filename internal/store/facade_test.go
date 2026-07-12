@@ -25,7 +25,7 @@ func TestEnvelopeWeeklyRunningMax(t *testing.T) {
 	now := int64(1_800_000_000)
 	reset := now + 3*86400
 	for _, wk := range []float64{25, 40, 30} { // arrival-order running max -> 25, 40, 40
-		if err := s.AppendHistory(store.HistoryRow{T: now, Wk: wk, WkReset: &reset, Tier: "max_20x"}); err != nil {
+		if err := s.AppendHistory(store.HistoryRow{T: now, Wk: wk, WkReset: &reset}); err != nil {
 			t.Fatal(err)
 		}
 		now += 60
@@ -55,7 +55,7 @@ func TestEnvelopeFiveHourRunningMax(t *testing.T) {
 	reset := now + 3600
 	for _, v := range []float64{5, 12, 8} { // running max -> 5, 12, 12
 		ses := v
-		if err := s.AppendHistory(store.HistoryRow{T: now, Wk: 1, WkReset: &reset, Ses: &ses, SesReset: &reset, Tier: "max_20x"}); err != nil {
+		if err := s.AppendHistory(store.HistoryRow{T: now, Wk: 1, WkReset: &reset, Ses: &ses, SesReset: &reset}); err != nil {
 			t.Fatal(err)
 		}
 		now += 30
@@ -126,7 +126,7 @@ func TestCaptureAndAppendAtomic(t *testing.T) {
 	reset := int64(1700500000)
 	payload := []byte(`{"x":1,"captured_at":1700000000}`)
 	err := s.CaptureAndAppend("sess", 1700000000, payload,
-		store.HistoryRow{T: 1700000000, Wk: 50, WkReset: &reset, Tier: "max_20x", Session: strptr("sess")})
+		store.HistoryRow{T: 1700000000, Wk: 50, WkReset: &reset, Session: strptr("sess")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,8 +146,8 @@ func TestCaptureAndAppendAtomic(t *testing.T) {
 func TestLastSessionRowTypedAndFiltered(t *testing.T) {
 	s := freshStore(t)
 	r1, r2 := int64(1700500000), int64(1700600000)
-	must(t, s.AppendHistory(store.HistoryRow{T: 100, Wk: 10, WkReset: &r1, Tier: "max_20x", Session: strptr("A")}))
-	must(t, s.AppendHistory(store.HistoryRow{T: 200, Wk: 20, WkReset: &r2, Tier: "max_20x", Session: strptr("B")}))
+	must(t, s.AppendHistory(store.HistoryRow{T: 100, Wk: 10, WkReset: &r1, Session: strptr("A")}))
+	must(t, s.AppendHistory(store.HistoryRow{T: 200, Wk: 20, WkReset: &r2, Session: strptr("B")}))
 
 	last, st := s.LastSessionRow(nil) // overall latest = B
 	if st != store.StateOK || last == nil || last.Session == nil || *last.Session != "B" || last.Wk != 20 {
@@ -181,7 +181,7 @@ func TestPruneHistoryAndSnapshots(t *testing.T) {
 	s := freshStore(t)
 	reset := int64(1700500000)
 	for _, ts := range []int64{100, 200, 300} {
-		must(t, s.AppendHistory(store.HistoryRow{T: ts, Wk: 1, WkReset: &reset, Tier: "max_20x"}))
+		must(t, s.AppendHistory(store.HistoryRow{T: ts, Wk: 1, WkReset: &reset}))
 	}
 	n, err := s.PruneHistory(250) // deletes t < 250 -> rows at 100, 200
 	if err != nil || n != 2 {

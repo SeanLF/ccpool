@@ -43,7 +43,6 @@ func Seed(payload map[string]any, now int64) error {
 		T:       now,
 		Wk:      wk,
 		WkReset: intPtr(sd["resets_at"]),
-		Tier:    tier(),
 		Cost:    costPtr(payload),
 		Session: sessionPtr(payload),
 	}
@@ -126,16 +125,14 @@ func sessionPtr(payload map[string]any) *string {
 	return nil
 }
 
+// costPtr reads the CC payload's cost.total_cost_usd (Claude Code's own session cost, a CC input we
+// store though nothing reads it yet). nil when absent or non-numeric.
 func costPtr(payload map[string]any) *float64 {
 	c, ok := payload["cost"].(map[string]any)
 	if !ok {
 		return nil
 	}
 	return floatPtr(c["total_cost_usd"])
-}
-
-func tier() string {
-	return env.String("USAGE_TIER", "max_20x")
 }
 
 func minInterval() int {
