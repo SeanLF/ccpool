@@ -65,10 +65,19 @@ func payload(t *testing.T, wk string, wkReset int64, ses string, sesReset int64,
 	return m
 }
 
+// mustSeed drives the Prepare-decides / caller-writes flow the statusline capture uses: build the row,
+// and append it when Prepare says to. Keeps the DB-outcome tests exercising dedup/throttle/guard.
 func mustSeed(t *testing.T, p map[string]any, now int64) {
 	t.Helper()
-	if err := Seed(p, now); err != nil {
-		t.Fatalf("Seed: %v", err)
+	s, st := store.Open()
+	if st != store.StateOK || s == nil {
+		t.Fatalf("open = %v", st)
+	}
+	defer s.Close()
+	if row, appendIt := Prepare(s, p, now); appendIt {
+		if err := s.AppendHistory(row); err != nil {
+			t.Fatalf("append: %v", err)
+		}
 	}
 }
 

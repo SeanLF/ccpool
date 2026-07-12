@@ -1,7 +1,7 @@
-// Package history appends the rate-limit history (weekly/5h used% + resets) that calibration and burn
-// projection read. Records go to the SQLite store (internal/store); the append is per-session
-// deduped and 5h-throttled so a per-render statusline does not bloat the log. Best-effort throughout:
-// no history is never fatal, and nothing here panics (it runs on the statusline hot path).
+// Package history builds the rate-limit history rows (weekly/5h used% + resets) that calibration and
+// burn projection read, and decides per-session dedup + 5h throttle so a per-render statusline does
+// not bloat the log. The statusline capture writes the row -- alongside the session snapshot in one
+// store transaction. Best-effort: nothing here panics (it runs on the statusline hot path).
 package history
 
 import (
@@ -22,21 +22,22 @@ const minIntervalDefault = 60
 // below -- a lower bound would needlessly drop legit rows at every 5h reset boundary.
 const maxResetAhead = 30 * 86400
 
-// Seed appends a history row for this render. No-op (returns nil) unless the payload carries a numeric
-// seven_day used_percentage. Dedup + throttle drop redundant rows; the sanity guard drops a row whose
-// reset is absurd. Fail-open: a non-OK store or a read failure skips the write, never crashes.
-func Seed(payload map[string]any, now int64) error {
+// Prepare builds this render's history row and reports whether it should be appended: false when the
+// payload has no numeric seven_day used%, when dedup/throttle drops it, or when the last row can't be
+// read. The caller (statusline capture) has already opened the store and writes the returned row with
+// the snapshot in one transaction. The sanity guard nulls an absurd (far-future) reset per window.
+func Prepare(s *store.Store, payload map[string]any, now int64) (store.HistoryRow, bool) {
 	rl, ok := payload["rate_limits"].(map[string]any)
 	if !ok {
-		return nil
+		return store.HistoryRow{}, false
 	}
 	sd, ok := rl["seven_day"].(map[string]any)
 	if !ok {
-		return nil
+		return store.HistoryRow{}, false
 	}
 	wk, ok := rb.Num(sd["used_percentage"])
 	if !ok {
-		return nil
+		return store.HistoryRow{}, false
 	}
 
 	r := store.HistoryRow{
@@ -63,23 +64,14 @@ func Seed(payload map[string]any, now int64) error {
 		r.SesReset = nil
 	}
 
-	// Fail-open: a non-OK store or unreadable last row skips this render's write, never crashes. The
+	// Fail-open: an unreadable last row skips the append (snapshot-only render), never crashes. The
 	// user-facing signal for a persistently broken/unwritable DB is the loud status/check commands
 	// (Task 10 surfaces StateCorrupt/StateTransient); the statusline hot path stays silent by design.
-	s, st := store.Open()
-	if st != store.StateOK {
-		return nil
-	}
-	defer s.Close()
-
 	last, lst := s.LastSessionRow(r.Session)
 	if lst != store.StateOK {
-		return nil // can't read the last row to dedup -> skip rather than risk a bad append
+		return r, false
 	}
-	if skip(last, r, now) {
-		return nil
-	}
-	return s.AppendHistory(r)
+	return r, !skip(last, r, now)
 }
 
 // skip reports whether dedup/throttle drops this row: if the last row for this session has the same

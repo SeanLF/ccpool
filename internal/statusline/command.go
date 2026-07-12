@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -20,9 +19,10 @@ import (
 	"github.com/SeanLF/ccpool/internal/history"
 	"github.com/SeanLF/ccpool/internal/paths"
 	"github.com/SeanLF/ccpool/internal/rb"
+	"github.com/SeanLF/ccpool/internal/store"
 )
 
-// Command is the `ccpool statusline` entry point: capture the payload snapshot, seed history, kick
+// Command is the `ccpool statusline` entry point: capture the payload snapshot + history row, kick
 // off the (detached) calibration warm-up, then render. FAILS OPEN — a statusline must NEVER break
 // Claude Code, so a top-level recover swallows any panic (the Go analog of the Ruby blanket rescue).
 // now is unix seconds; embed selects the compact render for host-statusline embedding.
@@ -53,13 +53,9 @@ func Command(now int64, embed bool) {
 	}
 
 	// Each best-effort step is isolated (like Ruby's per-method rescue) so the render always prints
-	// once the payload parses; a panic in one can't blank the line.
+	// once the payload parses; a panic in one can't blank the line. capture writes the snapshot and
+	// (when not deduped) the history row in one store transaction.
 	bestEffort("capture", func() { capture(raw, data, now) })
-	bestEffort("seed_history", func() {
-		if err := history.Seed(data, now); err != nil {
-			diag.Warn("history append failed", "err", err)
-		}
-	})
 	bestEffort("warm", func() { warm(now) })
 	if os.Getenv("CCPOOL_PRUNE") == "1" { // opt-in only: deleting files is never silent-by-default
 		bestEffort("prune", func() { PruneCaches(now) })
@@ -94,28 +90,33 @@ func bestEffort(name string, fn func()) {
 	fn()
 }
 
-var sidUnsafe = regexp.MustCompile(`[^\w.-]`)
-
-// capture writes the per-session snapshot atomically (tmp + rename): the raw payload plus
-// captured_at. Only when session_id is a string, mirroring the Ruby guard. Best-effort throughout.
+// capture writes the per-session snapshot (raw payload + captured_at) to the store, and the paired
+// history row in the SAME transaction when history.Prepare says to append (not deduped/throttled) --
+// so a reader never sees a snapshot without its history row. Only when session_id is a string.
+// Fail-open: any non-OK store or write error is swallowed except a genuine append failure, which is
+// logged to the anomaly log (the hot path stays silent otherwise).
 func capture(raw []byte, data map[string]any, now int64) {
 	sid, ok := data["session_id"].(string)
 	if !ok {
 		return
 	}
-	path := paths.SnapshotFor(sidUnsafe.ReplaceAllString(sid, ""))
-
 	body, ok := spliceCapturedAt(raw, now)
 	if !ok {
 		return
 	}
-	tmp := path + "." + strconv.Itoa(os.Getpid()) + ".tmp"
-	if os.WriteFile(tmp, body, 0o644) != nil {
+	s, st := store.Open()
+	if st != store.StateOK {
+		return // fail-open: no capture this render
+	}
+	defer s.Close()
+
+	if row, appendRow := history.Prepare(s, data, now); appendRow {
+		if err := s.CaptureAndAppend(sid, now, body, row); err != nil {
+			diag.Warn("capture+append failed", "err", err)
+		}
 		return
 	}
-	if os.Rename(tmp, path) != nil {
-		os.Remove(tmp)
-	}
+	_ = s.PutSnapshot(sid, now, body) // snapshot-only render (no new history row)
 }
 
 // spliceCapturedAt compacts the payload JSON and appends "captured_at":<now> as the last key,
