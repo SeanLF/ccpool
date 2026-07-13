@@ -1,0 +1,36 @@
+# Dependency-health policy for still_active (https://github.com/SeanLF/still_active).
+# CI (see .github/workflows/still-active.yml) gates on vulnerabilities only; the entries below accept
+# MAINTENANCE signals -- release freshness (SA002) and libyear drift (SA004) -- on transitive
+# dependencies we don't select and can't independently bump. govulncheck is clean, so these are
+# freshness/drift, not CVEs.
+#
+# Deliberately NOT suppressed:
+#   - vulnerabilities: they require an explicit advisory id, so a real CVE on any of these still fails.
+#   - the low-OpenSSF-Scorecard NOTES (SA005): informational, left visible on the Security tab.
+# Entries carry an `expires:` so the acceptance re-surfaces for review instead of rotting silently
+# (a good prompt to revisit whether termenv is still worth its transitive subtree -- see DECISIONS.md).
+
+ignore:
+  # transitive via modernc.org/sqlite (the store; upstream owns its dependency graph)
+  - gem: go/github.com/dustin/go-humanize
+    signal: activity
+    reason: "transitive via modernc.org/sqlite; stable/feature-complete (no recent release != abandoned), not ours to bump"
+    expires: 2027-07-13
+  - gem: go/github.com/remyoudompheng/bigfft
+    signal: activity
+    reason: "transitive via modernc.org/sqlite; stable numeric lib, upstream-pinned"
+    expires: 2027-07-13
+
+  # transitive via github.com/muesli/termenv (statusline colour; kept for now, drop deferred)
+  - gem: go/github.com/aymanbagabas/go-osc52/v2
+    signal: activity
+    reason: "transitive via muesli/termenv; small stable OSC52 lib, version is termenv's to choose"
+    expires: 2027-07-13
+  - gem: go/github.com/mattn/go-isatty
+    signal: libyear
+    reason: "transitive via muesli/termenv; version is termenv's to choose, not independently bumpable"
+    expires: 2027-07-13
+  - gem: go/github.com/lucasb-eyer/go-colorful
+    signal: libyear
+    reason: "transitive via muesli/termenv; version is termenv's to choose, not independently bumpable"
+    expires: 2027-07-13

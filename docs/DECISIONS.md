@@ -502,3 +502,15 @@ Then a config-file feature emerged from a conversation about how users actually 
   would have failed to build. Fixed with a repo-level `!internal/env/` negation; main-tip self-heals
   on merge (though the A2 commit `268e613` is individually un-buildable — a `git bisect` hazard on an
   unpushed repo, low-stakes).
+- **Dependency-health signals: accept the transitive maintenance ones; keep termenv for now (2026-07-13).**
+  still_active (SBOM-fed, informational-only in CI) flags 10 maintenance signals on the shipped binary —
+  none are ccpool's code, none are CVEs (govulncheck is clean). They collapse to two transitive subtrees:
+  `modernc.org/sqlite` (go-humanize, bigfft) and `muesli/termenv` (uniseg, go-colorful, go-osc52,
+  go-isatty). termenv is used in ONE file for essentially one colour's tier-downgrade, so dropping it
+  (hand-roll a tiny colour layer + precompute the teal bar's tiers) would kill 8/10 signals and honour
+  the near-stdlib invariant — a clean, bounded, conformance-covered follow-up, but **not worth doing right
+  now, so deferred.** The warning-severity staleness/libyear signals we can't act on are accepted in
+  `.still_active.yml` (signal-scoped, so a real CVE on the same dep still fails; `expires: 2027-07-13` so
+  the accept re-surfaces for review); the note-severity OpenSSF-Scorecard signals are left visible as
+  informational. Bumped the still_active pin rc3 → rc4 for ecosystem-neutral SARIF (the Go findings were
+  rendering with Ruby wording).
