@@ -35,17 +35,31 @@ checksum:
   name_template: checksums.txt
 
 changelog:
-  # Generate release notes from commit history; drop noise. Conventional-commit friendly.
+  # Release notes from commit history, conventional-commit aware. The scope-tolerant "(\(.+\))?"
+  # in each regex is load-bearing: a bare "^docs:" never matches a scoped "docs(readme):", so
+  # every doc/chore/ci commit was leaking into the notes, and their @latest / @20 tokens rendered
+  # as phantom "contributors" on the release. Match the scope too and the noise (and the phantoms)
+  # disappear.
   use: github
   sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*feat(\(.+\))?:'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*fix(\(.+\))?:'
+      order: 1
+    - title: Other changes
+      order: 999
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - "^ci:"
-      - Merge pull request
-      - Merge branch
+      - '^docs(\(.+\))?:'
+      - '^test(\(.+\))?:'
+      - '^chore(\(.+\))?:'
+      - '^ci(\(.+\))?:'
+      - '^style(\(.+\))?:'
+      - "Merge pull request"
+      - "Merge branch"
 
 homebrew_casks:
   - name: ccpool
