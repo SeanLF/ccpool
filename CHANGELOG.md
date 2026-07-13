@@ -9,6 +9,15 @@ behaviour doesn't.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-13
+
+### Fixed
+
+- Bare `ccpool` (no arguments) panicked with a slice-bounds error instead of defaulting to `status`:
+  `dispatch` evaluated `args[1:]` before length-checking the argv. Fixed at the source; a CLI script
+  test now covers the no-argument invocation (the entrypoint the golden suites, which call into each
+  command directly, don't exercise).
+
 ## [0.1.0] - 2026-07-13
 
 First public release: a single static Go binary that turns the account-global `rate_limits` % into

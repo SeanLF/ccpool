@@ -54,7 +54,9 @@ func dispatch(args []string) int {
 	}
 
 	// `ccpool <cmd> --help` / `-h` prints that command's detailed help (hand-rolled, no cobra).
-	if wantsHelp(args[1:]) {
+	// Guard the slice: bare `ccpool` (no args) has no flags to check, and args[1:] on an empty argv
+	// panics (slice bounds [1:0]) -- the default-to-status path must not crash.
+	if len(args) > 0 && wantsHelp(args[1:]) {
 		if h, ok := commandHelp[cmd]; ok {
 			fmt.Println(h)
 			return 0

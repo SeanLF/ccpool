@@ -7,6 +7,11 @@ env CCPOOL_STATUSLINE_LOG=$WORK/statusline.log
 exec ccpool status
 stdout 'no data yet'
 
+# bare `ccpool` (no args) defaults to status -- must NOT panic on an empty argv. Regression: v0.1.0
+# crashed here (slice bounds out of range [1:0]) because dispatch sliced args[1:] before length-checking.
+exec ccpool
+stdout 'no data yet'
+
 # check with no snapshots: a non-zero exit, with the warmup message routed to STDERR (the message
 # identifies the no-data path; testscript's ! exec only pins the exit as non-zero)
 ! exec ccpool check
