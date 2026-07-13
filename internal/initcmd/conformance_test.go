@@ -54,7 +54,14 @@ func TestInitConformance(t *testing.T) {
 			for k, v := range fx.Env {
 				t.Setenv(k, v)
 			}
+			// Resolve the temp dir to its real path up front. macOS temp dirs live under a
+			// symlinked /var (-> /private/var); leaving that in place makes init's symlink detection
+			// fire for *every* case and leaks a "via symlink" line that Linux CI never produces.
+			// Deliberate symlink fixtures still create their own symlink below, so they're unaffected.
 			dir := t.TempDir()
+			if real, err := filepath.EvalSymlinks(dir); err == nil {
+				dir = real
+			}
 			settingsPath := filepath.Join(dir, "settings.json")
 			t.Setenv("CCPOOL_SETTINGS", settingsPath)
 			// Isolate the store to an empty temp home so the statusline preview finds no snapshot and
@@ -73,7 +80,7 @@ func TestInitConformance(t *testing.T) {
 			goSym, goExists, goBody := inspect(settingsPath)
 
 			golden.Assert(t, filepath.Join(root, "conformance", "golden", "initcmd", fx.Name+".init.txt"),
-				normInitPaths(initEnvelope(goOut, goCode, goSym, goExists, goBody), dir))
+				normInitPaths(initEnvelope(goOut, goCode, goSym, goExists, goBody), dir, launcherOverride))
 		})
 	}
 }
@@ -291,12 +298,15 @@ func bit(b bool) string {
 	return "0"
 }
 
-// normInitPaths tokenizes the per-run temp settings dir (in both its /var and macOS-resolved
-// /private/var forms) so the init golden is reproducible: the volatile dir is the only
-// machine-specific content in init's stdout ("wiring plan for <path>", "real target: <path>"). The
-// same substitution runs on both sides, so a diff in any real content still surfaces. The resolved
-// form (a prefix superset of dir) must be replaced first, else the plain-dir pass mangles it.
-func normInitPaths(b []byte, dir string) []byte {
+// normInitPaths tokenizes the two machine-specific strings in init's stdout so the golden is
+// portable: the launcher path (<repo>/bin/ccpool, absolute and dev-specific) becomes <CCPOOL>, and
+// the per-run temp settings dir ("wiring plan for <path>", "real target: <path>") becomes <DIR>.
+// The same substitution runs on both sides, so a diff in any real content still surfaces. The
+// resolved dir form (a prefix superset of dir) is replaced first, else the plain-dir pass mangles it.
+func normInitPaths(b []byte, dir, launcher string) []byte {
+	if launcher != "" {
+		b = bytes.ReplaceAll(b, []byte(launcher), []byte("<CCPOOL>"))
+	}
 	if real, err := filepath.EvalSymlinks(dir); err == nil && real != dir {
 		b = bytes.ReplaceAll(b, []byte(real), []byte("<DIR>"))
 	}
