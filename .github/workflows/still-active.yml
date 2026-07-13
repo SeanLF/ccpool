@@ -1,0 +1,65 @@
+name: Dependency health
+
+# Audits the shipped binary's dependency graph for maintenance signals (archived repos, release
+# freshness, OpenSSF Scorecard, libyear drift) and vulnerabilities via still_active. still_active
+# natively audits a Gemfile; ccpool is Go with none, so it audits a CycloneDX SBOM instead. We
+# build the binary and SBOM *that* (not `dir:.`) so the report reflects exactly what we ship, not
+# the test/tool deps (gofumpt, govulncheck, rapid) that never make it into a release: `dir:.`
+# surfaced ~165 components, the binary ~17.
+# Gating is vulnerabilities-only: a shipped CVE is worth blocking on; maintenance signals
+# (stale/legacy/archived) are almost all upstream transitive churn we don't control, so they stay
+# informational in the Security tab rather than pinning CI red. Complements go.yml's govulncheck
+# (reachable CVEs) and codeql (our own code).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 8 * *" # monthly, matching codeql
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write # upload SARIF to the Security tab
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # SBOM the built artifact, not the source tree: only what ships is in the supply chain we
+      # care about. A Go binary embeds its module graph (go version -m), which Syft reads.
+      - name: Build the binary
+        run: go build -o ccpool .
+
+      - name: Generate CycloneDX SBOM from the binary (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          file: ccpool
+          format: cyclonedx-json
+          output-file: sbom.json
+
+      # still_active is a Ruby gem, so it needs a Ruby to install into even when auditing Go.
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - uses: SeanLF/still_active-action@v0.3.0
+        with:
+          version: "3.0.0.rc3" # rc3 is the first to honour --sarif in --sbom mode
+          extra-args: "--sbom=sbom.json" # audit the SBOM, not a (nonexistent) Gemfile
+          fail-if-vulnerable: high # block on real security; leave maintenance signals informational
+          bundler-audit: "false" # ruby-advisory-db is Ruby-only; Go vulns come via deps.dev + OSV
+          github-token: ${{ github.token }}
+          sarif: still_active.sarif.json
+
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: still_active.sarif.json
