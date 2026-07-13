@@ -18,7 +18,6 @@ func Home() string { return resolve("CCPOOL_HOME", "~/.ccpool") }
 // DB is the SQLite database path (CCPOOL_DB || $Home/ccpool.db).
 func DB() string { return resolve("CCPOOL_DB", filepath.Join(Home(), "ccpool.db")) }
 
-
 // History is the rate-limit history log (CCPOOL_HISTORY || $Home/rate-limit-history.jsonl).
 func History() string {
 	return resolve("CCPOOL_HISTORY", filepath.Join(Home(), "rate-limit-history.jsonl"))

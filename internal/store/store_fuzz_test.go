@@ -15,9 +15,9 @@ import (
 func FuzzOpenGarbageDB(f *testing.F) {
 	seeds := [][]byte{
 		[]byte("this is not a sqlite file"),
-		[]byte("SQLite format 3\x00"),      // valid magic, truncated header
+		[]byte("SQLite format 3\x00"),        // valid magic, truncated header
 		{0x53, 0x51, 0x4c, 0x69, 0x74, 0x65}, // partial magic
-		{},                                  // empty file
+		{},                                   // empty file
 		[]byte("\x00\x00\x00\x00"),
 	}
 	for _, s := range seeds {
