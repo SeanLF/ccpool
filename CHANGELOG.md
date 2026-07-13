@@ -31,8 +31,9 @@ pool wisely. Complementary to `ccusage` and native `/status`, not a replacement.
 - `ccpool statusline` (+ `--embed`) — renders the pool gauge for a statusline, composable inside a host
   statusline as a ccstatusline widget.
 - `ccpool init` — one-command onboarding that wires the statusline + `warn` hooks into
-  `~/.claude/settings.json`: dry-run diff by default, `--apply` merges after a timestamped backup;
-  idempotent, never-clobber, symlink-aware.
+  `~/.claude/settings.json` and installs the bundled `checking-usage` skill into `~/.claude/skills/`:
+  dry-run diff by default, `--apply` merges after a timestamped backup; idempotent, never-clobber,
+  symlink-aware.
 - Fails open across the hot path (hooks + statusline never break Claude Code) and delegates every
   dollar to `ccusage`, degrading to `%`-only when it's absent.
 

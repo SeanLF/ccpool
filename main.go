@@ -5,6 +5,7 @@
 package main
 
 import (
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +31,12 @@ var (
 	commit  = "none"
 	date    = "unknown"
 )
+
+// checkingUsageSkill is the bundled Claude Code skill `ccpool init` installs into ~/.claude/skills/.
+// Embedded from the canonical source so the binary carries it (brew/go-install ship only the binary).
+//
+//go:embed skills/checking-usage/SKILL.md
+var checkingUsageSkill []byte
 
 func main() {
 	os.Exit(dispatch(os.Args[1:]))
@@ -88,6 +95,7 @@ func dispatch(args []string) int {
 		printLines(os.Stdout, rhythm.Report(now))
 		return 0
 	case "init":
+		initcmd.SetSkill(checkingUsageSkill)
 		if err := initcmd.Run(args[1:], now); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1

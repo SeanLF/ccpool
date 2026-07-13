@@ -31,7 +31,7 @@ type initFixture struct {
 }
 
 // initEnvKeys are cleared before each case so fixtures don't leak env into one another.
-var initEnvKeys = []string{"CCPOOL_CCUSAGE_CMD", "CCPOOL_SETTINGS", "CCPOOL_HOME", "CCPOOL_DB"}
+var initEnvKeys = []string{"CCPOOL_CCUSAGE_CMD", "CCPOOL_SETTINGS", "CCPOOL_HOME", "CCPOOL_DB", "CCPOOL_SKILLS_DIR"}
 
 func TestInitConformance(t *testing.T) {
 	// Pin the zone (the preview's fmt_dur/pace math is local-zone sensitive; goldens captured under UTC).
@@ -69,6 +69,10 @@ func TestInitConformance(t *testing.T) {
 			// real ~/.ccpool. The DB path stays absent -> store.Open creates an empty DB -> no snapshot.
 			t.Setenv("CCPOOL_HOME", dir)
 			t.Setenv("CCPOOL_DB", filepath.Join(dir, "ccpool.db"))
+			// Guard: point the skills dir at the temp home too, so a leaked skillContent can never
+			// install into the dev's real ~/.claude/skills. (skillContent is empty here anyway, so no
+			// skill line renders and the goldens are unaffected.)
+			t.Setenv("CCPOOL_SKILLS_DIR", filepath.Join(dir, "skills"))
 
 			now, err := fx.Now.Int64()
 			if err != nil {

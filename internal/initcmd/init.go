@@ -48,6 +48,27 @@ func launcher() string {
 func statuslineCmd() string { return launcher() + " statusline" }
 func warnCmd() string       { return launcher() + " warn" }
 
+// skillName is the bundled skill init installs under the skills dir.
+const skillName = "checking-usage"
+
+// skillContent is the embedded skill body, injected from main's //go:embed (tests pin it directly).
+// Empty means nothing is bundled, so the install is skipped.
+var skillContent []byte
+
+// SetSkill injects the embedded skill content (called once from main before dispatch).
+func SetSkill(content []byte) { skillContent = content }
+
+// skillDir resolves CCPOOL_SKILLS_DIR (a test / escape-hatch override, mirroring CCPOOL_SETTINGS) or
+// the ~/.claude/skills default. skillFile is the concrete SKILL.md path init writes.
+func skillDir() string {
+	if v, ok := os.LookupEnv("CCPOOL_SKILLS_DIR"); ok && v != "" {
+		return expandPath(v)
+	}
+	return expandPath("~/.claude/skills")
+}
+
+func skillFile() string { return filepath.Join(skillDir(), skillName, "SKILL.md") }
+
 // settingsPath resolves CCPOOL_SETTINGS (or the ~/.claude default) the way Ruby File.expand_path
 // does: expand a leading ~, make relative paths absolute, and Clean — but do NOT resolve symlinks
 // (realTarget does that). Resolved locally rather than in internal/paths, which stays untouched.
@@ -166,9 +187,10 @@ type plan struct {
 	conflict           bool
 	hooksPresent       map[string]bool // event -> already wired
 	addHooks           []string        // missing events, in warnEvents order
+	skillAbsent        bool            // a bundled skill isn't installed yet (so init will install it)
 }
 
-func makePlan(settings *omap, replaceStatusline bool) plan {
+func makePlan(settings *omap, replaceStatusline bool, skillAbsent bool) plan {
 	sl := statuslineState(settings)
 	present := make(map[string]bool, len(warnEvents))
 	var addHooks []string
@@ -187,6 +209,7 @@ func makePlan(settings *omap, replaceStatusline bool) plan {
 		conflict:      sl == slForeign && !replaceStatusline,
 		hooksPresent:  present,
 		addHooks:      addHooks,
+		skillAbsent:   skillAbsent,
 	}
 	if sl == slForeign {
 		pl.statuslineExisting, _ = dig(settings, "statusLine", "command").(string)
@@ -194,7 +217,10 @@ func makePlan(settings *omap, replaceStatusline bool) plan {
 	return pl
 }
 
-func (pl plan) changes() bool { return pl.addStatusline || len(pl.addHooks) > 0 }
+// settingsChanges reports whether the plan mutates settings.json (vs only installing the skill).
+func (pl plan) settingsChanges() bool { return pl.addStatusline || len(pl.addHooks) > 0 }
+
+func (pl plan) changes() bool { return pl.settingsChanges() || pl.skillAbsent }
 
 // applyPlan mutates settings per the plan: adds ccpool's statusLine and/or appends the warn hook to
 // each missing event, preserving every other key and pre-existing hook (never-clobber).
@@ -291,17 +317,37 @@ func backupSettings(path string, now int64) (string, error) {
 	return bak, nil
 }
 
-// writeSettings atomically writes (tmp in the same dir + rename) so a crash can't leave a half file.
-// path is the resolved real target, so a symlink pointing at it is preserved.
-func writeSettings(path string, settings *omap) error {
+// atomicWrite writes data via a same-dir tmp file + rename so a crash can't leave a half file. The
+// parent dir is created if missing; a symlink pointing at path survives (we write the resolved target).
+func atomicWrite(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
-	if err := os.WriteFile(tmp, []byte(prettyGenerate(settings)+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// writeSettings atomically writes the settings.json. path is the resolved real target, so a symlink
+// pointing at it is preserved.
+func writeSettings(path string, settings *omap) error {
+	return atomicWrite(path, []byte(prettyGenerate(settings)+"\n"))
+}
+
+// installSkill writes the bundled skill into the skills dir, never clobbering a copy that's already
+// there (its wording is the user's to edit) and skipping when nothing is embedded. Best-effort: the
+// caller warns on error rather than failing the core wiring.
+func installSkill() error {
+	if len(skillContent) == 0 {
+		return nil
+	}
+	path := skillFile()
+	if _, err := os.Stat(path); err == nil {
+		return nil // already installed -> never clobber
+	}
+	return atomicWrite(path, skillContent)
 }
 
 func which(cmd string) bool {
@@ -382,6 +428,12 @@ func renderPlan(pl plan) string {
 			lines = append(lines, mark("+", e+" hook", warnCmd(), "warn the agent mid-turn on pace / 5h / context"))
 		}
 	}
+	if pl.skillAbsent {
+		lines = append(lines, mark("+", "skill "+skillName, skillFile(),
+			"lets an agent check your pool budget via `ccpool check`"))
+	} else if len(skillContent) > 0 {
+		lines = append(lines, mark("=", "skill "+skillName, "already installed", ""))
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -459,7 +511,16 @@ func Run(args []string, now int64) error {
 		return fmt.Errorf("ccpool init: unmergeable hooks in %s", settings)
 	}
 
-	pl := makePlan(existing, replaceSL)
+	// Surface the bundled skill as a pending install only when one is embedded (production always
+	// injects it; empty in a bare test) and it isn't already on disk. Short-circuiting on empty
+	// content also avoids stat-ing the real skills dir in tests that don't pin it.
+	skillAbsent := false
+	if len(skillContent) > 0 {
+		_, err := os.Stat(skillFile())
+		skillAbsent = err != nil
+	}
+
+	pl := makePlan(existing, replaceSL, skillAbsent)
 	fmt.Println(renderHeader(settings, target))
 	fmt.Println(renderPlan(pl))
 	fmt.Println()
@@ -491,25 +552,39 @@ func Run(args []string, now int64) error {
 		return nil
 	}
 
-	backup, err := backupSettings(target, now)
-	if err != nil {
-		return err
+	// Only back up + rewrite settings.json when it actually changes; a run that merely installs the
+	// skill leaves an already-wired settings.json (and its backups) untouched.
+	var backup string
+	if pl.settingsChanges() {
+		var err error
+		backup, err = backupSettings(target, now)
+		if err != nil {
+			return err
+		}
+		applyPlan(existing, pl)
+		if err := writeSettings(target, existing); err != nil {
+			return err
+		}
 	}
-	applyPlan(existing, pl)
-	if err := writeSettings(target, existing); err != nil {
-		return err
+	if err := installSkill(); err != nil {
+		fmt.Fprintf(os.Stderr, "ccpool init: couldn't install the %s skill: %v\n", skillName, err)
 	}
 
 	fmt.Println()
-	if backup != "" {
+	switch {
+	case !pl.settingsChanges():
+		fmt.Println("You're set up -- installed the " + skillName + " skill (settings.json already wired).")
+	case backup != "":
 		fmt.Println("You're set up. Backup: " + backup)
-	} else {
+	default:
 		fmt.Println("You're set up. (no prior settings to back up)")
 	}
-	if pl.composeHost {
-		fmt.Println("warn hooks wired. Add the ccstatusline widget above and ccpool renders inside your line.")
-	} else {
-		fmt.Println("ccpool is now wired -- open Claude Code and it starts capturing your pool usage.")
+	if pl.settingsChanges() {
+		if pl.composeHost {
+			fmt.Println("warn hooks wired. Add the ccstatusline widget above and ccpool renders inside your line.")
+		} else {
+			fmt.Println("ccpool is now wired -- open Claude Code and it starts capturing your pool usage.")
+		}
 	}
 	preview(now)
 	return nil

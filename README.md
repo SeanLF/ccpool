@@ -41,6 +41,11 @@ Code as normal; the statusline self-populates ccpool's local store on every rend
 later, remove the `statusLine` and `hooks` entries `init` added (or set `"enabled": false`, below, to
 mute it without touching `settings.json`).
 
+`init` also installs a small **bundled skill**, `checking-usage`, into `~/.claude/skills/`: it teaches
+an agent to check your remaining pool budget via `ccpool check` and read the keep-going/stop verdict
+(handy in long or autonomous loops). It's shown in the dry-run diff, **never-clobbered** (edit the
+wording freely; re-running `init` won't touch it), and removable with `rm -rf ~/.claude/skills/checking-usage`.
+
 ## What each command does
 
 `ccpool status` fuses the account-global `rate_limits` % with a ccusage-calibrated `$/1%` into a
