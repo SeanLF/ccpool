@@ -25,6 +25,26 @@ builds:
     # mod_timestamp keeps builds reproducible (binary mtime = commit time, not build time).
     mod_timestamp: "{{ .CommitTimestamp }}"
 
+# Sign + notarize the macOS binaries with the Developer ID cert so Gatekeeper accepts them cleanly,
+# without the quarantine-strip hack (Homebrew 5.0.0 is deprecating that bypass; macOS 15 dropped the
+# Control-click override). Cross-platform (quill under the hood), so it runs on the Linux release
+# runner. Self-gates on the secret: absent locally / on forks -> skipped, binaries stay ad-hoc signed
+# (still runnable on Apple Silicon, just not notarized). Bare CLI binaries can't be stapled, so the
+# ticket is verified online on first run; that's fine for a notarized binary.
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids: [ccpool]
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}" # base64 of the Developer ID Application .p12
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}" # base64 of the App Store Connect API .p8
+        wait: true
+        timeout: 20m
+
 archives:
   - id: ccpool
     formats: [tar.gz]
@@ -61,11 +81,15 @@ changelog:
       - "Merge pull request"
       - "Merge branch"
 
+# Two channels in one tap. The binaries are notarized (see `notarize:` above), so neither cask needs
+# the old quarantine-strip hook: Gatekeeper accepts them on first run. Installing both conflicts
+# (both symlink a `ccpool` binary) -- pick one channel, as usual.
 homebrew_casks:
+  # Stable channel: `brew install SeanLF/tap/ccpool` -- stable tags only.
   - name: ccpool
-    # Don't push the cask for prerelease/snapshot tags: `prerelease: auto` flags the GitHub
-    # Release, but that flag does NOT gate the cask, so without this an rc tag would land in the
-    # stable tap and `brew upgrade` would serve it as if it were stable.
+    # Don't push the cask for prerelease/snapshot tags: `prerelease: auto` flags the GitHub Release,
+    # but that flag does NOT gate the cask, so without this an rc tag would land in the stable tap
+    # and `brew upgrade` would serve it as if it were stable.
     skip_upload: "auto"
     binaries: [ccpool]
     homepage: "https://github.com/SeanLF/ccpool"
@@ -77,14 +101,19 @@ homebrew_casks:
       branch: main
       # A PAT with repo scope on the tap; the default GITHUB_TOKEN can't push cross-repo.
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    # Strip the Gatekeeper quarantine xattr: the binary is unsigned, so without this macOS
-    # refuses to run it. (Revisit with proper notarization if we ever sign releases.)
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ccpool"]
-          end
+  # Bleeding-edge channel: `brew install SeanLF/tap/ccpool-beta` -- every tag, rc AND stable, so
+  # dogfooders/friends always get the newest build and are never stranded on an old rc.
+  - name: ccpool-beta
+    skip_upload: false
+    binaries: [ccpool]
+    homepage: "https://github.com/SeanLF/ccpool"
+    description: "Get the most out of a fixed Claude subscription pool (bleeding-edge channel)"
+    license: MIT
+    repository:
+      owner: SeanLF
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
 
 release:
   # Draft off; GoReleaser publishes the Release directly when the tag is pushed.

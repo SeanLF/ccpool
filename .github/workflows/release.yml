@@ -1,11 +1,17 @@
 name: Release
 
-# Tag-push -> GoReleaser cross-compiles, uploads a GitHub Release (binaries + checksums), and
-# publishes the Homebrew cask to SeanLF/homebrew-tap. See .goreleaser.yaml and docs/standards/go.md.
+# Tag-push -> GoReleaser cross-compiles, signs + notarizes the macOS binaries, uploads a GitHub
+# Release (binaries + checksums), and publishes the Homebrew casks to SeanLF/homebrew-tap.
+# See .goreleaser.yaml and docs/standards/go.md.
 #
-# One-time setup before the first release:
-#   1. Create the public repo SeanLF/homebrew-tap.
-#   2. Create a PAT with `repo` scope on that tap and add it here as the HOMEBREW_TAP_TOKEN secret.
+# Required repo secrets before tagging (a missing one fails the release, by design -- fail loud):
+#   HOMEBREW_TAP_TOKEN     fine-grained PAT, Contents:read/write on SeanLF/homebrew-tap (cross-repo push)
+#   MACOS_SIGN_P12         base64 of the Developer ID Application .p12   (base64 -i cert.p12 | pbcopy)
+#   MACOS_SIGN_PASSWORD    the .p12 export password
+#   MACOS_NOTARY_ISSUER_ID App Store Connect API issuer id
+#   MACOS_NOTARY_KEY_ID    App Store Connect API key id
+#   MACOS_NOTARY_KEY       base64 of the App Store Connect API .p8       (base64 -i key.p8 | pbcopy)
+# The macOS cert/key are reusable across projects (they're account/team-scoped) -- same ones as steer.
 # Then: `git tag vX.Y.Z && git push --tags`.
 on:
   push:
@@ -28,7 +34,12 @@ jobs:
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
-          args: release --clean --skip=homebrew   # beta ships binaries only; add the tap + HOMEBREW_TAP_TOKEN, then drop this flag
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
