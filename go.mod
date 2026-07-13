@@ -10,7 +10,7 @@ tool (
 
 require (
 	github.com/muesli/termenv v0.16.0
-	github.com/rogpeppe/go-internal v1.14.1
+	github.com/rogpeppe/go-internal v1.15.0
 	modernc.org/sqlite v1.53.0
 	pgregory.net/rapid v1.3.0
 )
