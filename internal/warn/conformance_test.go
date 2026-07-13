@@ -13,8 +13,9 @@ import (
 	"github.com/SeanLF/ccpool/internal/store"
 )
 
-// warn's emitted text and PostToolUse hook JSON must be byte-identical to Ruby Warn.run. For each
-// fixture we stage the same snapshots + throttle markers on both sides and diff the output.
+// warn's emitted text and PostToolUse hook JSON must stay byte-identical to the committed goldens
+// (conformance/golden/, Go-defined). For each fixture we stage the same snapshots + throttle markers
+// and diff the output against its golden.
 
 type warnFixture struct {
 	Name    string                 `json:"name"`

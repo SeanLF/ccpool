@@ -4,30 +4,37 @@ All notable changes to ccpool are documented here. Format: [Keep a Changelog][ka
 to follow [Semantic Versioning][semver] once it reaches 1.0 (majors reserved for output-contract /
 exit-code breaks).
 
-Pre-1.0: the API and output are still settling, and **the implementation migrates from Ruby to Go
-before 1.0** (see `docs/RUST-REIMPL.md`) — expect the internals to change even where behaviour
-doesn't.
+Pre-1.0: the API and output are still settling — expect the internals to change even where
+behaviour doesn't.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-13
+
+First public release: a single static Go binary that turns the account-global `rate_limits` % into
+a dollar value for your weekly pool plus a pace verdict, and helps unattended sessions spend the
+pool wisely. Complementary to `ccusage` and native `/status`, not a replacement.
+
 ### Added
 
-- `ccpool init` — one-command onboarding that wires the statusLine + `warn` hooks into
-  `~/.claude/settings.json`. Dry-run diff by default; `--apply` merges after a timestamped backup.
-  Idempotent, never-clobber, symlink-aware, aborts rather than corrupting a dangling symlink or an
-  unparseable settings file.
-- `ccpool statusline --embed` — compact `pool % · $-left · pace` segment for embedding in a host
-  statusline (verified as a ccstatusline custom-command widget). `init` detects a ccstatusline host
-  and prints the widget recipe instead of replacing it.
-- Background, throttled, fail-open calibration warm-up on the statusline path, so the `$` value
-  self-populates even for a statusline-only / embedded user.
-
-### Changed
-
-- Demoted 10 never-user-tuned internal `ENV` knobs (`USAGE_BURN_*`, `USAGE_SES_*`,
-  `USAGE_CACHE_*_SECS`, `CCPOOL_BLOCKS_TTL`) to plain constants — no behaviour change.
-- Hardened the calibration cache to self-heal on corruption and to surface ccusage schema-drift on
-  the background path.
+- `ccpool status` — fuses the account-global `rate_limits` % with a ccusage-calibrated `$/1%` into a
+  dollar value for your weekly pool plus a pace verdict.
+- `ccpool check` — time, budget, and a keep-going/stop verdict for long or autonomous loops, with a
+  working-hours runway (time-to-exhaustion measured per active hour).
+- `ccpool run -- <cmd>` — downshifts subagent model/effort (`CLAUDE_CODE_SUBAGENT_MODEL` /
+  `CLAUDE_CODE_EFFORT_LEVEL`) when you're burning ahead of pace, so unattended loops conserve the pool.
+- `ccpool review [days]` — retrospective that flags expensive-model turns spent on trivial work.
+- `ccpool warn` — Claude Code hook (`UserPromptSubmit` / `PostToolUse`) warning the agent mid-turn when
+  over pace, near the 5h cap, or near context auto-compaction.
+- `ccpool rhythm` — reads recent transcripts to gauge day/night rhythm strength and suggest
+  `CCPOOL_WAKE_HOURS` / `CCPOOL_WORK_DAYS`; a suggester, never an auto-applier.
+- `ccpool statusline` (+ `--embed`) — renders the pool gauge for a statusline, composable inside a host
+  statusline as a ccstatusline widget.
+- `ccpool init` — one-command onboarding that wires the statusline + `warn` hooks into
+  `~/.claude/settings.json`: dry-run diff by default, `--apply` merges after a timestamped backup;
+  idempotent, never-clobber, symlink-aware.
+- Fails open across the hot path (hooks + statusline never break Claude Code) and delegates every
+  dollar to `ccusage`, degrading to `%`-only when it's absent.
 
 [kac]: https://keepachangelog.com/en/1.1.0/
 [semver]: https://semver.org/spec/v2.0.0.html

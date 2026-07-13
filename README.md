@@ -23,9 +23,9 @@ readout shells out to `ccusage` (which needs Node/`npx`), and it degrades gracef
 that's absent.
 
 ```sh
-go install github.com/SeanLF/ccpool@v1.0.0-beta.1   # beta via Go (@latest picks up the first stable tag)
+go install github.com/SeanLF/ccpool@latest          # or pin a version: @v0.1.0
 # or grab a prebuilt binary from the GitHub Releases page
-brew install SeanLF/tap/ccpool                      # Homebrew: coming right after the beta tag
+brew install SeanLF/tap/ccpool                      # Homebrew (stable); bleeding-edge: SeanLF/tap/ccpool-beta
 # or: make build && export PATH="$PWD:$PATH"
 
 ccpool init --apply                   # wires it into Claude Code; zero config, backup taken first

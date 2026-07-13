@@ -1,7 +1,7 @@
 // Command ccpool helps get the most out of a fixed Claude subscription pool.
 //
-// This is the Go port of the original Ruby implementation (see docs/GO-MIGRATION.md).
-// The on-disk contract in docs/GO-MIGRATION.md is the durable interop boundary.
+// One static Go binary; the durable interop boundary is the on-disk SQLite store
+// (see internal/store). main dispatches on os.Args[1]; bare invocation -> status.
 package main
 
 import (

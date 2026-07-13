@@ -3,11 +3,11 @@
 // after a timestamped backup. The merge is idempotent, never-clobber, and symlink-aware: when
 // settings.json is a symlink to a dotfiles source we follow it and rewrite the REAL target, leaving
 // the link intact. A dangling symlink (target missing) ABORTS rather than being renamed over and
-// converted to a regular file (the clobber a reviewer caught in the Ruby original). init is
-// on-demand, so it fails LOUD (returns an error / non-zero) — the opposite of the fail-open hot path.
+// converted to a regular file. init is on-demand, so it fails LOUD (returns an error / non-zero) —
+// the opposite of the fail-open hot path.
 //
-// The observable behaviour (stdout + the resulting settings.json bytes) is byte-identical to the
-// Ruby Init module, which is the conformance oracle (docs/GO-MIGRATION.md).
+// The observable behaviour (stdout + the resulting settings.json bytes) is held byte-identical to the
+// committed goldens (conformance/golden/, Go-defined).
 package initcmd
 
 import (
@@ -524,7 +524,7 @@ func contains(args []string, want string) bool {
 	return false
 }
 
-// --- ordered JSON (preserve key order so the written settings.json is byte-identical to Ruby) ---
+// --- ordered JSON (preserve key order so the written settings.json stays byte-identical to its golden) ---
 
 // omap is an insertion-ordered JSON object. Go maps don't preserve key order and encoding/json sorts
 // keys, but Ruby JSON.pretty_generate emits hash keys in insertion order; matching it byte-for-byte

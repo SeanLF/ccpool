@@ -1,8 +1,7 @@
-# Go — house reference for the ccpool port
+# Go — house reference for ccpool
 
 _As of 2026-07. Go moves ~2 releases/year; verify versions/experiments before relying. This is
-scoped to **ccpool's Ruby → Go migration** (committed for v1 — see `docs/RUST-REIMPL.md`), not a
-general Go guide. The design invariants in `AGENTS.md` are the contract; this says how to honour
+scoped to **ccpool** (a single static Go binary), not a general Go guide. The design invariants in `AGENTS.md` are the contract; this says how to honour
 them in Go._
 
 ## Why Go, and what we're porting
@@ -79,9 +78,9 @@ GoReleaser docs — keys like `brews`/`homebrew_casks` shift between majors):
     `goos: [darwin, linux]` × `goarch: [amd64, arm64]` matrix (drop windows unless a user asks;
     ccpool is a Claude-Code-adjacent tool, mac/linux is the audience).
   - `archives:` + `checksum:` — tarballs + a `checksums.txt` on the Release.
-  - `brews:` (Homebrew formula publisher) — points at a **separate tap repo** (`sean/homebrew-tap`)
+  - `brews:` (Homebrew formula publisher) — points at a **separate tap repo** (`SeanLF/homebrew-tap`)
     with a token; on each release GoReleaser writes/commits `Formula/ccpool.rb` there. **That is
-    the Homebrew auto-update:** `brew install sean/tap/ccpool` once, then `brew upgrade` always
+    the Homebrew auto-update:** `brew install SeanLF/tap/ccpool` once, then `brew upgrade` always
     pulls the newest release — no manual formula bumps.
   - Optional supply-chain: `sboms:` (SBOM), `signs:`/cosign (sign the checksums), SLSA provenance.
 - **Release workflow** (`.github/workflows/release.yml`): trigger on `push: tags: ['v*']`, steps =
@@ -93,7 +92,7 @@ GoReleaser docs — keys like `brews`/`homebrew_casks` shift between majors):
 - **Cutting a release** becomes: land the change, update `CHANGELOG.md`, `git tag vX.Y.Z && git
   push --tags`. The Action does the rest. Release notes: let GoReleaser generate from commits, or
   feed the `[Unreleased]` changelog section.
-- **Other install paths for free:** `go install github.com/sean/ccpool@latest` works off the module
+- **Other install paths for free:** `go install github.com/SeanLF/ccpool@latest` works off the module
   path (source build); the GitHub Release hosts prebuilt binaries + checksums for a curl-install.
   A `scoop`/`nix`/`AUR` publisher can be added to the same `.goreleaser.yaml` later if demand shows.
 - **Modern dev-tool pinning:** use `go tool` directives in `go.mod` (Go 1.24+) to pin

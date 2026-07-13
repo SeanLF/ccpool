@@ -12,9 +12,9 @@ import (
 	"github.com/SeanLF/ccpool/internal/golden"
 )
 
-// The rendered `ccpool rhythm` output must be byte-identical to Ruby CCPool.rhythm. For each fixture
-// we stage the SAME transcript corpus in one temp dir, point both sides' CCPOOL_PROJECTS at it, pin
-// TZ + Go's time.Local to the fixture zone, and diff the output.
+// The rendered `ccpool rhythm` output must stay byte-identical to the committed goldens
+// (conformance/golden/, Go-defined). For each fixture we stage the SAME transcript corpus in one temp
+// dir, point CCPOOL_PROJECTS at it, pin TZ + Go's time.Local to the fixture zone, and diff the output.
 
 type rhythmFixture struct {
 	Name  string            `json:"name"`

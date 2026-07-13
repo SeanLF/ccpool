@@ -15,10 +15,10 @@ import (
 	"github.com/SeanLF/ccpool/internal/store"
 )
 
-// The Ruby Init module is the conformance oracle: for each fixture we run the Go Run and the Ruby
-// Init.run against the SAME staged settings path (so the absolute paths in stdout match), then diff
-// the captured stdout, the exit status, whether the path is still a symlink, and the resulting
-// settings.json bytes. Byte-identical output AND resulting file is the bar (docs/GO-MIGRATION.md).
+// The committed goldens (conformance/golden/, Go-defined) are the bar: for each fixture we run the Go
+// Run against a staged settings path, then diff the captured stdout, the exit status, whether the path
+// is still a symlink, and the resulting settings.json bytes against the golden. Byte-identical output
+// AND resulting file is the bar; refresh via CCPOOL_UPDATE_GOLDEN=1 after an intentional change.
 
 type initFixture struct {
 	Name     string            `json:"name"`

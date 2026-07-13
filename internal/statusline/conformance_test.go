@@ -12,9 +12,9 @@ import (
 	"github.com/SeanLF/ccpool/internal/store"
 )
 
-// The statusline render must be byte-identical to the Ruby statusline.rb (ANSI included), which is
-// the conformance oracle (docs/GO-MIGRATION.md). For every fixture we render in Go and diff against
-// the live Ruby output. Ruby is the source of truth; a diff is a Go bug until proven otherwise.
+// The statusline render must stay byte-identical to the committed goldens (conformance/golden/,
+// Go-defined; ANSI included). For every fixture we render in Go and diff against its golden; a diff
+// is a regression until an intentional, reviewed change is refreshed via CCPOOL_UPDATE_GOLDEN=1.
 
 type fixture struct {
 	Name     string            `json:"name"`

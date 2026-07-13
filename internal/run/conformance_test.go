@@ -12,10 +12,10 @@ import (
 	"github.com/SeanLF/ccpool/internal/store"
 )
 
-// downshift_env's decision (env overrides + message) must be byte-identical to Ruby
-// CCPool.downshift_env. `run` itself exec's (replaces the process image, hard to diff), so only this
-// pure decision is conformance-checked: for each fixture we stage the same snapshots (+ optional
-// calibration cache / fake ccusage for the estimated tier) on both sides and diff "<msg>\n<env-json>".
+// The downshift decision (env overrides + message) must stay byte-identical to the committed goldens
+// (conformance/golden/, Go-defined). `run` itself exec's (replaces the process image, hard to diff),
+// so only this pure decision is conformance-checked: for each fixture we stage the same snapshots (+
+// optional calibration cache / fake ccusage for the estimated tier) and diff "<msg>\n<env-json>".
 
 type dsFixture struct {
 	Name   string            `json:"name"`

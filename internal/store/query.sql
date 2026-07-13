@@ -8,7 +8,7 @@ WHERE (sqlc.narg('session') IS NULL OR session = sqlc.narg('session'))
 ORDER BY id DESC LIMIT 1;
 
 -- name: EnvelopeWeekly :many
--- Two-pass running-max mirror of burn.Envelope (see docs/sqlite-storage-design.md):
+-- Two-pass running-max mirror of burn.Envelope:
 -- latest = max weekly reset in the window; kept = rows within the 300s jitter bucket of it
 -- (or, when there is no latest, rows with a NULL reset); running = arrival-order running max.
 -- Every latest column is qualified (history.wk) and the computed running column is CAST, or

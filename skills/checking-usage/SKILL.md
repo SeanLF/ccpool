@@ -10,10 +10,10 @@ Answers "what time is it" and "how much budget is left" (session 5h window + wee
 ## Run it
 
 ```bash
-ruby /Users/sean/Developer/ccpool/ccpool.rb check
+ccpool check
 ```
 
-No arguments. Read the `VERDICT` line — it's the decision, not just numbers. Exit 0 = report; exit 2 = no/garbled data (don't guess).
+Requires `ccpool` on your `PATH` (`brew install SeanLF/tap/ccpool`, or `go install github.com/SeanLF/ccpool@latest`). No arguments. Read the `VERDICT` line — it's the decision, not just numbers. Exit 0 = report; exit 2 = no/garbled data (don't guess).
 
 ## The decision rule (the reason this exists)
 

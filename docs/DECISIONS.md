@@ -182,7 +182,7 @@ onboarding earns its keep. Shipped + decided:
   required config — the happy path is `ccpool init --apply` and nothing else. (`init.rb`, tests in
   `test_ccpool.rb`.) A review + silent-failure pass caught a dangling-symlink clobber, now fixed +
   tested.
-- **Rust/Go reimpl (SCOPED, not built).** `docs/RUST-REIMPL.md`. Measured the hot path: `warn`
+- **Rust/Go reimpl (SCOPED, not built).** Measured the hot path: `warn`
   ~45 ms / `statusline` ~63 ms cold-process, of which **~32 ms is bare Ruby-interpreter startup**
   paid on every fire even when `warn` stays silent. Real usage = 6.1 tool-calls/turn → ~7 `warn`
   fires/turn → ~0.3 s/turn, **<1% of turn wall-clock**. Verdict: latency alone doesn't clear the
@@ -244,10 +244,7 @@ no new features pre-migration** (each is paid for twice) — and stay in lane (e
 "get the most out of a fixed pool" the competitor survey put in DELEGATE). **v1 ships in Go.** The
 migration is its own focused effort, executed from a clean session per the playbook:
 
-- `docs/GO-MIGRATION.md` — the phased execution plan + handover (Phase 0 pipeline → 1 statusline →
-  2 warn → 3 on-demand → v1 binary; the on-disk contract to preserve; conformance-via-Ruby-fixtures).
 - `docs/standards/go.md` — Go idioms + the GoReleaser/Homebrew release path.
-- `docs/RUST-REIMPL.md` — the measurement + why-Go decision.
 
 Immediate next actions before the port: add a git remote + push (activates CI + the issue/PR
 templates, which are dormant with no remote), and grab a real in-Claude-Code statusline screenshot
@@ -256,11 +253,11 @@ them, `--json` if a consumer appears) from the stable Go base.
 
 ## Go migration — execution decisions (2026-07-10)
 
-Locked at the top of the migration session; see `docs/GO-MIGRATION.md` for the phased plan.
+Locked at the top of the migration session.
 
 - **Module `github.com/SeanLF/ccpool`; tap `SeanLF/homebrew-tap`; targets darwin+linux × arm64+amd64.**
   Go 1.26.5, zero shipped deps; dev tools (gofumpt/staticcheck/govulncheck) pinned via go.mod `tool`
-  directives. v1 ships ALL commands in Go and retires Ruby (the distribution win per RUST-REIMPL).
+  directives. v1 ships ALL commands in Go and retires Ruby (the distribution win).
 - **Homebrew via GoReleaser v2 `homebrew_casks`, NOT `brews`.** `brews` (formula) is deprecated in v2;
   casks are the current path for a binary. Unsigned binary -> a `postflight` strips the Gatekeeper
   quarantine xattr, and `skip_upload: "auto"` keeps prerelease (rc) tags out of the stable tap.

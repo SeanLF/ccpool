@@ -14,10 +14,9 @@ delegates every dollar to `ccusage`.
 
 ## Implementation: Go (single static binary)
 
-ccpool is **Go** — one static binary, no runtime deps beyond optional `ccusage` for the `$`. The
-Ruby original was reimplemented in idiomatic Go and retired; `docs/GO-MIGRATION.md` records the
-phased port and `docs/standards/go.md` the idioms (fail-open via `recover`, near-stdlib, the
-GoReleaser + Homebrew release path). Package layout is lean `internal/*` (one concern per package:
+ccpool is **Go** — one static binary, no runtime deps beyond optional `ccusage` for the `$`.
+`docs/standards/go.md` records the idioms (fail-open via `recover`, near-stdlib, the GoReleaser +
+Homebrew release path). Package layout is lean `internal/*` (one concern per package:
 `pool`, `calib`, `statusline`, `warn`, `report`, …); `main.go` dispatches on `os.Args[1]`.
 
 ## Commands
@@ -25,7 +24,7 @@ GoReleaser + Homebrew release path). Package layout is lean `internal/*` (one co
 - **Test / gate:** `make check` (gofumpt + vet + staticcheck + govulncheck + `go test ./...`). Must
   be green before any commit. Prefix go commands with `unset GOROOT` if a stale GOROOT is exported.
 - **Conformance:** the `internal/*/conformance_test.go` suites diff Go output against committed
-  **golden files** (`conformance/golden/`), seeded from the original Ruby and now Go-defined. After
+  **golden files** (`conformance/golden/`), Go-defined. After
   an intentional output change, refresh with `CCPOOL_UPDATE_GOLDEN=1 go test ./...` and review the diff.
 - **Run:** `go run . <cmd>` or `make build && ./ccpool <cmd>`. Bare `ccpool` → `status`.
 - Preview the statusline without Claude Code: `./ccpool statusline` in a terminal (renders the

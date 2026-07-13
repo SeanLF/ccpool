@@ -1,7 +1,6 @@
-// Package golden supports golden-file conformance tests. During the Ruby -> Go migration each
-// command was verified byte-identical to a live Ruby oracle; those oracle outputs are captured here
-// as committed goldens, so the regression suite is preserved without a Ruby dependency. Go is now
-// the source of truth: after an intentional, reviewed output change, refresh the goldens with
+// Package golden supports golden-file conformance tests. Each command's output is captured as a
+// committed golden (conformance/golden/), and the suite diffs Go output against it byte-for-byte.
+// Go is the source of truth: after an intentional, reviewed output change, refresh the goldens with
 // CCPOOL_UPDATE_GOLDEN=1 (which rewrites them to the current Go output).
 package golden
 

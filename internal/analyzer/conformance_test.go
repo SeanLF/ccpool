@@ -11,10 +11,10 @@ import (
 	"github.com/SeanLF/ccpool/internal/golden"
 )
 
-// The `ccpool review` readout must be byte-identical to Ruby CCPool.review (docs/GO-MIGRATION.md).
-// For each fixture we stage the same transcript files (in a Go temp dir and, independently, the
-// oracle's own temp dir), render in Go, and diff against the Ruby oracle's stdout. Ruby is the
-// source of truth; a diff is a Go bug until proven otherwise.
+// The `ccpool review` readout must stay byte-identical to the committed goldens (conformance/golden/,
+// Go-defined). For each fixture we stage the same transcript files in a Go temp dir, render in Go, and
+// diff against its golden; a diff is a regression until an intentional, reviewed change is refreshed
+// via CCPOOL_UPDATE_GOLDEN=1.
 
 type fileSpec struct {
 	Lines []json.RawMessage `json:"lines"`

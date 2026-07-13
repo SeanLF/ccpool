@@ -12,10 +12,11 @@ import (
 	"github.com/SeanLF/ccpool/internal/store"
 )
 
-// The $/1% calibration must match Ruby's compute (wk_runs run-detection, the Anthropic block
-// filter, prorated cost_between, the pooled Δ-weighting) at displayed precision. Both sides spawn
-// the same fake ccusage (CCPOOL_CCUSAGE_CMD -> fake-ccusage.sh, CCUSAGE_FIXTURE -> blocks JSON) so
-// the compute is deterministic; we force a recompute and diff the resulting dpp to 4 decimals.
+// The $/1% calibration must match the committed goldens (conformance/golden/, Go-defined) for the
+// compute (wk_runs run-detection, the Anthropic block filter, prorated cost_between, the pooled
+// Δ-weighting) at displayed precision. We spawn a fake ccusage (CCPOOL_CCUSAGE_CMD -> fake-ccusage.sh,
+// CCUSAGE_FIXTURE -> blocks JSON) so the compute is deterministic, force a recompute, and diff the
+// resulting dpp to 4 decimals.
 
 type computeFixture struct {
 	Name   string      `json:"name"`

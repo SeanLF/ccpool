@@ -14,10 +14,10 @@ import (
 	"github.com/SeanLF/ccpool/internal/store"
 )
 
-// The status + check readouts must be byte-identical to the Ruby CCPool.status / Check.report, which
-// are the conformance oracle (docs/GO-MIGRATION.md). For every fixture we stage the same snapshots +
-// history + calibration/ccusage on both sides, run the Go readout, and diff it against the live Ruby
-// output. Ruby is the source of truth; a diff is a Go bug until proven otherwise.
+// The status + check readouts must stay byte-identical to the committed goldens (conformance/golden/,
+// Go-defined). For every fixture we stage the same snapshots + history + calibration/ccusage, run the
+// Go readout, and diff it against its golden; a diff is a regression until an intentional, reviewed
+// output change is refreshed via CCPOOL_UPDATE_GOLDEN=1.
 
 type readoutFixture struct {
 	Name     string            `json:"name"`

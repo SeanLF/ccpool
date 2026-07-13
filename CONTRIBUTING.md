@@ -8,9 +8,7 @@ also applies to you.
 
 - Skim `README.md` (what it does) and `docs/DECISIONS.md` (why it's shaped this way — a lot of
   "obvious" changes were already tried and deliberately rejected there).
-- **Heads up:** ccpool is currently Ruby but migrates to **Go before v1**. Small Ruby fixes are
-  welcome now; before starting anything large, open an issue so we don't build on a floor that's
-  about to move.
+- ccpool is a single static **Go** binary. Before starting anything large, open an issue first.
 
 ## What makes a contribution land
 

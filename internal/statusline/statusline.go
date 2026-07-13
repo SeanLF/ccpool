@@ -1,6 +1,6 @@
 // Package statusline renders the Claude Code statusLine from a fresh CC payload. The rate_limits %
 // is account-global, so the payload IS current; the cached $/1% turns % into a dollar value. Output
-// must stay byte-identical to the Ruby statusline.rb (ANSI included) — it is the conformance oracle.
+// must stay byte-identical to the committed goldens (conformance/golden/, ANSI included).
 //
 // Groups by timescale:  now (context window + cache-TTL) · ses (5h) · wk (weekly meter + $ + day).
 // ANSI is officially supported in statuslines (code.claude.com/docs/en/statusline).

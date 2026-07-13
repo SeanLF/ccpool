@@ -133,7 +133,7 @@ with self-heal. The one-off importer moved this machine's 57k history rows in; t
 green (the couple of intentional shifts — the unified-store `store-unreadable` case, the truthful
 unreadable-store `status` message — are recorded in `docs/DECISIONS.md`). Contention regression (0 drops
 at 2/4/8 concurrent writers) + fail-open fuzz committed. The warm-up throttle + anomaly log stay files.
-Full record: `docs/sqlite-storage-plan.md` (STATUS block) + `docs/DECISIONS.md` (Sprint B entries).
+Full record: `docs/DECISIONS.md` (Sprint B entries).
 
 Original plan (for reference):
 
