@@ -20,8 +20,11 @@ import (
 )
 
 // Int returns key parsed as a base-10 int, or def if key is unset or does not parse cleanly.
+// Parsing at strconv.IntSize (not 64) bounds the value to int width, so the int(n) narrowing can
+// never truncate; an out-of-range knob fails open to def like any other miss, consistent with the
+// package's fail-open contract, rather than silently wrapping on a 32-bit build.
 func Int(key string, def int) int {
-	if n, ok := parseInt(key); ok {
+	if n, ok := parseInt(key, strconv.IntSize); ok {
 		return int(n)
 	}
 	return def
@@ -29,7 +32,7 @@ func Int(key string, def int) int {
 
 // Int64 returns key parsed as a base-10 int64, or def if key is unset or does not parse cleanly.
 func Int64(key string, def int64) int64 {
-	if n, ok := parseInt(key); ok {
+	if n, ok := parseInt(key, 64); ok {
 		return n
 	}
 	return def
@@ -53,7 +56,9 @@ func Float(key string, def float64) float64 {
 	return f
 }
 
-func parseInt(key string) (int64, bool) {
+// parseInt parses key at the given bitSize (callers pass the width of their target type, so the
+// result is guaranteed to fit that type). Fails open: unset, unparseable, or out-of-range yields ok=false.
+func parseInt(key string, bitSize int) (int64, bool) {
 	v, ok := os.LookupEnv(key)
 	if !ok {
 		v, ok = fileValue(key)
@@ -61,7 +66,7 @@ func parseInt(key string) (int64, bool) {
 	if !ok {
 		return 0, false
 	}
-	n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+	n, err := strconv.ParseInt(strings.TrimSpace(v), 10, bitSize)
 	if err != nil {
 		return 0, false
 	}

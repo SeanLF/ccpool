@@ -22,6 +22,7 @@ func TestInt(t *testing.T) {
 		{"trailing garbage is NOT a partial parse", true, "12x", 42},
 		{"float string -> default", true, "1.5", 42},
 		{"empty -> default", true, "", 42},
+		{"out-of-range -> default (fails open, never truncates)", true, "99999999999999999999", 42},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
