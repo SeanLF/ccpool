@@ -514,3 +514,27 @@ Then a config-file feature emerged from a conversation about how users actually 
   the accept re-surfaces for review); the note-severity OpenSSF-Scorecard signals are left visible as
   informational. Bumped the still_active pin rc3 → rc4 for ecosystem-neutral SARIF (the Go findings were
   rendering with Ruby wording).
+- **macOS signing: Apple codesign on a macOS runner, NOT quill (2026-07-13). Reverses the v0.1.1 bet.**
+  v0.1.1 signed the darwin binaries with quill (GoReleaser's built-in `notarize.macos`, chosen so it
+  could run on the Linux release runner). A friend on a stock Apple Silicon Mac (macOS 26.x) got
+  `killed` (SIGKILL, exit 137) with zero output on every ccpool invocation. The system log was
+  unambiguous: `AMFI: ... Broken signature with Team ID fatal` / `does not pass CT evaluation`;
+  quill's Developer ID signature "does not satisfy its designated Requirement", and AMFI rejects it
+  fatally at exec on some macOS builds (before `main()` runs, so no fail-open path can help; it's the
+  kernel, not our code). It slipped through pre-release because it *ran on my Mac*, a macOS 27.0
+  developer beta that happens to tolerate the malformed signature. **Lesson: a dev-beta Mac is not a
+  valid test surface for signing; verify on a stock release Mac.** quill has documented signature
+  defects of this shape (anchore/quill #16, #147). Fix: `release.yml` now runs on `macos-latest`
+  (free + unlimited for public repos) and `scripts/macos-sign.sh` signs each darwin binary with
+  Apple's own `codesign --options runtime --timestamp` + notarizes the cdhash via `xcrun notarytool`
+  (a bare Mach-O still can't be stapled, same as before; the signature is what was broken). This
+  supersedes the earlier "cross-platform quill so it runs on Linux" convenience and the stale
+  "unsigned binary -> postflight quarantine-strip" note above: the binaries are properly
+  Developer-ID-signed + notarized, so no cask quarantine hack is needed. Confirmed the diagnosis by
+  ad-hoc re-signing the released binary (`codesign -f -s -`), which flipped it from "does not satisfy
+  its designated Requirement" to "satisfies its Designated Requirement" and made it run on the
+  friend's Mac; and by running the real script with the actual cert + notary key (`status: Accepted`,
+  DR satisfied). To stop this class of bug recurring, `macos-sign.sh` ends with a **smoke-launch**: it
+  execs the just-signed native binary on the (stock, non-beta) macOS runner, so a signature AMFI would
+  reject fails the release right there instead of shipping. Validated on a stock runner via a
+  `v0.1.2-rc.1` pre-release (ccpool-beta channel only) before cutting the stable v0.1.2.

@@ -9,6 +9,18 @@ behaviour doesn't.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-13
+
+### Fixed
+
+- macOS binaries were killed on launch (`killed`, exit 137, no output) on stock Apple Silicon Macs.
+  The v0.1.1 release signed them with quill (GoReleaser's cross-platform notarizer), whose Developer
+  ID signature AMFI rejects fatally at exec on some macOS builds (`Broken signature with Team ID
+  fatal`), so the process was SIGKILLed before `main()`. Signing now runs on a macOS runner with
+  Apple's own `codesign` + `notarytool` (`scripts/macos-sign.sh`), which produces a signature macOS
+  accepts everywhere. If you hit this on 0.1.1, `brew upgrade` to 0.1.2; to unblock an existing
+  install without upgrading: `codesign --force --sign - "$(readlink "$(command -v ccpool)")"`.
+
 ## [0.1.1] - 2026-07-13
 
 ### Fixed

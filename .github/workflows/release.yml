@@ -4,6 +4,11 @@ name: Release
 # Release (binaries + checksums), and publishes the Homebrew casks to SeanLF/homebrew-tap.
 # See .goreleaser.yaml and docs/standards/go.md.
 #
+# Runs on macOS (`macos-latest`): the darwin binaries are signed with Apple's own codesign +
+# notarytool via scripts/macos-sign.sh, NOT quill -- quill's signatures AMFI rejects at exec on some
+# macOS builds (v0.1.1 shipped a binary that SIGKILLed before main; see docs/DECISIONS.md). Standard
+# macOS runners are free + unlimited on public repos, so this costs nothing here.
+#
 # Required repo secrets before tagging (a missing one fails the release, by design -- fail loud):
 #   HOMEBREW_TAP_TOKEN     fine-grained PAT, Contents:read/write on SeanLF/homebrew-tap (cross-repo push)
 #   MACOS_SIGN_P12         base64 of the Developer ID Application .p12   (base64 -i cert.p12 | pbcopy)
@@ -22,7 +27,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -31,6 +36,60 @@ jobs:
         with:
           go-version-file: go.mod
           check-latest: true
+
+      # Import the Developer ID Application cert into a throwaway keychain so codesign can find it.
+      # Self-gates: no secret (forks) -> emits an empty identity and the sign script stays ad-hoc.
+      - name: Import Developer ID signing certificate
+        id: signing
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MACOS_SIGN_P12" ]; then
+            # On the canonical repo a missing cert is a misconfiguration, NOT a fork -- refuse to
+            # ship ad-hoc binaries silently (that regression is exactly what this release fixes).
+            if [ "$GITHUB_REPOSITORY" = "SeanLF/ccpool" ]; then
+              echo "MACOS_SIGN_P12 missing on SeanLF/ccpool -- refusing to release unsigned binaries." >&2
+              exit 1
+            fi
+            echo "No MACOS_SIGN_P12 (fork) -- binaries will ship with Go's ad-hoc signature." >&2
+            echo "identity=" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/ccpool-signing.keychain-db"
+          keychain_pw="$(uuidgen)"
+          security create-keychain -p "$keychain_pw" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain" # auto-lock well past a release run
+          security unlock-keychain -p "$keychain_pw" "$keychain"
+          echo "$MACOS_SIGN_P12" | base64 --decode >"$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_SIGN_PASSWORD" -T /usr/bin/codesign
+          # Let codesign use the key non-interactively (no UI auth prompt on a headless runner).
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_pw" "$keychain" >/dev/null
+          # Prepend our keychain to the search list so `codesign --sign` resolves the identity, while
+          # keeping the pre-existing keychains. The word-split on $(...) is intentional: each existing
+          # keychain path must become its own argument (runner paths have no spaces).
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | sed 's/"//g')
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+          if [ -z "$identity" ]; then
+            echo "No 'Developer ID Application' identity in the imported cert" >&2
+            exit 1
+          fi
+          echo "Imported: $identity" >&2
+          echo "identity=$identity" >>"$GITHUB_OUTPUT"
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      # Stage the App Store Connect API key on disk for notarytool (only when we're actually signing).
+      - name: Stage notary key
+        if: steps.signing.outputs.identity != ''
+        env:
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+        run: |
+          set -euo pipefail
+          echo "$MACOS_NOTARY_KEY" | base64 --decode >"$RUNNER_TEMP/notary.p8"
+          echo "NOTARY_KEY_PATH=$RUNNER_TEMP/notary.p8" >>"$GITHUB_ENV"
+
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
@@ -38,8 +97,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
-          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          # Consumed by scripts/macos-sign.sh in the build hook. NOTARY_KEY_PATH is in $GITHUB_ENV.
+          MACOS_SIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
           MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
           MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}

@@ -24,26 +24,15 @@ builds:
     goarch: [amd64, arm64]
     # mod_timestamp keeps builds reproducible (binary mtime = commit time, not build time).
     mod_timestamp: "{{ .CommitTimestamp }}"
-
-# Sign + notarize the macOS binaries with the Developer ID cert so Gatekeeper accepts them cleanly,
-# without the quarantine-strip hack (Homebrew 5.0.0 is deprecating that bypass; macOS 15 dropped the
-# Control-click override). Cross-platform (quill under the hood), so it runs on the Linux release
-# runner. Self-gates on the secret: absent locally / on forks -> skipped, binaries stay ad-hoc signed
-# (still runnable on Apple Silicon, just not notarized). Bare CLI binaries can't be stapled, so the
-# ticket is verified online on first run; that's fine for a notarized binary.
-notarize:
-  macos:
-    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
-      ids: [ccpool]
-      sign:
-        certificate: "{{ .Env.MACOS_SIGN_P12 }}" # base64 of the Developer ID Application .p12
-        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
-      notarize:
-        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
-        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
-        key: "{{ .Env.MACOS_NOTARY_KEY }}" # base64 of the App Store Connect API .p8
-        wait: true
-        timeout: 20m
+    # Sign + notarize the macOS binaries with Apple's OWN codesign + notarytool (see the script).
+    # GoReleaser's built-in `notarize.macos` signs with quill, whose Developer ID signatures AMFI
+    # rejects fatally at exec on some macOS builds ("Broken signature with Team ID fatal" -> SIGKILL
+    # before main; v0.1.1 shipped exactly that). The script runs per built binary; it no-ops off
+    # darwin and, when no identity is set (forks/local), leaves Go's ad-hoc signature. The release
+    # runner is `macos-latest` so real codesign is available. See docs/DECISIONS.md.
+    hooks:
+      post:
+        - cmd: ./scripts/macos-sign.sh "{{ .Path }}" "{{ .Os }}" "{{ .Arch }}"
 
 archives:
   - id: ccpool
@@ -81,8 +70,9 @@ changelog:
       - "Merge pull request"
       - "Merge branch"
 
-# Two channels in one tap. The binaries are notarized (see `notarize:` above), so neither cask needs
-# the old quarantine-strip hook: Gatekeeper accepts them on first run. Installing both conflicts
+# Two channels in one tap. The binaries are signed + notarized (see the build `hooks.post` above),
+# so neither cask needs the old quarantine-strip hook: AMFI accepts the signature and Gatekeeper
+# accepts the notarization on first run. Installing both conflicts
 # (both symlink a `ccpool` binary) -- pick one channel, as usual.
 homebrew_casks:
   # Stable channel: `brew install SeanLF/tap/ccpool` -- stable tags only.
