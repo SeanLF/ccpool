@@ -1,26 +1,53 @@
 # ccpool
 
-**How much of your weekly Claude pool is left, in dollars, and are you burning it too fast?**
+**Don't get throttled mid-project. Know what your Claude pool is worth, whether you're burning it
+too fast, and when you'll actually run dry.**
 
-Your usage tools show a percentage and a reset time. ccpool tells you what that percentage is *worth*,
-whether you're ahead of pace, and when you'll actually run dry. It reads the account-global
-`rate_limits` % that [`ccusage`](https://github.com/ccusage/ccusage) structurally can't see and
-delegates every dollar to ccusage: **complementary to ccusage and native `/status`, not a replacement.**
+Your usage tools show a percentage and a reset time. That's not enough to answer the question that
+actually bites: *am I going to hit the weekly cap before I'm done?* An overnight loop can burn your
+whole pool by Tuesday and you won't know until you're locked out mid-task.
+
+ccpool reads the account-global `rate_limits` % that [`ccusage`](https://github.com/ccusage/ccusage)
+**structurally can't see**, fuses it with a ccusage-calibrated `$/1%` into *what that % is worth*
+plus a pace verdict, warns the agent mid-turn when you're over pace, and downshifts subagent
+model/effort so an unattended run conserves the pool. It reads only local data and delegates every
+dollar to ccusage: **complementary to ccusage and native `/status`, not a replacement.**
+
+https://github.com/user-attachments/assets/94e93c09-0d97-41ea-9c8c-4658726ce924
 
 ![ccpool statusline and status readout](demo/overview.gif)
 
 - **See your real budget:** the account-global % turned into `$ left of your weekly pool` plus a pace
   verdict, in your statusline and `ccpool status`.
-- **Spend it wisely:** `ccpool run -- <cmd>` auto-downshifts subagent model/effort (`opus/high` to
-  `haiku/low`) when you're burning ahead of pace, so an unattended loop conserves the pool.
-- **Know when to stop:** `ccpool check` gives a keep-going/stop verdict plus a working-hours runway for
-  long or autonomous loops.
+- **Don't burn out the week:** `ccpool run -- <cmd>` auto-downshifts subagent model/effort
+  (`opus/high` to `haiku/low`) when you're burning ahead of pace, so an unattended loop or fan-out
+  conserves the pool instead of torching it by Tuesday.
+- **Know when to stop:** `ccpool check` gives a keep-going/stop verdict plus a working-hours runway,
+  so a long or autonomous loop stops itself before the cap does.
+
+## Why ccpool exists (and why not just...)
+
+- **ccusage?** It's the authoritative `$` engine, and ccpool delegates every dollar to it. But it
+  reports *what you spent*, and is structurally blind to the account-global `rate_limits` % that
+  decides when you get throttled. ccpool is the missing half, not a rival.
+- **Native `/status`?** It improved a lot (it now shows weekly %, 5h %, per-model $, even diagnostic
+  tips), and for a human at the keyboard it's often enough. But it's a **manual pull an autonomous
+  loop can't open**, it only *advises*, and it won't *project* (runway, throttle-before-reset) or
+  *decide* (keep-going/stop). ccpool projects, enforces, and decides while the loop runs.
+- **20 lines of jq?** That gets you the raw %. It doesn't get you a calibrated dollar value, a pace
+  verdict against how far through the week you should be, or an enforcement lever that actually
+  downshifts a fan-out. That judgment layer is the tool.
+- **Are the dollars real?** No, and ccpool says so up front: the `$` is **API-equivalent**, not
+  billed money (you pay a flat subscription). It's the right unit for "burn it or bank it," not for
+  accounting. Self-calibrated from *your* usage.
 
 ## Install
 
 ccpool is a single static Go binary. The `%`, pace, burn, and warnings need nothing; only the `$`
 readout shells out to `ccusage` (which needs Node/`npx`), and it degrades gracefully to `%`-only if
-that's absent.
+that's absent. It reads Claude Code's local data and the `rate_limits` number Anthropic already
+reports; **no network except the ccusage shell-out, no telemetry, and it fails open so it can never
+break Claude Code.**
 
 ```sh
 go install github.com/SeanLF/ccpool@latest          # or pin a version: @v0.1.0
@@ -203,7 +230,9 @@ ccpool stands on other people's work:
   delegates every dollar to it and never hand-rolls pricing.
 - **[ccstatusline](https://github.com/sirmalloc/ccstatusline)** (@sirmalloc) is the composable statusline
   ccpool embeds into as a `--embed` widget.
-- **[vhs](https://github.com/charmbracelet/vhs)** (Charm) records the demo GIFs above.
+- **[vhs](https://github.com/charmbracelet/vhs)** (Charm) records the `status`/`init`/`check` demo GIFs.
+- **[HyperFrames](https://github.com/heygen-com/hyperframes)** (HeyGen) renders the launch demo video
+  from an HTML composition.
 
 Independent and unofficial, **not affiliated with Anthropic**. ccpool reads Claude Code's local data and
 the `rate_limits` number Anthropic already reports; it never circumvents any limit.
