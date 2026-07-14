@@ -97,6 +97,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # Pin the release to the tag that triggered this run. Without it GoReleaser derives the
+          # version from `git describe`, which is ambiguous when >1 tag points at the same commit
+          # (e.g. a vX.Y.Z-rc.N validated on the same commit as vX.Y.Z) and can pick the wrong one.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
           # Consumed by scripts/macos-sign.sh in the build hook. NOTARY_KEY_PATH is in $GITHUB_ENV.
           MACOS_SIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
           MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
