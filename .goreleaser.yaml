@@ -85,6 +85,12 @@ homebrew_casks:
     homepage: "https://github.com/SeanLF/ccpool"
     description: "Get the most out of a fixed Claude subscription pool"
     license: MIT
+    # Printed on every install/upgrade. Static (no detection logic); it just points at `init`, which
+    # is plan-based + idempotent + never-clobber, so re-running after an upgrade is a safe no-op.
+    caveats: |
+      Run `ccpool init` to wire the statusline + warn hooks into
+      ~/.claude/settings.json. It is idempotent (skips what is already wired);
+      re-run after an upgrade to pick up any new hook events.
     repository:
       owner: SeanLF
       name: homebrew-tap
@@ -99,6 +105,10 @@ homebrew_casks:
     homepage: "https://github.com/SeanLF/ccpool"
     description: "Get the most out of a fixed Claude subscription pool (bleeding-edge channel)"
     license: MIT
+    caveats: |
+      Run `ccpool init` to wire the statusline + warn hooks into
+      ~/.claude/settings.json. It is idempotent (skips what is already wired);
+      re-run after an upgrade to pick up any new hook events.
     repository:
       owner: SeanLF
       name: homebrew-tap
