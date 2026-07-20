@@ -9,6 +9,29 @@ behaviour doesn't.
 
 ## [Unreleased]
 
+### Changed
+
+- The weekly `$/1%` calibration now reconstructs each reset window as a monotonic running-max, clipped
+  at the reset epoch, over the last few windows (`CCPOOL_CALIB_WINDOWS`, default 3) rather than all of
+  history. This corrects a large under-count: concurrent multi-session reads were creating spurious
+  mid-window "resets" that double-counted weekly-% consumption, pulling the dollar value well below its
+  true level. Calibrating over recent windows also lets the number track Anthropic's shifting weekly
+  mechanics instead of blending old and new regimes.
+
+### Added
+
+- A `ccusage_cost` history column plus a `PRAGMA user_version` schema migration (existing DBs upgrade in
+  place, additively — no data rewrite): each sample now records the aligned cumulative ccusage `$`, so a
+  future recalibration can use exact Δcost/Δwk%. Captured now, not yet read.
+- `CCPOOL_CALIB_WINDOWS` — how many recent weekly windows to calibrate the `$/1%` over (default 3).
+
+### Fixed
+
+- Ingest now drops or clamps an out-of-range weekly `used_percentage`. Claude Code can leak the reset
+  epoch into that field (a known upstream bug), which would otherwise poison the calibration history.
+- The statusline no longer shows a stale weekly percentage after its reset time has passed — it
+  suppresses the segment until the payload refreshes, matching the report path.
+
 ## [0.1.2] - 2026-07-13
 
 ### Fixed
