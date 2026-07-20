@@ -9,6 +9,8 @@ behaviour doesn't.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-20
+
 ### Changed
 
 - The weekly `$/1%` calibration now reconstructs each reset window as a monotonic running-max, clipped

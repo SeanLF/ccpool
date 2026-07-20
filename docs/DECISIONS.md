@@ -69,6 +69,20 @@ context compaction or the scratch wipe. (Governor-era detail also in
   *diagnostic* (`rhythm.rb`): compute R on a recency window, R-gate the output (high → suggest
   concrete `WAKE_HOURS`/`WORK_DAYS`; low → stick with `even`), SUGGEST only, never auto-apply.
 
+- **Built-in status.claude.com outage warning** (poll Anthropic's Statuspage, warn in the
+  statusline + `status`, opt-in at `init`) → designed 2026-07-16, **not built.** status.claude.com is
+  an Atlassian Statuspage (`/api/v2/summary.json`; `status.indicator ∈ none/minor/major/critical` +
+  active-incident name). Confirmed the whole space *polls* it (Pulsetic, IsDown, StatusGator,
+  Helicone, AIWatch) on a ~5-min cache; a **webhook is a non-starter** for a local CLI, which has no
+  public endpoint to receive the POST. But **[AIWatch](https://ai-watch.dev) already ships exactly
+  this as a drop-in**: a CORS, no-auth, 5-min-cached `/api/status/cached` built to pair with a
+  ccstatusline **Custom Command** widget, the same slot ccpool occupies. Building a copy inside ccpool
+  would (a) break the **zero-network, local-only** posture for everyone (not just opt-ins), (b)
+  duplicate a maintained service, (c) risk **crying wolf on a stale cache** on the fail-open hot path
+  (a resolved incident shown as live). **Decision: document AIWatch as a sibling widget (README), stay
+  network-free.** Reconsider only if AIWatch dies, or if a *first-party* tie-in to the pool verdict
+  ("your throttle is the service, not your pool") ever justifies ccpool's first network call.
+
 ## Research findings (durable)
 
 - **Weekly limit** = rolling 7-day from first prompt; Anthropic keeps it opaque (deliberate).
@@ -538,3 +552,131 @@ Then a config-file feature emerged from a conversation about how users actually 
   execs the just-signed native binary on the (stock, non-beta) macOS runner, so a signature AMFI would
   reject fails the release right there instead of shipping. Validated on a stock runner via a
   `v0.1.2-rc.1` pre-release (ccpool-beta channel only) before cutting the stable v0.1.2.
+- **$/1% is not identifiable to a point (~$13-30) on current data; the bottleneck is `wk%` capture
+  quality, not the estimator (2026-07-20).** Re-investigated the calibration after the cached `$/1%` fell to $18.99 from
+  the historically recorded $26-33; the working hypothesis (heavier Fable/Sonnet use lately) turned out
+  wrong, and two of my own mid-investigation claims did not survive scrutiny. What holds, from a faithful
+  replay against the live DB (57k rows, 07-02..07-20) reconciled exactly to the cached value:
+  - **The algorithm replays correctly.** `wkRuns` reconstructs **9 runs**; `Sum(cost)/Sum(dw)` = **$18.99**,
+    byte-matching the `calibration` kv row. The $26-33 era was simply a different, cache-heavier stretch.
+  - **Model mix (Fable/Sonnet) REFUTED as the driver.** The runs are ~98-99% Opus by dollars yet span
+    **$4.7-$33.9 / 1%**; mix that flat cannot move the number that far. At day grain (n=19 via ccusage's
+    own per-day cost, no proration) `corr(Fable $-share, $/1%) = -0.02`, and Fable-heavy days had a
+    *higher* median $/1% (26 vs 19), the opposite of the "Fable burns the weekly faster" worry. The
+    support article (15424964) confirms Fable is a **50% sub-cap on the SHARED weekly**, not a separate
+    bucket, so keeping Fable `$` in the calibration numerator (`allAnthropic` includes `claude-fable-5`)
+    is correct, not a bug.
+  - **RETRACTED: the "cache-read decoupling, r=0.998" smoking gun.** That correlation was an artifact
+    twice over: `cost` is *priced from* cache-read tokens (`corr(cost, cacheRead)=0.98`, mechanical), and
+    I had divided both sides by the same `dw` (a spurious ratio correlation, Pearson 1897). It carried no
+    information beyond the pricing identity. Do not resurrect it.
+  - **Numerator VALIDATED, denominator is the problem.** Block-proration cost reconciles to ccusage's own
+    daily totals within +-5% (0.95-1.06), so the `$` side is sound. The `wk%` side is not: **51% of sampled
+    minutes (1861/3628) carry conflicting `wk` readings**, mean spread ~10 points (max 50), 77% of them
+    spanning >1 concurrent session (parallel Claude Code / subagent fleets each reading the account-global
+    number at a different instant as it climbs), the rest one session's payload jumping within a minute.
+    On top of that, fine-grained trajectories show stretches where `wk` climbs with **~$0 local cost**
+    (e.g. 07-15 evening, +13 points at $0.1 each) = weekly % genuinely consumed **off this machine**
+    (web / another device) that ccusage cannot see. Both inflate `dw` on the affected runs and deflate
+    their `$/1%`. All 9 calibration runs come from one pathological high-churn window (07-08..07-15,
+    resets + spikes); the cleaner recent data is too sparse to reconstruct runs.
+  - **The number is not identifiable to a point on this data.** Every estimator/knob lands in **$13-30**
+    with no principled way to choose within it: per-minute aggregation max(current)/median/min/last-write
+    give $18.96/$17.22/$14.59/$13.55; a cost-backing floor ramps $19.75 (@$0.5) -> $28.78 (@$5) with no
+    natural break; bootstrap pooled $18.9 [11.1,26.3] / median $24.4 [8.0,27.5]. Self-consistent *clean*
+    runs (07-02, 07-15 split-half within ~1.2-1.7x) sit at the **$25-30** top of that range, which is
+    likely the true purely-local rate; the pooled number is dragged below it by concurrency noise +
+    off-machine leakage.
+  - **Estimator (prior-art informed; no median swap).** The denominator carries the error (integer
+    quantization, uniform +-0.5, var 1/12), which causes *regression dilution*. Ratio-of-sums `Sum y/Sum x`
+    (current) is biased O(1/n), non-negligible at n~9; mean-of-ratios is worse (Jensen, biased up);
+    **median-of-ratios fixes outliers but NOT the denominator attenuation**, so it is the wrong tool here
+    (this is the sharper reason the mid-thread "swap to median" idea was wrong). The principled estimator
+    is **Deming / errors-in-variables regression** with lambda = Var(x_err)/Var(y_err) (x_err known from
+    quantization), reported with a **Fieller interval** (bootstrap under-covers at n~9, ~88% for nominal
+    95%). But this is second-order to the data-quality problem: the honest output is a **range, not a
+    point** (independently what the small-n + suspected-bimodal literature prescribes).
+  - **DECISION: the lever is DATA quality, not the average.** Two fixes, both improving FUTURE data:
+    (1) **collapse concurrent same-minute `wk` reads at capture** (a defensible single value per minute)
+    so parallel-fleet noise stops fabricating `dw`; (2) **snapshot cumulative Anthropic `$` from the
+    already-cached ccusage blocks at each history write** (no new hot-path spawn; fail-open; null on cold
+    cache) so future `$/1% = delta(cost)/delta(wk%)` is computed over exactly-aligned intervals AND
+    intervals where `wk` moved with ~$0 local cost (off-machine) can be excluded. Additive schema column
+    (needs a migration primitive the store lacks today: `PRAGMA user_version` + `ALTER TABLE`); render
+    path unchanged until weeks of clean aligned data exist, then recalibrate with Deming + Fieller.
+  - **Follow-up (UX, deferred to a golden-touching change): present the `$` with honest imprecision.** The
+    statusline shows a whole-dollar figure (`report.USD`) that reads as precise; given the ~$13-30 band it
+    should be coarsened or shown as a range (which the small-n literature also prescribes). Not done here
+    (needs the golden refresh + a format call).
+  - **Prior art: the %-to-$ fusion is novel; nothing to borrow.** ccusage has zero `rate_limit` awareness
+    (maintainer-confirmed, its `$` is local token logs x a price table); other monitors either dollarize
+    tokens OR show live-% pace, never both. Multiplying live weekly % by a calibrated `$/1%` is ccpool's
+    distinguishing move, so the noise problems here are unsolved-by-anyone, not a re-implementation gap.
+    (Claude Code only exposed `rate_limits` to the statusline in v2.1.80, ~Apr 2026 - this is all new.)
+    Confirmed (Kaggle/HF/GitHub sweep, 2026-07-20): **no published dataset pairs the account-global
+    weekly % with cost over time** -- nothing longitudinal, nothing containing the `seven_day` % at all
+    (only local token/$ logs, or Anthropic's aggregate Economic Index). `Maciek-roboblog/Claude-Code-Usage-
+    Monitor` has a local "warehouse" that persists `rate_limits` captures (survives CC's 30-day cleanup),
+    but nobody has published theirs. So drift can't be back-tested externally, and the `$/1%` constant is
+    account/plan-specific anyway (won't transfer): the only validation path is forward-accumulation of
+    clean weekly windows on-account. ccpool logging `seven_day` + ccusage `costUSD` effectively *is* the
+    first such dataset.
+  - **PROTOTYPE (validated): the `wk%` IS recoverable; $/1% ~= $27, not $13-30.** Two principled steps:
+    (1) **monotonic running-max within each `wk_reset` window** (used% is a cumulative meter -> non-decreasing
+    within a window, so stale-low concurrent reads that dip below the running value are noise). This removes
+    **17 spurious hard-falls (216 wk-points of fake drops)** that were each spawning a reclimb and
+    DOUBLE-COUNTING `dw` -- the real deflation, now pinned. (2) **clip each window at its reset epoch**
+    (samples still carrying a `wk_reset` after it fired are stale; one boundary ran 9.7d / 88h past its
+    reset). Result over the 3 weekly windows: **$26.9 / $25.4 / $29.0, pooled $26.8** (in the historical
+    band), per-run spread collapses **7x -> 1.14x**, jackknife CV **0.097 -> 0.025**, and the per-minute
+    aggregation choice (max/median/last) stops mattering. Adversarial: largest bridged jump is +1 (no real
+    reset masked); the only sustained drops (9-17 pts, 2-5% of window time) are the masked resets that clip
+    removes.
+  - **DRIFT-ROBUST design (Anthropic's algorithm is non-stationary -- monthly churn -- so DON'T assume it).**
+    Extends `trust the live number, never model the mechanics` to the $ calibration. (a) The live %/pace is
+    already drift-robust; only `$/1%` is fragile and it fails open. (b) BUT monotonic+clip couples to the
+    CURRENT fixed-window semantics (non-decreasing within `wk_reset`); a rolling-window switch would make
+    monotonic-max silently over-count, and the data already shows 2-5% violation. So the fix is monotonic+clip
+    PLUS: **(1) recency** -- pool the last K~3 COMPLETE windows dw-weighted, not full history (current code
+    pools everything = non-adaptive, blends regimes for however many days are on disk); the dedup is what
+    makes per-window estimates reliable enough for recency to be safe rather than noise-chasing. **(2) guard**
+    -- a window with a sustained decrease past a threshold (rolling-window / regime signal, distinct from the
+    small masked-reset dips) or chaotic reset labels is degraded/excluded, not masked. **(3) self-doubt** --
+    recent windows agree -> tight $; disagree -> widen the band or suppress the $ until two windows confirm a
+    new level (regime transition). **(4) fail-open** stays the backstop (% only). Net: the calibration gets
+    LESS confident exactly when drift is happening. Default **K=3 + widen-on-disagreement** (the one policy
+    knob: adaptation speed vs stability). Implementation lands in `internal/calib/compute.go` (`wkRuns`/
+    `splitRuns`), golden-touching.
+  - **Steals from `Maciek-roboblog/Claude-Code-Usage-Monitor` (source-read, 2026-07-20).** It captures the
+    same account-global `rate_limits` but is Python/token-limit-focused and gives ZERO help on our hardest
+    problem -- concurrent conflicting %-reads (it is last-writer-wins), confirming monotonic+clip is novel.
+    Two real steals: **(1) an out-of-range `used_percentage` sanitizer** -- its `_clean_pct()` defuses Claude
+    bug #52326 (the `%` field sometimes leaks the `resets_at` EPOCH; also clamps 100-101 -> 100). ccpool has
+    NO ingest clamp (verified); data is clean today (max wk=96) so it is LATENT, but an epoch value stored as
+    `wk` gives `dw~1.78e9 -> $/1%~=$0`, tanking calibration -- and monotonic-max would LOCK the spike in for
+    the window, so the sanitizer is a **prerequisite** for shipping the monotonic fix (fail-open: drop/skip
+    a sample with `used_percentage` outside ~[0,101]). **(2) `PRAGMA user_version` schema gating** -- the same
+    migration primitive the aligned-cost instrumentation needs, which the store lacks; bundle them. CHECK
+    (unverified): Maciek nullifies the `%` once `now >= resets_at`; confirm ccpool's render does not show a
+    stale weekly % in that gap. SKIP: the "ML/P90" prediction is one `quantiles()` call guessing a hidden
+    TOKEN limit (not our target; marketing debunked), the hardcoded token-tier ladder, and the whole-file
+    JSON warehouse (SQLite beats it). ccpool is ahead on smoothing/monotonicity/drift (it does none).
+  - **SHIPPED (2026-07-20), TDD, reviews clean.** Implemented in four phases: (1) ingest sanitizer in
+    `history.Prepare` (`sanePct`/`sanePctPtr`) dropping/clamping the #52326 epoch leak; (2) the
+    monotonic+clip+guard+recency reconstruction in `calib/compute.go` (`runsFromPoints`/`boundaryRun`/
+    `hasSustainedDecrease`/`combineWindows`), K=3 via `CCPOOL_CALIB_WINDOWS`; (3) a `PRAGMA user_version`
+    migration in `store.openAt` + a nullable `ccusage_cost` column that `Prepare` fills from the
+    cache-only `calib.CachedCumulativeCost` (captured, not yet consumed -- the aligned-delta recalibration
+    awaits weeks of data); (4) past-reset weekly suppression in both statusline renders. Real-data proof:
+    a forced recompute against a copy of the live DB moved the cache **$18.97 -> $27.74/1%**; the
+    conformance goldens were byte-unchanged (behaviour-preserving on clean data); migration verified on the
+    live DB's shape (v0->v1, column added, 57,997 rows intact). Review gate (code-reviewer +
+    silent-failure-hunter + simplifier): no bugs; applied a `blocksCache` DRY extraction and hardened
+    `hasColumn` to propagate a catalog-read error instead of guessing "absent". **Deferred:** the
+    widen-`$`-to-a-range self-doubt (needs the readout UX + goldens; the minimal fall-back-to-newest
+    self-doubt shipped) and the consumer that reads `ccusage_cost`.
+  - Reaffirms the standing invariants: Anthropic's weekly weighting is undisclosed and reset-cadence has
+    been buggy (subagent-burn resets, "72h" anomalies), so `trust the reported number, never model the
+    mechanics` stands. Structural blind spot recorded: the CC statusline payload exposes only one
+    `seven_day` (the All-models bucket); if hooks ever expose the per-model (Fable) bar, a per-bucket
+    calibration becomes possible and is the cleanest future fix.

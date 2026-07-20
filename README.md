@@ -125,6 +125,12 @@ widget: each render kicks off a throttled background calibration warm-up (never 
 (claude-powerline and CCometixLine don't forward the payload or don't take external commands, so there
 ccpool has to be the statusLine: `ccpool init --replace-statusline`.)
 
+**Want provider-outage warnings too?** That's a different question from *what your pool is worth*, and
+[AIWatch](https://ai-watch.dev) already answers it: it pairs with a ccstatusline Custom Command widget
+to surface Anthropic (plus 30+ other providers') outages right in your line. Add it as a sibling widget
+next to ccpool. ccpool itself stays deliberately local and network-free, so it doesn't poll
+status.claude.com (see `docs/DECISIONS.md` for why).
+
 Doing it by hand instead of via `init`:
 
 ```jsonc
@@ -233,6 +239,9 @@ ccpool stands on other people's work:
 - **[vhs](https://github.com/charmbracelet/vhs)** (Charm) records the `status`/`init`/`check` demo GIFs.
 - **[HyperFrames](https://github.com/heygen-com/hyperframes)** (HeyGen) renders the launch demo video
   from an HTML composition.
+- **[Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor)**
+  (@Maciek-roboblog) independently logs the same `rate_limits` history; reading its source informed
+  ccpool's ingest guard against Claude's epoch-leak bug and the `user_version` schema migration.
 
 Independent and unofficial, **not affiliated with Anthropic**. ccpool reads Claude Code's local data and
 the `rate_limits` number Anthropic already reports; it never circumvents any limit.
