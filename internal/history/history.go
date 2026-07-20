@@ -5,6 +5,7 @@
 package history
 
 import (
+	"github.com/SeanLF/ccpool/internal/calib"
 	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/rb"
 	"github.com/SeanLF/ccpool/internal/store"
@@ -39,6 +40,10 @@ func Prepare(s *store.Store, payload map[string]any, now int64) (store.HistoryRo
 	if !ok {
 		return store.HistoryRow{}, false
 	}
+	wk, ok = sanePct(wk)
+	if !ok {
+		return store.HistoryRow{}, false // out-of-range (bug #52326 epoch leak) -> drop the reading
+	}
 
 	r := store.HistoryRow{
 		T:       now,
@@ -48,8 +53,13 @@ func Prepare(s *store.Store, payload map[string]any, now int64) (store.HistoryRo
 		Session: sessionPtr(payload),
 	}
 	if fh, ok := rl["five_hour"].(map[string]any); ok {
-		r.Ses = floatPtr(fh["used_percentage"])
+		r.Ses = sanePctPtr(fh["used_percentage"])
 		r.SesReset = intPtr(fh["resets_at"])
+	}
+	// Snapshot the cumulative Anthropic $ aligned to this wk% sample (for a future delta-based
+	// recalibration). Cache-only, so the hot path never spawns ccusage; nil when the cache is cold.
+	if cc, ok := calib.CachedCumulativeCost(s); ok {
+		r.CcusageCost = &cc
 	}
 
 	// Sanity guard: null just the offending reset, per window, rather than drop the whole row. A
@@ -106,6 +116,31 @@ func intPtr(v any) *int64 {
 func floatPtr(v any) *float64 {
 	if f, ok := rb.Num(v); ok {
 		return &f
+	}
+	return nil
+}
+
+// sanePct clamps a used-percentage to [0,100] and reports whether it is a plausible percentage. Claude
+// bug #52326 can leak the resets_at epoch into used_percentage; anything negative or >= 10000 is that
+// garbage, not a percentage -- reject it (mirrors pool.GetWindow's render-side guard) so it never
+// reaches the history table calibration reads. A value in (100,10000] is a minor overshoot -> clamp.
+func sanePct(v float64) (float64, bool) {
+	if v < 0 || v >= 10000 {
+		return 0, false
+	}
+	return min(v, 100), true
+}
+
+// sanePctPtr reads a nullable used-percentage field: nil when absent, non-numeric, or out of range (an
+// epoch leak), else the clamped value. Nulling just this field (not dropping the row) mirrors the
+// reset sanity guard, so a good weekly sample survives a garbage five_hour reading.
+func sanePctPtr(v any) *float64 {
+	f, ok := rb.Num(v)
+	if !ok {
+		return nil
+	}
+	if p, sane := sanePct(f); sane {
+		return &p
 	}
 	return nil
 }

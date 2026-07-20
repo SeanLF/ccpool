@@ -91,8 +91,8 @@ func WriteCache(s *store.Store, dpp float64, at int64) {
 	_ = s.PutKV(calibKey, b)
 }
 
-// compute pools cost over monotonic wk runs. (0,false) when there is no history (fresh install; do
-// not even spawn ccusage) or ccusage is unavailable.
+// compute pools cost over the recent monotonic wk windows. (0,false) when there is no history (fresh
+// install; do not even spawn ccusage) or ccusage is unavailable.
 func compute(s *store.Store, now int64) (float64, bool) {
 	runs := wkRuns(s)
 	if len(runs) == 0 {
@@ -102,19 +102,19 @@ func compute(s *store.Store, now int64) (float64, bool) {
 	if !ok || len(blocks) == 0 {
 		return 0, false
 	}
-	totCost, totDW := 0.0, 0.0
+	var wcs []windowCost
 	for _, r := range runs {
 		c := costBetween(blocks, r.t0, r.t1)
 		if c <= 0 {
 			continue
 		}
-		totCost += c
-		totDW += r.dw
+		wcs = append(wcs, windowCost{cost: c, dw: r.dw})
 	}
-	if totDW == 0 {
+	dpp, ok := combineWindows(wcs)
+	if !ok {
 		return 0, false
 	}
-	return rb.RoundN(totCost/totDW, 4), true
+	return rb.RoundN(dpp, 4), true
 }
 
 type block struct {
@@ -150,23 +150,31 @@ var anthropicRe = regexp.MustCompile(`(?i)claude|anthropic`)
 // ccusageBlocks returns the Anthropic-only 5h cost blocks. (nil,false) means ccusage is unavailable
 // or its shape changed (which is logged loud, then $ stays disabled rather than silently zeroed).
 func ccusageBlocks(s *store.Store, now int64) ([]block, bool) {
-	out := ccusageRaw(s, now)
+	blocks, ok, shapeOK := decodeBlocks(ccusageRaw(s, now))
+	if !shapeOK {
+		// ccusage ran but the shape changed -> fail LOUD (don't silently zero the $).
+		os.Stderr.WriteString("[ccpool] ccusage (" + ccusageCmd() + ") returned an unexpected shape (no 'blocks' array); $ readout disabled until fixed\n")
+	}
+	return blocks, ok
+}
+
+// decodeBlocks is the quiet parse core shared by the compute path (which adds the loud shape warning)
+// and the cache-only capture path (which must stay silent on the hot path). shapeOK=false flags the
+// changed-shape case specifically, so only the caller that wants to warn does.
+func decodeBlocks(out string) (blocks []block, ok, shapeOK bool) {
 	if strings.TrimSpace(out) == "" {
-		return nil, false
+		return nil, false, true
 	}
 	var doc any
 	dec := json.NewDecoder(strings.NewReader(out))
 	dec.UseNumber()
 	if err := dec.Decode(&doc); err != nil {
-		return nil, false
+		return nil, false, true
 	}
 	arr := blocksArray(doc)
 	if arr == nil {
-		// ccusage ran but the shape changed -> fail LOUD (don't silently zero the $).
-		os.Stderr.WriteString("[ccpool] ccusage (" + ccusageCmd() + ") returned an unexpected shape (no 'blocks' array); $ readout disabled until fixed\n")
-		return nil, false
+		return nil, false, false // shape changed
 	}
-	var blocks []block
 	for _, item := range arr {
 		b, ok := item.(map[string]any)
 		if !ok {
@@ -190,7 +198,48 @@ func ccusageBlocks(s *store.Store, now int64) ([]block, bool) {
 		}
 		blocks = append(blocks, block{s: s, e: e, cost: c})
 	}
-	return blocks, true
+	return blocks, true, true
+}
+
+// blocksCache decodes the kv blocks entry to its (raw, capturedAt). ("",0,false) on a nil store or a
+// cold/garbage cache. Callers layer their own freshness policy on `at`: ccusageRaw enforces the TTL, the
+// write-path reader ignores it. One place that knows the {raw,at} cache shape.
+func blocksCache(s *store.Store) (raw string, at float64, ok bool) {
+	if s == nil {
+		return "", 0, false
+	}
+	b, present, _ := s.GetKV(blocksKey)
+	if !present {
+		return "", 0, false
+	}
+	var c map[string]any
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.UseNumber()
+	if d.Decode(&c) != nil {
+		return "", 0, false
+	}
+	raw, _ = c["raw"].(string)
+	at, _ = numField(c, "at")
+	return raw, at, raw != ""
+}
+
+// CachedCumulativeCost sums the cumulative Anthropic $ from the CACHED ccusage blocks, to snapshot an
+// aligned cost alongside each wk% sample. Cache-only: it NEVER spawns ccusage (this runs on the
+// statusline write hot path; fail-open). (0,false) on a cold/absent/garbage cache.
+func CachedCumulativeCost(s *store.Store) (float64, bool) {
+	raw, _, ok := blocksCache(s) // cache-only: the write path never shells out
+	if !ok {
+		return 0, false
+	}
+	blocks, ok, _ := decodeBlocks(raw) // quiet: no shape warning on the write path
+	if !ok {
+		return 0, false
+	}
+	total := 0.0
+	for _, b := range blocks {
+		total += b.cost
+	}
+	return total, true
 }
 
 // allAnthropic reports whether the block's models are all Claude/Anthropic. An empty/absent models
@@ -229,19 +278,8 @@ func blocksArray(doc any) []any {
 // CCPOOL_CCUSAGE_CMD's full command string (which the user owns, e.g. a wrapper with pipes) is
 // honoured; the input is user config, not untrusted data.
 func ccusageRaw(s *store.Store, now int64) string {
-	if s != nil {
-		if b, ok, _ := s.GetKV(blocksKey); ok {
-			var c map[string]any
-			d := json.NewDecoder(bytes.NewReader(b))
-			d.UseNumber()
-			if d.Decode(&c) == nil {
-				if at, ok := numField(c, "at"); ok && now-int64(at) < blocksTTL {
-					if raw, ok := c["raw"].(string); ok && raw != "" {
-						return raw
-					}
-				}
-			}
-		}
+	if raw, at, ok := blocksCache(s); ok && now-int64(at) < blocksTTL {
+		return raw // fresh cache hit
 	}
 	cmd := exec.Command("sh", "-c", ccusageCmd()+" blocks --json 2>/dev/null") //nolint:gosec // user-owned command string, mirrors Ruby backtick
 	outBytes, _ := cmd.Output()                                                // npx failure -> empty output -> caller fails open
@@ -259,16 +297,25 @@ type wkRun struct {
 	dw     float64
 }
 
-type wkPoint struct {
-	m  int64
-	wk float64
+// windowCost is one weekly window's Anthropic $ and the wk% it consumed, for pooling $/1%.
+type windowCost struct {
+	cost, dw float64
 }
 
-// wkRuns reconstructs the monotonic wk% runs within each window from history. The per-(boundary,
-// minute) max-wk aggregation is a SQL GROUP BY (store.WkPoints, over the FULL history); this
-// reconstructs runs over those pre-aggregated points, recording wk CHANGES only (skipping flat
-// ses-padded minutes) and splitting at a hard fall (a reset). Runs shorter than 3pts / 1h, or
-// starting after their own boundary (+300s), are dropped. Fail-soft: no store / no data -> nil runs.
+const (
+	minRunDW      = 3    // a window must have consumed >= 3% to calibrate (integer-quantization floor)
+	minRunDT      = 3600 // ...over >= 1h
+	guardDropTol  = 2    // a drop this far below the running max is a real decrease, not +-1 read noise
+	guardDropDur  = 3600 // ...that persisting this long means the fixed-window assumption is violated
+	calibWindowsN = 3    // pool the last K windows (recency -> tracks Anthropic drift, not all history)
+	disagreeRatio = 3.0  // recent windows disagreeing beyond this => a regime shift; trust the newest
+)
+
+func calibWindows() int { return env.Int("CCPOOL_CALIB_WINDOWS", calibWindowsN) }
+
+// wkRuns reconstructs one calibration run per recent weekly window. The per-(boundary,minute) max-wk
+// aggregation is a SQL GROUP BY (store.WkPoints, over the FULL history); this builds a monotonic,
+// reset-clipped run per boundary and keeps only the last K (recency). Fail-soft: no store / no data.
 func wkRuns(s *store.Store) []wkRun {
 	if s == nil {
 		return nil
@@ -277,8 +324,12 @@ func wkRuns(s *store.Store) []wkRun {
 	if pst != store.StateOK {
 		return nil
 	}
+	return runsFromPoints(pts)
+}
 
-	// WkPoints is ordered by boundary then minute, so points for one boundary are contiguous.
+// runsFromPoints groups the boundary-then-minute-ordered points into windows, builds one run each, and
+// keeps the last K (recency). Split from wkRuns so the reconstruction is unit-testable without a store.
+func runsFromPoints(pts []store.WkPoint) []wkRun {
 	var runs []wkRun
 	for i := 0; i < len(pts); {
 		bnd := pts[i].Bnd
@@ -286,46 +337,96 @@ func wkRuns(s *store.Store) []wkRun {
 		for j < len(pts) && pts[j].Bnd == bnd {
 			j++
 		}
-		runs = append(runs, splitRuns(pts[i:j], float64(bnd))...)
-		i = j
-	}
-	return runs
-}
-
-// splitRuns reconstructs runs within one boundary's minute-sorted points: append on a real wk change,
-// commit-and-restart on a hard fall, keeping only runs that pass runFrom.
-func splitRuns(pts []store.WkPoint, bnd float64) []wkRun {
-	var runs []wkRun
-	run := []wkPoint{{m: pts[0].Minute, wk: pts[0].Wk}}
-	commit := func() {
-		if r, ok := runFrom(run, bnd); ok {
+		if r, ok := boundaryRun(pts[i:j], bnd); ok {
 			runs = append(runs, r)
 		}
+		i = j
 	}
-	for i := 1; i < len(pts); i++ {
-		prev := pts[i-1].Wk
-		cur := wkPoint{m: pts[i].Minute, wk: pts[i].Wk}
-		switch {
-		case cur.wk < prev-1: // wk fell hard -> a reset boundary
-			commit()
-			run = []wkPoint{cur}
-		case cur.wk != run[len(run)-1].wk: // a real wk CHANGE
-			run = append(run, cur)
-		}
+	if k := calibWindows(); k > 0 && len(runs) > k {
+		runs = runs[len(runs)-k:] // recency: the last K windows only
 	}
-	commit()
 	return runs
 }
 
-// runFrom applies the keep filter (dw>=3, dt>=3600, start within boundary+300) to a candidate run.
-func runFrom(run []wkPoint, bnd float64) (wkRun, bool) {
-	first, last := run[0], run[len(run)-1]
-	dw := last.wk - first.wk
-	dt := last.m - first.m
-	if dw < 3 || dt < 3600 || float64(first.m) > bnd+300 {
+// boundaryRun builds one window's run: clip stale post-reset samples, reject a window that violates the
+// non-decreasing assumption (guard), then take the monotonic dw = max - first counted ONCE (the old
+// hard-fall split re-counted the reclimb after every spurious concurrent-read dip). (_,false) when the
+// window is too short/small or guarded out.
+func boundaryRun(pts []store.WkPoint, bnd int64) (wkRun, bool) {
+	// Clip: a sample still carrying this wk_reset after the reset epoch is stale (a lagging session).
+	var win []store.WkPoint
+	for _, p := range pts {
+		if p.Minute <= bnd {
+			win = append(win, p)
+		}
+	}
+	if len(win) < 2 {
 		return wkRun{}, false
 	}
-	return wkRun{t0: first.m, t1: last.m, dw: dw}, true
+	if hasSustainedDecrease(win) { // rolling-window / regime signal -> monotonic-max is unsafe here
+		return wkRun{}, false
+	}
+	first, last := win[0], win[len(win)-1]
+	maxWk := first.Wk
+	for _, p := range win {
+		maxWk = max(maxWk, p.Wk)
+	}
+	dw := maxWk - first.Wk
+	if dw < minRunDW || last.Minute-first.Minute < minRunDT {
+		return wkRun{}, false
+	}
+	return wkRun{t0: first.Minute, t1: last.Minute, dw: dw}, true
+}
+
+// hasSustainedDecrease reports whether used% falls meaningfully below its running max and stays there
+// past guardDropDur -- the signature of a rolling window or a mid-window regime change, as opposed to
+// the brief +-1 dips from concurrent reads that monotonic-max harmlessly absorbs.
+func hasSustainedDecrease(pts []store.WkPoint) bool {
+	rm := pts[0].Wk
+	var dipStart int64
+	dipping := false
+	for _, p := range pts {
+		if p.Wk < rm-guardDropTol {
+			if !dipping {
+				dipping, dipStart = true, p.Minute
+			} else if p.Minute-dipStart >= guardDropDur {
+				return true
+			}
+		} else {
+			dipping = false
+			rm = max(rm, p.Wk)
+		}
+	}
+	return false
+}
+
+// combineWindows turns the recent windows' (cost,dw) into a single $/1%: pool dw-weighted when they
+// agree, but on a sharp disagreement (a regime shift) trust the most-recent window rather than
+// averaging an old regime with the new one. Windows are chronological (last = newest).
+func combineWindows(wcs []windowCost) (float64, bool) {
+	if len(wcs) == 0 {
+		return 0, false
+	}
+	if len(wcs) >= 2 {
+		lo, hi := wcs[0].cost/wcs[0].dw, wcs[0].cost/wcs[0].dw
+		for _, w := range wcs {
+			d := w.cost / w.dw
+			lo, hi = min(lo, d), max(hi, d)
+		}
+		if lo > 0 && hi/lo > disagreeRatio {
+			w := wcs[len(wcs)-1]
+			return w.cost / w.dw, true
+		}
+	}
+	totCost, totDW := 0.0, 0.0
+	for _, w := range wcs {
+		totCost += w.cost
+		totDW += w.dw
+	}
+	if totDW == 0 {
+		return 0, false
+	}
+	return totCost / totDW, true
 }
 
 // --- small helpers ---

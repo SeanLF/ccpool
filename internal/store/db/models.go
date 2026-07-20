@@ -9,14 +9,15 @@ import (
 )
 
 type History struct {
-	ID       int64
-	T        int64
-	Wk       float64
-	WkReset  sql.NullInt64
-	Ses      sql.NullFloat64
-	SesReset sql.NullInt64
-	Cost     sql.NullFloat64
-	Session  sql.NullString
+	ID          int64
+	T           int64
+	Wk          float64
+	WkReset     sql.NullInt64
+	Ses         sql.NullFloat64
+	SesReset    sql.NullInt64
+	Cost        sql.NullFloat64
+	Session     sql.NullString
+	CcusageCost sql.NullFloat64
 }
 
 type Kv struct {

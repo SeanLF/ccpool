@@ -10,7 +10,10 @@ CREATE TABLE IF NOT EXISTS history (
                                     -- not ccusage's. (The Ruby JSONL also carried a tier tag sourced
                                     -- from the USAGE_TIER env, not from CC; it was never read, so it
                                     -- is dropped -- config, not a stored input.)
-  session   TEXT                   -- nullable; dedup key
+  session   TEXT,                  -- nullable; dedup key
+  ccusage_cost REAL                -- cumulative Anthropic $ (from the cached ccusage blocks) at write
+                                    -- time; the aligned-delta calibration input. Captured now, read by
+                                    -- nothing yet -- like `cost`, a stored input awaiting its consumer.
 );
 CREATE INDEX IF NOT EXISTS history_t ON history(t);
 

@@ -2,6 +2,7 @@ package history
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -222,5 +223,76 @@ func TestSeedRecordsValues(t *testing.T) {
 	}
 	if last.Ses == nil || *last.Ses != 12 || last.Cost == nil || *last.Cost != 6.25 {
 		t.Fatalf("5h/cost recorded wrong: %+v", last)
+	}
+}
+
+// Prepare snapshots the cumulative Anthropic $ (from the cached ccusage blocks) onto the row, so a
+// future recalibration can use aligned delta(cost)/delta(wk%). Cache-only -- no ccusage spawn.
+func TestPrepareCapturesCcusageCost(t *testing.T) {
+	seedDB(t)
+	s, st := store.Open()
+	if st != store.StateOK || s == nil {
+		t.Fatalf("open %v", st)
+	}
+	defer s.Close()
+	raw := `{"blocks":[{"startTime":"2026-07-01T00:00:00Z","endTime":"2026-07-01T05:00:00Z","costUSD":42,"models":["claude-opus-4-8"],"isGap":false}]}`
+	blob, err := json.Marshal(map[string]any{"raw": raw, "at": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutKV("blocks", blob); err != nil {
+		t.Fatal(err)
+	}
+	row, ok := Prepare(s, payload(t, "45", testReset, "", 0, "s1"), testNow)
+	if !ok {
+		t.Fatal("expected append")
+	}
+	if row.CcusageCost == nil || *row.CcusageCost != 42 {
+		t.Fatalf("ccusage_cost not captured from cache: %+v", row.CcusageCost)
+	}
+}
+
+// Claude bug #52326 leaks the resets_at epoch into used_percentage. An epoch-sized weekly % must be
+// dropped at ingest (mirrors pool.GetWindow's >=10000 guard) so it never poisons calibration -- which,
+// with monotonic-max reconstruction, would lock the spike in for a whole window.
+func TestSeedDropsEpochLeakedWk(t *testing.T) {
+	db := seedDB(t)
+	mustSeed(t, payload(t, "1783720704", testReset, "", 0, "s1"), testNow)
+	if n := countHistory(t, db); n != 0 {
+		t.Fatalf("epoch-leaked wk should be dropped: %d rows, want 0", n)
+	}
+}
+
+// A weekly % just over 100 is a minor overshoot, not an epoch leak; clamp to 100 (mirrors pool's
+// min(u,100)) rather than dropping the reading.
+func TestSeedClampsOvershootWk(t *testing.T) {
+	seedDB(t)
+	mustSeed(t, payload(t, "101", testReset, "", 0, "s1"), testNow)
+	s, st := store.Open()
+	if st != store.StateOK || s == nil {
+		t.Fatalf("Open = %v", st)
+	}
+	defer s.Close()
+	sess := "s1"
+	last, _ := s.LastSessionRow(&sess)
+	if last == nil || last.Wk != 100 {
+		t.Fatalf("wk 101 should clamp to 100: %+v", last)
+	}
+}
+
+// A five-hour epoch leak nulls just the 5h value and keeps the good weekly row (mirrors the
+// null-just-the-bad-field reset guard), rather than dropping the whole reading.
+func TestSeedNullsEpochLeakedSes(t *testing.T) {
+	seedDB(t)
+	mustSeed(t, payload(t, "45", testReset, "1783720704", testNow+3600, "s1"), testNow)
+	s, st := store.Open()
+	if st != store.StateOK || s == nil {
+		t.Fatalf("Open = %v", st)
+	}
+	defer s.Close()
+	sess := "s1"
+	last, _ := s.LastSessionRow(&sess)
+	if last == nil || last.Ses != nil {
+		t.Fatalf("epoch-leaked ses should be nulled: %+v", last)
 	}
 }

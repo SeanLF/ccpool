@@ -24,6 +24,9 @@ type HistoryRow struct {
 	SesReset *int64
 	Cost     *float64 // CC payload cost.total_cost_usd; stored (a CC input) though not read yet
 	Session  *string
+	// CcusageCost is the cumulative Anthropic $ (from the cached ccusage blocks) at write time -- the
+	// aligned-delta calibration input. Captured now, read by nothing yet (like Cost).
+	CcusageCost *float64
 }
 
 // EnvRow is one point of the running-max envelope: the write time, the running-max used%, and the
@@ -281,13 +284,14 @@ func nullInt64FromAny(v any) sql.NullInt64 {
 
 func appendParams(r HistoryRow) db.AppendHistoryParams {
 	return db.AppendHistoryParams{
-		T:        r.T,
-		Wk:       r.Wk,
-		WkReset:  nullInt64Ptr(r.WkReset),
-		Ses:      nullFloat64Ptr(r.Ses),
-		SesReset: nullInt64Ptr(r.SesReset),
-		Cost:     nullFloat64Ptr(r.Cost),
-		Session:  nullStringPtr(r.Session),
+		T:           r.T,
+		Wk:          r.Wk,
+		WkReset:     nullInt64Ptr(r.WkReset),
+		Ses:         nullFloat64Ptr(r.Ses),
+		SesReset:    nullInt64Ptr(r.SesReset),
+		Cost:        nullFloat64Ptr(r.Cost),
+		Session:     nullStringPtr(r.Session),
+		CcusageCost: nullFloat64Ptr(r.CcusageCost),
 	}
 }
 
@@ -295,13 +299,14 @@ func appendParams(r HistoryRow) db.AppendHistoryParams {
 // become nil pointers). skip() then compares these typed values directly, no json round-trip.
 func historyRowFromDB(r db.History) *HistoryRow {
 	return &HistoryRow{
-		T:        r.T,
-		Wk:       r.Wk,
-		WkReset:  int64PtrFromNull(r.WkReset),
-		Ses:      float64PtrFromNull(r.Ses),
-		SesReset: int64PtrFromNull(r.SesReset),
-		Cost:     float64PtrFromNull(r.Cost),
-		Session:  stringPtrFromNull(r.Session),
+		T:           r.T,
+		Wk:          r.Wk,
+		WkReset:     int64PtrFromNull(r.WkReset),
+		Ses:         float64PtrFromNull(r.Ses),
+		SesReset:    int64PtrFromNull(r.SesReset),
+		Cost:        float64PtrFromNull(r.Cost),
+		Session:     stringPtrFromNull(r.Session),
+		CcusageCost: float64PtrFromNull(r.CcusageCost),
 	}
 }
 

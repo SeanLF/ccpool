@@ -11,18 +11,19 @@ import (
 )
 
 const appendHistory = `-- name: AppendHistory :exec
-INSERT INTO history (t, wk, wk_reset, ses, ses_reset, cost, session)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO history (t, wk, wk_reset, ses, ses_reset, cost, session, ccusage_cost)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type AppendHistoryParams struct {
-	T        int64
-	Wk       float64
-	WkReset  sql.NullInt64
-	Ses      sql.NullFloat64
-	SesReset sql.NullInt64
-	Cost     sql.NullFloat64
-	Session  sql.NullString
+	T           int64
+	Wk          float64
+	WkReset     sql.NullInt64
+	Ses         sql.NullFloat64
+	SesReset    sql.NullInt64
+	Cost        sql.NullFloat64
+	Session     sql.NullString
+	CcusageCost sql.NullFloat64
 }
 
 func (q *Queries) AppendHistory(ctx context.Context, arg AppendHistoryParams) error {
@@ -34,6 +35,7 @@ func (q *Queries) AppendHistory(ctx context.Context, arg AppendHistoryParams) er
 		arg.SesReset,
 		arg.Cost,
 		arg.Session,
+		arg.CcusageCost,
 	)
 	return err
 }
@@ -169,7 +171,7 @@ func (q *Queries) GetKV(ctx context.Context, key string) (string, error) {
 }
 
 const lastSessionRow = `-- name: LastSessionRow :one
-SELECT id, t, wk, wk_reset, ses, ses_reset, cost, session FROM history
+SELECT id, t, wk, wk_reset, ses, ses_reset, cost, session, ccusage_cost FROM history
 WHERE (?1 IS NULL OR session = ?1)
 ORDER BY id DESC LIMIT 1
 `
@@ -186,6 +188,7 @@ func (q *Queries) LastSessionRow(ctx context.Context, session interface{}) (Hist
 		&i.SesReset,
 		&i.Cost,
 		&i.Session,
+		&i.CcusageCost,
 	)
 	return i, err
 }

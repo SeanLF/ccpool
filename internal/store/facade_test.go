@@ -49,6 +49,24 @@ func TestEnvelopeWeeklyRunningMax(t *testing.T) {
 	}
 }
 
+// The aligned-cost instrumentation column persists and reads back through the typed facade (nil stays
+// nil for older rows; a set value round-trips).
+func TestAppendHistoryRoundTripsCcusageCost(t *testing.T) {
+	s := freshStore(t)
+	reset := int64(1_800_003_600)
+	cc := 123.45
+	if err := s.AppendHistory(store.HistoryRow{T: 1_800_000_000, Wk: 30, WkReset: &reset, CcusageCost: &cc}); err != nil {
+		t.Fatal(err)
+	}
+	last, rs := s.LastSessionRow(nil)
+	if rs != store.StateOK || last == nil {
+		t.Fatalf("read: state %v last %v", rs, last)
+	}
+	if last.CcusageCost == nil || *last.CcusageCost != 123.45 {
+		t.Fatalf("ccusage_cost round-trip: %+v", last)
+	}
+}
+
 func TestEnvelopeFiveHourRunningMax(t *testing.T) {
 	s := freshStore(t)
 	now := int64(1_800_000_000)

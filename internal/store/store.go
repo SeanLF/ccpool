@@ -147,7 +147,69 @@ func openAt(path string) (*Store, ReadState) {
 		_ = sqlDB.Close()
 		return nil, classify(err)
 	}
+	if err := migrate(sqlDB); err != nil {
+		_ = sqlDB.Close()
+		return nil, classify(err)
+	}
 	return &Store{q: db.New(sqlDB), sqlDB: sqlDB, path: path}, StateOK
+}
+
+// schemaVersion is the on-disk schema revision. Bumped whenever migrate gains a step.
+const schemaVersion = 1
+
+// migrate brings an existing on-disk DB up to schemaVersion with idempotent, additive steps. A fresh DB
+// already matches schema.sql, so each ALTER is column-guarded (skipped) and migrate just stamps the
+// version. Additive + nullable columns only: never rewrites rows, rollback-safe. Runs every Open but is
+// a no-op (one PRAGMA read) once current. Migration failure fails Open the same as a bad schema Exec,
+// so the recovery machinery (restore-from-backup) handles a genuinely broken DB rather than silently
+// writing against a half-migrated one.
+func migrate(dbc *sql.DB) error {
+	var v int
+	if err := dbc.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
+		return err
+	}
+	if v >= schemaVersion {
+		return nil
+	}
+	// v0 -> v1: ccusage_cost (aligned-delta calibration input). Fresh DBs got it from schema.sql.
+	if v < 1 {
+		has, err := hasColumn(dbc, "history", "ccusage_cost")
+		if err != nil {
+			return err
+		}
+		if !has {
+			if _, err := dbc.Exec("ALTER TABLE history ADD COLUMN ccusage_cost REAL"); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := dbc.Exec("PRAGMA user_version = " + strconv.Itoa(schemaVersion))
+	return err
+}
+
+// hasColumn reports whether table already has col, so a fresh DB (column already present from
+// schema.sql) skips the ALTER that would otherwise fail as a duplicate. A catalog read error
+// PROPAGATES rather than reading as "absent": guessing "absent" on a broken read would fire a
+// duplicate ALTER and fail Open with a misleading error; a genuinely broken catalog should fail Open
+// on its own read error (recovery handles it), never silently half-migrate.
+func hasColumn(dbc *sql.DB, table, col string) (bool, error) {
+	rows, err := dbc.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, ctype string
+		var dflt any
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == col {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 // classify maps a driver error to a ReadState. Only a definitive corruption code earns the
