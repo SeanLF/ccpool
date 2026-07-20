@@ -180,7 +180,11 @@ func Render(s *store.Store, data map[string]any, now int64) string {
 
 	// weekly meter + $ + day-share
 	if sd := typedHash(rl, "seven_day", "seven_day"); sd != nil {
-		if used, ok := typedNum(sd, "used_percentage", "seven_day.used_percentage"); ok {
+		used, hasUsed := typedNum(sd, "used_percentage", "seven_day.used_percentage")
+		resetF, hasReset := typedNum(sd, "resets_at", "seven_day.resets_at")
+		// Past-reset guard: a stale payload whose window already reset must not show its old % (mirrors
+		// pool.GetWindow dropping reset<=now); suppress the whole weekly segment until the payload catches up.
+		if hasUsed && !(hasReset && int64(resetF) <= now) {
 			cols := env.Int("COLUMNS", 120)
 			width := clampInt(cols-82, 14, 40)
 			wr := rb.RoundToInt(used)
@@ -190,7 +194,7 @@ func Render(s *store.Store, data map[string]any, now int64) string {
 				left := (100 - used) * dppVal
 				dollars = " " + pal.dim + fmtDollars(left) + pal.reset
 			}
-			if resetF, ok := typedNum(sd, "resets_at", "seven_day.resets_at"); ok {
+			if hasReset {
 				reset := int64(resetF)
 				pace := prof.ElapsedFraction(reset-week, now, reset)
 				daysLeft := float64(reset-now) / 86400.0
@@ -226,6 +230,10 @@ func RenderCompact(s *store.Store, data map[string]any, now int64) string {
 	}
 	used, ok := typedNum(sd, "used_percentage", "seven_day.used_percentage")
 	if !ok {
+		return ""
+	}
+	// Past-reset guard: a stale payload whose window already reset shows no weekly (mirrors pool).
+	if resetF, ok := typedNum(sd, "resets_at", "seven_day.resets_at"); ok && int64(resetF) <= now {
 		return ""
 	}
 
