@@ -10,13 +10,16 @@ package analyzer
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/env"
@@ -51,72 +54,76 @@ func lowOut() int {
 	return env.Int("CCPOOL_LOW_OUTPUT", 500)
 }
 
-// Review scans the transcript window and returns the per-model + triviality summary. Mirrors
-// Ruby Analyzer.review(days:, now:) exactly.
+// tokLit is the cheap byte pre-filter: only assistant usage lines carry output_tokens, so a line
+// without it can't contribute. Rejecting on the raw bytes skips both the JSON parse and the per-line
+// string allocation on the vast majority of lines.
+var tokLit = []byte("output_tokens")
+
+// modelTally is one model's running total within a single file, kept in first-seen order so the
+// merge can reconstruct the global first-seen order the turns-desc tie-break depends on.
+type modelTally struct {
+	Model string
+	Turns int
+	Out   int
+}
+
+// fileAgg is one transcript file's contribution: per-model tallies (first-seen order) plus the
+// expensive-model triviality scalars. The scalars merge order-independently; the models must be
+// replayed in file order (see Review's merge) to keep first-seen order deterministic.
+type fileAgg struct {
+	models                                      []modelTally
+	expTurns, expOut, expTrivial, expTrivialOut int
+}
+
+// Review scans the transcript window and returns the per-model + triviality summary. The corpus is
+// GBs, so files fan out across the cores; each yields a private fileAgg and the merge below folds
+// them in file order. Semantics are unchanged from the sequential version (same parse, gates, and
+// arithmetic); the file order + first-seen accumulation reproduce the old output exactly.
 func Review(days int, now int64) Result {
 	cutoff := now - int64(days)*86400
 	threshold := lowOut()
-
-	stats := map[string]*ModelStat{}
-	var order []string // first-seen model order, so the turns-desc sort is deterministic on ties
 	res := Result{Days: days}
 
-	for _, f := range jsonlFiles(paths.Projects()) {
-		info, err := os.Stat(f)
-		if err != nil || info.ModTime().Unix() < cutoff {
-			continue
+	files := jsonlFiles(paths.Projects())
+	parts := make([]fileAgg, len(files))
+	if workers := min(runtime.GOMAXPROCS(0), len(files)); workers > 0 {
+		jobs := make(chan int, len(files))
+		for i := range files {
+			jobs <- i
 		}
-		forEachLine(f, func(line []byte) {
-			if !strings.Contains(string(line), "output_tokens") {
-				return
-			}
-			j := rb.ParseObject(line)
-			if j == nil || asString(j["type"]) != "assistant" {
-				return
-			}
-			msg, ok := j["message"].(map[string]any)
-			if !ok {
-				return
-			}
-			m := asString(msg["model"])
-			// Skip router/synthetic turns: only genuine Claude models count.
-			if m == "" || m == "<synthetic>" || !containsFold(m, "claude") {
-				return
-			}
-			u, ok := msg["usage"]
-			if !ok || u == nil {
-				return
-			}
-			ts := parseTS(asString(j["timestamp"]))
-			if ts < cutoff {
-				return
-			}
+		close(jobs)
+		var wg sync.WaitGroup
+		wg.Add(workers)
+		for range workers {
+			go func() {
+				defer wg.Done()
+				for i := range jobs {
+					scanReviewFile(files[i], cutoff, threshold, &parts[i])
+				}
+			}()
+		}
+		wg.Wait()
+	}
 
-			out := 0
-			if um, ok := u.(map[string]any); ok {
-				out = toI(um["output_tokens"])
-			}
-			tools := countToolUse(msg["content"])
-
-			s := stats[m]
+	// Merge in file order: within a file models are already first-seen ordered, so folding files
+	// 0..n-1 reconstructs the exact global first-seen order the sequential scan produced.
+	stats := map[string]*ModelStat{}
+	var order []string
+	for i := range parts {
+		for _, mt := range parts[i].models {
+			s := stats[mt.Model]
 			if s == nil {
-				s = &ModelStat{Model: m}
-				stats[m] = s
-				order = append(order, m)
+				s = &ModelStat{Model: mt.Model}
+				stats[mt.Model] = s
+				order = append(order, mt.Model)
 			}
-			s.Turns++
-			s.Out += out
-
-			if !containsFold(m, "opus") && !containsFold(m, "fable") {
-				return
-			}
-			res.ExpTurns++
-			res.ExpOut += out
-			if out < threshold && tools == 0 {
-				res.ExpTrivial++
-				res.ExpTrivialOut += out
-			}
-		})
+			s.Turns += mt.Turns
+			s.Out += mt.Out
+		}
+		res.ExpTurns += parts[i].expTurns
+		res.ExpOut += parts[i].expOut
+		res.ExpTrivial += parts[i].expTrivial
+		res.ExpTrivialOut += parts[i].expTrivialOut
 	}
 
 	res.ByModel = sortByTurns(stats, order)
@@ -127,6 +134,67 @@ func Review(days int, now int64) Result {
 		res.TrivialOutPct = 100.0 * float64(res.ExpTrivialOut) / float64(res.ExpOut)
 	}
 	return res
+}
+
+// scanReviewFile folds one transcript file into agg. mtime-gated to the window (an untouched file
+// can't hold in-window turns), then the same per-line gates the sequential scan applied.
+func scanReviewFile(path string, cutoff int64, threshold int, agg *fileAgg) {
+	info, err := os.Stat(path)
+	if err != nil || info.ModTime().Unix() < cutoff {
+		return
+	}
+	idx := map[string]int{} // model -> its slot in agg.models, to keep first-seen order
+	forEachLine(path, func(line []byte) {
+		if !bytes.Contains(line, tokLit) {
+			return
+		}
+		j := rb.ParseObject(line)
+		if j == nil || asString(j["type"]) != "assistant" {
+			return
+		}
+		msg, ok := j["message"].(map[string]any)
+		if !ok {
+			return
+		}
+		m := asString(msg["model"])
+		// Skip router/synthetic turns: only genuine Claude models count.
+		if m == "" || m == "<synthetic>" || !containsFold(m, "claude") {
+			return
+		}
+		u, ok := msg["usage"]
+		if !ok || u == nil {
+			return
+		}
+		ts := parseTS(asString(j["timestamp"]))
+		if ts < cutoff {
+			return
+		}
+
+		out := 0
+		if um, ok := u.(map[string]any); ok {
+			out = toI(um["output_tokens"])
+		}
+		tools := countToolUse(msg["content"])
+
+		p, seen := idx[m]
+		if !seen {
+			p = len(agg.models)
+			idx[m] = p
+			agg.models = append(agg.models, modelTally{Model: m})
+		}
+		agg.models[p].Turns++
+		agg.models[p].Out += out
+
+		if !containsFold(m, "opus") && !containsFold(m, "fable") {
+			return
+		}
+		agg.expTurns++
+		agg.expOut += out
+		if out < threshold && tools == 0 {
+			agg.expTrivial++
+			agg.expTrivialOut += out
+		}
+	})
 }
 
 // sortByTurns orders the tally by turns descending. Ruby's sort_by is unstable, but keeping
