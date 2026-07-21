@@ -9,7 +9,17 @@ behaviour doesn't.
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-07-20
+## [0.2.1] - 2026-07-20
+
+### Changed
+
+- `ccpool review` and `ccpool rhythm` now fan their transcript scan out across the CPU cores instead of
+  walking `~/.claude/projects` on a single thread, and reject non-matching lines on the raw bytes rather
+  than allocating a string (and, for `rhythm`, a regex match) per line. On a multi-GB corpus this takes
+  `review` from ~0.95s to ~0.2s at the default 7-day window (~3.7s to ~0.7s at 30 days) and `rhythm`
+  from ~1.5s to ~0.2s, fast enough to run interactively without a visible stall. Output is unchanged,
+  byte-for-byte: `review` merges its per-file tallies in walk order so the turns-descending tie-break
+  keeps the same first-seen model order, and both stay verified against the golden conformance suite.
 
 ### Changed
 
