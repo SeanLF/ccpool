@@ -2,6 +2,33 @@ package rhythm
 
 import "testing"
 
+// TestLineTS covers the byte-level timestamp parse that replaced the per-line regex: a clean line, a
+// line whose real timestamp trails an embedded (non-ISO) "timestamp":" in pasted content, junk after
+// the literal, and no literal at all. The embedded-first case is the regex-parity guarantee.
+func TestLineTS(t *testing.T) {
+	cases := []struct {
+		name   string
+		line   string
+		y      int
+		h      int
+		wantOK bool
+	}{
+		{"clean", `{"type":"user","timestamp":"2026-07-20T11:30:00Z"}`, 2026, 11, true},
+		{"nested-first", `{"toolUseResult":{"timestamp":"pending"},"timestamp":"2026-07-20T09:05:00Z"}`, 2026, 9, true},
+		{"non-digit", `{"timestamp":"20xx-07-20T11:30:00Z"}`, 0, 0, false},
+		{"truncated", `{"timestamp":"2026-07-2`, 0, 0, false},
+		{"absent", `{"type":"summary"}`, 0, 0, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			y, _, _, h, ok := lineTS([]byte(c.line))
+			if ok != c.wantOK || (ok && (y != c.y || h != c.h)) {
+				t.Errorf("lineTS: got (y=%d,h=%d,ok=%v), want (y=%d,h=%d,ok=%v)", y, h, ok, c.y, c.h, c.wantOK)
+			}
+		})
+	}
+}
+
 func TestDetectLowRIsEven(t *testing.T) {
 	var hours [24]int
 	var wdays [7]int

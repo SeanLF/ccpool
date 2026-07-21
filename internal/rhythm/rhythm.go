@@ -11,13 +11,15 @@ package rhythm
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
-	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/clock"
@@ -26,9 +28,10 @@ import (
 	"github.com/SeanLF/ccpool/internal/rb"
 )
 
-// ts pulls the ISO8601 UTC date + hour out of a transcript line without a full JSON parse (speed
-// over thousands of files): year, month, day, hour.
-var ts = regexp.MustCompile(`"timestamp":"(\d{4})-(\d\d)-(\d\d)T(\d\d):`)
+// tsLit is the literal we scan each transcript line for. We hand-parse the ISO8601 UTC date + hour
+// at fixed offsets after it (year-mm-ddThh:) rather than regex or JSON-decode: over GBs of corpus the
+// per-line string alloc + regex dominated, so we work on sc.Bytes() with a byte Index + digit scan.
+var tsLit = []byte(`"timestamp":"`)
 
 // blocks is the sparkline ramp: index 0 = space, 1..8 = eighth-block glyphs.
 var blocks = []rune(" ▁▂▃▄▅▆▇█")
@@ -69,6 +72,7 @@ func scan(now int64) (res scanResult) {
 	win := window()
 
 	root := paths.Projects()
+	var files []string
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // a vanished/errored entry must not discard the whole scan
@@ -82,14 +86,52 @@ func scan(now int64) (res scanResult) {
 		if strings.HasPrefix(d.Name(), ".") || !strings.HasSuffix(d.Name(), ".jsonl") {
 			return nil
 		}
-		scanFile(path, offH, today, win, &res)
+		files = append(files, path)
 		return nil
 	})
+
+	// The corpus is GBs; reading it single-threaded dominated. Fan out over the cores — each worker
+	// folds into a private histogram and the sums merge order-independently (no shared mutation).
+	workers := min(runtime.GOMAXPROCS(0), len(files))
+	if workers < 1 {
+		return res
+	}
+	jobs := make(chan string, len(files))
+	for _, p := range files {
+		jobs <- p
+	}
+	close(jobs)
+
+	parts := make([]scanResult, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for w := range parts {
+		go func(pr *scanResult) {
+			defer wg.Done()
+			for p := range jobs {
+				scanFile(p, offH, today, win, pr)
+			}
+		}(&parts[w])
+	}
+	wg.Wait()
+
+	for i := range parts {
+		for h := range parts[i].hours {
+			res.hours[h] += parts[i].hours[h]
+		}
+		for d := range parts[i].wdays {
+			res.wdays[d] += parts[i].wdays[d]
+		}
+		res.n += parts[i].n
+	}
 	return res
 }
 
-// scanFile folds one transcript file into res. Fails open on open/read errors.
+// scanFile folds one transcript file into res. Fails open on open/read errors, and (belt and
+// suspenders under the parallel scan) on any per-file panic — a bad file must not crash a worker.
 func scanFile(path string, offH int, today time.Time, win int, res *scanResult) {
+	defer func() { _ = recover() }()
+
 	f, err := os.Open(path)
 	if err != nil {
 		return
@@ -99,11 +141,10 @@ func scanFile(path string, offH int, today time.Time, win int, res *scanResult) 
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024) // transcript lines can be large
 	for sc.Scan() {
-		m := ts.FindStringSubmatch(sc.Text())
-		if m == nil {
+		y, mo, dd, h, ok := lineTS(sc.Bytes())
+		if !ok {
 			continue
 		}
-		y, mo, dd, h := rb.ToI(m[1]), rb.ToI(m[2]), rb.ToI(m[3]), rb.ToI(m[4])
 		roll := floorDiv(h+offH, 24) // offset may push local past midnight (+/-1 day)
 		date := time.Date(y, time.Month(mo), dd, 0, 0, 0, 0, time.UTC).AddDate(0, 0, roll)
 		diff := int(today.Sub(date) / (24 * time.Hour)) // UTC-date -> local-date age in days
@@ -114,6 +155,43 @@ func scanFile(path string, offH int, today time.Time, win int, res *scanResult) 
 		res.wdays[int(date.Weekday())]++  // local weekday (Sun=0)
 		res.n++
 	}
+}
+
+// lineTS pulls (year, month, day, hour) from a transcript line by locating tsLit and parsing the
+// fixed-offset ISO8601 digits `YYYY-MM-DDThh:` that follow. A line can carry the literal more than
+// once (pasted JSON / tool output before the real top-level field), so we scan every occurrence and
+// take the first that parses — the leftmost full-pattern match the old regex found. ok=false (skip,
+// fail open) when no occurrence is followed by valid digits.
+func lineTS(line []byte) (y, mo, dd, h int, ok bool) {
+	for {
+		i := bytes.Index(line, tsLit)
+		if i < 0 {
+			return
+		}
+		p := line[i+len(tsLit):]
+		if len(p) >= 14 && p[4] == '-' && p[7] == '-' && p[10] == 'T' && p[13] == ':' {
+			y, ok1 := asciiInt(p[0:4])
+			mo, ok2 := asciiInt(p[5:7])
+			dd, ok3 := asciiInt(p[8:10])
+			h, ok4 := asciiInt(p[11:13])
+			if ok1 && ok2 && ok3 && ok4 {
+				return y, mo, dd, h, true
+			}
+		}
+		line = p // advance past this occurrence and keep looking
+	}
+}
+
+// asciiInt parses b as a non-negative base-10 int; ok=false on any non-digit byte (fail open).
+func asciiInt(b []byte) (int, bool) {
+	n := 0
+	for _, c := range b {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, true
 }
 
 // circ computes circular stats over the 24h clock: R (resultant length, 0=flat..1=one sharp peak)
