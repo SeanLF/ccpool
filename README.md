@@ -1,115 +1,181 @@
 # ccpool
 
-**Don't get throttled mid-project. Know what your Claude pool is worth, whether you're burning it
-too fast, and when you'll actually run dry.**
+**Turn your Claude subscription's opaque "percent used" into dollars left, a pace verdict, and a
+keep-going-or-stop call, so an overnight loop doesn't burn your whole week by Tuesday.**
 
 Your usage tools show a percentage and a reset time. That's not enough to answer the question that
-actually bites: *am I going to hit the weekly cap before I'm done?* An overnight loop can burn your
-whole pool by Tuesday and you won't know until you're locked out mid-task.
+actually bites: *am I going to hit the weekly cap before I'm done?* ccpool reads the account-global
+`rate_limits` % that [ccusage](https://github.com/ccusage/ccusage) **structurally can't see**, fuses
+it with a ccusage-calibrated `$/1%` into *what that % is worth*, warns the agent mid-turn when you're
+over pace, and downshifts subagent model/effort so an unattended run conserves the pool. It reads
+only local data and delegates every dollar to ccusage: **complementary to ccusage and native
+`/status`, not a replacement.**
 
-ccpool reads the account-global `rate_limits` % that [`ccusage`](https://github.com/ccusage/ccusage)
-**structurally can't see**, fuses it with a ccusage-calibrated `$/1%` into *what that % is worth*
-plus a pace verdict, warns the agent mid-turn when you're over pace, and downshifts subagent
-model/effort so an unattended run conserves the pool. It reads only local data and delegates every
-dollar to ccusage: **complementary to ccusage and native `/status`, not a replacement.**
+- **One static binary, ~7 MB.** A single Go binary (darwin/arm64, stripped), no runtime deps. Only
+  the `$` readout shells out to `ccusage` (Node/`npx`); without it, ccpool degrades gracefully to
+  `%`-only.
+- **Reads the number ccusage can't.** ccusage reports *what you spent*; it's blind to the
+  account-global `rate_limits` % that decides *when you get throttled*. ccpool is the missing half.
+- **Dollars, not just a percent.** `~$1,008 left of ~$2,799` beats `64% used` for deciding "burn it
+  or bank it." Self-calibrated from *your* usage (API-equivalent, not billed money).
+- **Enforces, doesn't just advise.** `ccpool run -- <cmd>` downshifts subagents (`opus/high` to
+  `haiku/low`) when you're ahead of pace, so a fan-out or `/loop` conserves the pool automatically.
+- **Decides.** `ccpool check` gives a `KEEP GOING` / `PACE DOWN` / `WIND DOWN` / ... verdict plus a
+  working-hours runway, so a long or autonomous loop stops itself before the cap does.
+- **Local and fails open.** No network except the ccusage shell-out, no telemetry, and it never
+  blocks Claude Code even on missing or stale data.
+
+```console
+$ ccpool status
+Weekly pool  ·  45% used  ·  ~$1,400 left of ~$2,560 (API-equiv)  ·  resets Wed 21:00 (2d 3h)
+Pace         ·  6 pts under pace (51% of the week elapsed) -- banked headroom
+Burn         ·  ~0.9%/h -> hits cap in ~2.5d; resets first (in 2.1d) -- you're clear
+Runway       ·  budget outlasts the week -> reset (2d 3h) comes first with headroom, burn freely
+```
 
 https://github.com/user-attachments/assets/94e93c09-0d97-41ea-9c8c-4658726ce924
 
 ![ccpool statusline and status readout](demo/overview.gif)
 
-- **See your real budget:** the account-global % turned into `$ left of your weekly pool` plus a pace
-  verdict, in your statusline and `ccpool status`.
-- **Don't burn out the week:** `ccpool run -- <cmd>` auto-downshifts subagent model/effort
-  (`opus/high` to `haiku/low`) when you're burning ahead of pace, so an unattended loop or fan-out
-  conserves the pool instead of torching it by Tuesday.
-- **Know when to stop:** `ccpool check` gives a keep-going/stop verdict plus a working-hours runway,
-  so a long or autonomous loop stops itself before the cap does.
+---
 
-## Why ccpool exists (and why not just...)
+## Contents
 
-- **ccusage?** It's the authoritative `$` engine, and ccpool delegates every dollar to it. But it
-  reports *what you spent*, and is structurally blind to the account-global `rate_limits` % that
-  decides when you get throttled. ccpool is the missing half, not a rival.
-- **Native `/status`?** It improved a lot (it now shows weekly %, 5h %, per-model $, even diagnostic
-  tips), and for a human at the keyboard it's often enough. But it's a **manual pull an autonomous
-  loop can't open**, it only *advises*, and it won't *project* (runway, throttle-before-reset) or
-  *decide* (keep-going/stop). ccpool projects, enforces, and decides while the loop runs.
-- **20 lines of jq?** That gets you the raw %. It doesn't get you a calibrated dollar value, a pace
-  verdict against how far through the week you should be, or an enforcement lever that actually
-  downshifts a fan-out. That judgment layer is the tool.
-- **Are the dollars real?** No, and ccpool says so up front: the `$` is **API-equivalent**, not
-  billed money (you pay a flat subscription). It's the right unit for "burn it or bank it," not for
-  accounting. Self-calibrated from *your* usage.
+- [Install](#install)
+- [Why ccpool exists (and why not just...)](#why-ccpool-exists-and-why-not-just)
+- [What each command does](#what-each-command-does)
+- [Keep your statusline: compose, don't replace](#keep-your-statusline-compose-dont-replace)
+- [Pace profiles (env)](#pace-profiles-env)
+- [Config file](#config-file)
+- [Config (env)](#config-env)
+- [Limitations](#limitations)
+- [Acknowledgements](#acknowledgements)
+- [Tests](#tests)
+
+---
 
 ## Install
 
-ccpool is a single static Go binary. The `%`, pace, burn, and warnings need nothing; only the `$`
-readout shells out to `ccusage` (which needs Node/`npx`), and it degrades gracefully to `%`-only if
-that's absent. It reads Claude Code's local data and the `rate_limits` number Anthropic already
-reports; **no network except the ccusage shell-out, no telemetry, and it fails open so it can never
-break Claude Code.**
+Grab it any of these ways, then run `ccpool init` once to wire it into Claude Code.
+
+**No toolchain needed** (you get the prebuilt static binary):
 
 ```sh
-go install github.com/SeanLF/ccpool@latest          # or pin a version: @v0.1.0
-# or grab a prebuilt binary from the GitHub Releases page
-brew install SeanLF/tap/ccpool                      # Homebrew (stable); bleeding-edge: SeanLF/tap/ccpool-beta
-# or: make build && export PATH="$PWD:$PATH"
+# Homebrew (stable channel; bleeding-edge is SeanLF/tap/ccpool-beta)
+brew install SeanLF/tap/ccpool
 
+# or grab a prebuilt binary from the GitHub Releases page (macOS + Linux, amd64 + arm64)
+```
+
+**From source** (needs a Go toolchain, currently Go 1.26+ per `go.mod`):
+
+```sh
+go install github.com/SeanLF/ccpool@latest          # or pin a version: @v0.2.0
+
+# or from a clone
+make build && export PATH="$PWD:$PATH"
+```
+
+```sh
 ccpool init --apply                   # wires it into Claude Code; zero config, backup taken first
 ```
 
 ![ccpool init dry-run](demo/init.gif)
 
 `ccpool init` is the whole setup: it adds the `statusLine` command plus the mid-turn `warn` hooks to
-`~/.claude/settings.json`. **Dry-run by default** (run it without `--apply` to see the exact diff),
-**idempotent**, **never-clobber** (it merges alongside your other hooks, never replaces them), and
-**symlink-aware** (it follows a dotfiles-symlinked `settings.json` to the real target). Then use Claude
-Code as normal; the statusline self-populates ccpool's local store on every render. To fully unwire
-later, remove the `statusLine` and `hooks` entries `init` added (or set `"enabled": false`, below, to
-mute it without touching `settings.json`).
+`~/.claude/settings.json`. It is **dry-run by default** (run it without `--apply` to see the exact
+diff), **idempotent**, **never-clobber** (it merges alongside your other hooks, never replaces them),
+and **symlink-aware** (it follows a dotfiles-symlinked `settings.json` to the real target). Then use
+Claude Code as normal; the statusline self-populates ccpool's local store on every render.
 
-`init` also installs a small **bundled skill**, `checking-usage`, into `~/.claude/skills/`: it teaches
-an agent to check your remaining pool budget via `ccpool check` and read the keep-going/stop verdict
-(handy in long or autonomous loops). It's shown in the dry-run diff, **never-clobbered** (edit the
-wording freely; re-running `init` won't touch it), and removable with `rm -rf ~/.claude/skills/checking-usage`.
+`init` also installs a small **bundled skill**, `checking-usage`, into `~/.claude/skills/`: it
+teaches an agent to check your remaining pool budget via `ccpool check` and read the
+keep-going/stop verdict (handy in long or autonomous loops). It's shown in the dry-run diff,
+**never-clobbered** (edit the wording freely; re-running `init` won't touch it), and removable with
+`rm -rf ~/.claude/skills/checking-usage`.
+
+> To unwire later, remove the `statusLine` and `hooks` entries `init` added, or set
+> `"enabled": false` (see [Config file](#config-file)) to mute it without touching `settings.json`.
+
+The binary reads Claude Code's local data and the `rate_limits` number Anthropic already reports.
+No network except the ccusage shell-out, no telemetry, and it fails open so it can never break Claude
+Code.
+
+---
+
+## Why ccpool exists (and why not just...)
+
+- **ccusage?** It's the authoritative `$` engine, and ccpool delegates every dollar to it. But it
+  reports *what you spent*, and is structurally blind to the account-global `rate_limits` % that
+  decides when you get throttled. ccpool is the missing half, not a rival.
+- **Native `/status`?** It improved a lot (weekly %, 5h %, per-model $, even diagnostic tips), and
+  for a human at the keyboard it's often enough. But it's a **manual pull an autonomous loop can't
+  open**, it only *advises*, and it won't *project* (runway, throttle-before-reset) or *decide*
+  (keep-going/stop). ccpool projects, enforces, and decides while the loop runs.
+- **20 lines of jq?** That gets you the raw %. It doesn't get you a calibrated dollar value, a pace
+  verdict against how far through the week you should be, or an enforcement lever that actually
+  downshifts a fan-out. That judgment layer is the tool.
+- **Claude-Code-Usage-Monitor?** The closest tool to what ccpool does, and reading its source
+  informed ccpool's ingest guard (thanked below). It reads the same `rate_limits` %, tracks cost, and
+  forecasts burn. But it's a **dashboard you watch that only advises** ("leaves decisions to you"):
+  ccpool wires into the loop instead (statusline + mid-turn `warn` hook), turns the % into a
+  calibrated pool-dollar value rather than per-token pricing, and **decides and enforces**
+  (keep-going/stop verdict, `run` downshift) so an unattended loop self-governs.
+- **Are the dollars real?** No, and ccpool says so up front: the `$` is **API-equivalent**, not
+  billed money (you pay a flat subscription). It's the right unit for "burn it or bank it," not for
+  accounting. Self-calibrated from *your* usage.
+
+---
 
 ## What each command does
 
-`ccpool status` fuses the account-global `rate_limits` % with a ccusage-calibrated `$/1%` into a
-**dollar value for your weekly pool** plus a pace verdict: *"9% used · ~$2,329 left of ~$2,560
-(API-equiv) · resets Wed 21:00 · 20pts under pace, burn freely."*
+**`ccpool status`** fuses the account-global `rate_limits` % with a ccusage-calibrated `$/1%` into a
+**dollar value for your weekly pool** plus a pace verdict (the four-line readout at the top of this
+page). Bare `ccpool` runs this.
 
-`ccpool check` is time plus budget plus a keep-going/stop **verdict** for long or autonomous loops
-(`KEEP GOING` / `PACE DOWN` / `SESSION-LIMITED` / `WIND DOWN` / `COAST` / `BURN DOWN`), distinguishing a
-temporary 5h throttle from a real "stop for the week." It includes a **working-hours runway**:
-time-to-exhaustion measured per *active* hour, so sleep doesn't dilute it.
+**`ccpool check`** is time plus budget plus a keep-going/stop **verdict** for long or autonomous
+loops, distinguishing a temporary 5h throttle from a real "stop for the week." It includes a
+**working-hours runway**: time-to-exhaustion measured per *active* hour, so sleep doesn't dilute it.
+
+```console
+$ ccpool check
+time     2026-01-15 21:21 EST (Wed)
+data     fresh (5s ago)
+
+SESSION  12% used  ·  resets in 1h 38m  (5h window)
+WEEKLY   45% used  ·  resets in 2d 3h  (7d window)
+         51% of week elapsed -> 6pts UNDER even-burn pace -- expected unless you run 24/7
+         burn: ~0.9%/h -> even non-stop, resets before you'd reach the cap, fine
+         runway: budget outlasts the week -> reset (2d 3h) comes first with headroom, burn freely
+
+VERDICT  KEEP GOING -- 55% weekly headroom, session has room. Spend the budget you were asked to spend.
+```
 
 ![ccpool check verdict](demo/check.png)
 
-`ccpool run -- <cmd>` runs `<cmd>`, **downshifting subagent model/effort** when you're burning ahead of
-pace, so an unattended `/loop` or fan-out conserves the pool. Verified: it sets
-`CLAUDE_CODE_SUBAGENT_MODEL` and `CLAUDE_CODE_EFFORT_LEVEL`, which actually take effect on spawned
-subagents.
+**`ccpool run -- <cmd>`** runs `<cmd>`, **downshifting subagent model/effort** when you're burning
+ahead of pace, so an unattended `/loop` or fan-out conserves the pool. It sets
+`CLAUDE_CODE_SUBAGENT_MODEL` and `CLAUDE_CODE_EFFORT_LEVEL`, which take effect on spawned subagents.
 
-`ccpool review [days]` is a retrospective: **did you use the right model for the work?** It flags
-expensive-model turns that did trivial work (candidates to downshift). I haven't seen another tool
-surface this.
+**`ccpool review [days]`** is a retrospective: **did you use the right model for the work?** It flags
+expensive-model turns that did trivial work (candidates to downshift).
 
-`ccpool warn` is a Claude Code hook (`UserPromptSubmit` / `PostToolUse`) that warns the agent mid-turn
-when it's over pace, near the 5h cap, or near context auto-compaction.
+**`ccpool warn`** is a Claude Code hook (`UserPromptSubmit` / `PostToolUse`) that warns the agent
+mid-turn when it's over pace, near the 5h cap, or near context auto-compaction.
 
-`ccpool rhythm` (read-only) reads your last 30d of transcripts in the *current* machine's local time and
-measures rhythm strength `R`. High `R` means a sharp day/night rhythm, so it suggests a concrete
-`CCPOOL_WAKE_HOURS` (plus `CCPOOL_WORK_DAYS`); low `R` means continuous loops fill the clock, so it says
-stick with `even`. A suggester, never an auto-applier. Tune with `CCPOOL_RHYTHM_WINDOW` / `CCPOOL_RHYTHM_R`.
+**`ccpool rhythm`** (read-only) reads your last 30d of transcripts in the *current* machine's local
+time and measures rhythm strength `R`. High `R` (a sharp day/night rhythm) suggests a concrete
+`CCPOOL_WAKE_HOURS` / `CCPOOL_WORK_DAYS`; low `R` (continuous loops fill the clock) says stick with
+`even`. A suggester, never an auto-applier.
 
-It **fails open** on any missing or stale data, so it never blocks Claude Code. Run `ccpool <command>
---help` for details on any command.
+Run `ccpool <command> --help` for details on any command.
+
+---
 
 ## Keep your statusline: compose, don't replace
 
-ccpool is a *specialized pool gauge*, not a general statusline (it deliberately shows no model/git/dir,
-that's your host statusline's job). So if you already run one, add ccpool *inside* it.
+ccpool is a *specialized pool gauge*, not a general statusline (it deliberately shows no
+model/git/dir, that's your host statusline's job). So if you already run one, add ccpool *inside* it.
 [ccstatusline](https://github.com/sirmalloc/ccstatusline) forwards Claude's full payload (incl.
 `rate_limits`) to its **Custom Command** widgets, so ccpool renders natively as a widget:
 
@@ -118,18 +184,18 @@ that's your host statusline's job). So if you already run one, add ccpool *insid
 ccpool statusline --embed
 ```
 
-`--embed` prints just ccpool's differentiator, `pool 45% $1.4k +2↑` (weekly % · $-of-pool left · pace),
-and leaves ctx/5h/model/git to the host. `ccpool init` auto-detects a ccstatusline statusLine and prints
-this recipe instead of offering to replace it. The `$` self-populates even if ccpool is *only* ever a
-widget: each render kicks off a throttled background calibration warm-up (never blocking the line).
-(claude-powerline and CCometixLine don't forward the payload or don't take external commands, so there
-ccpool has to be the statusLine: `ccpool init --replace-statusline`.)
+`--embed` prints just ccpool's differentiator, `pool 45% $1.4k +2↑` (weekly % · $-of-pool left ·
+pace), and leaves ctx/5h/model/git to the host. `ccpool init` auto-detects a ccstatusline statusLine
+and prints this recipe instead of offering to replace it. The `$` self-populates even if ccpool is
+*only* ever a widget: each render kicks off a throttled background calibration warm-up (never
+blocking the line). (claude-powerline and CCometixLine don't forward the payload or don't take
+external commands, so there ccpool has to be the statusLine: `ccpool init --replace-statusline`.)
 
-**Want provider-outage warnings too?** That's a different question from *what your pool is worth*, and
-[AIWatch](https://ai-watch.dev) already answers it: it pairs with a ccstatusline Custom Command widget
-to surface Anthropic (plus 30+ other providers') outages right in your line. Add it as a sibling widget
-next to ccpool. ccpool itself stays deliberately local and network-free, so it doesn't poll
-status.claude.com (see `docs/DECISIONS.md` for why).
+**Want provider-outage warnings too?** That's a different question from *what your pool is worth*,
+and [AIWatch](https://ai-watch.dev) already answers it: it pairs with a ccstatusline Custom Command
+widget to surface Anthropic (plus 30+ other providers') outages right in your line. Add it as a
+sibling widget next to ccpool. ccpool itself stays deliberately local and network-free (see
+`docs/DECISIONS.md` for why).
 
 Doing it by hand instead of via `init`:
 
@@ -138,17 +204,19 @@ Doing it by hand instead of via `init`:
 { "statusLine": { "type": "command", "command": "ccpool statusline" } }
 ```
 
-Run `ccpool statusline` **bare in a terminal** to preview the line (it renders from the freshest stored
-snapshot instead of hanging on stdin).
+Run `ccpool statusline` **bare in a terminal** to preview the line (it renders from the freshest
+stored snapshot instead of hanging on stdin).
+
+---
 
 ## Pace profiles (env)
 
-Pace is `used%` vs how far through the week you *should* be. By default that's the plain elapsed fraction
-of the rolling 7-day window: uniform 24/7, which fits a continuous autonomous-loop operator. But the
-window's start is arbitrary (Anthropic-controlled) and few humans burn evenly, so a Mon-Fri worker would
-look "ahead of pace" every Friday for no real reason. Describe your rhythm with two orthogonal knobs (off
-either one falls to the `CCPOOL_PACE_FLOOR` residual, not zero, so one late night isn't read as
-infinitely ahead of pace):
+Pace is `used%` vs how far through the week you *should* be. By default that's the plain elapsed
+fraction of the rolling 7-day window: uniform 24/7, which fits a continuous autonomous-loop operator.
+But the window's start is arbitrary (Anthropic-controlled) and few humans burn evenly, so a Mon-Fri
+worker would look "ahead of pace" every Friday for no real reason. Describe your rhythm with two
+orthogonal knobs (off either one falls to the `CCPOOL_PACE_FLOOR` residual, not zero, so one late
+night isn't read as infinitely ahead of pace):
 
 | knob | default | meaning |
 |---|---|---|
@@ -156,20 +224,22 @@ infinitely ahead of pace):
 | `CCPOOL_WAKE_HOURS` | `0-24` (no sleep) | your waking window on those days |
 | `CCPOOL_PACE_FLOOR` | `0.15` | weight for off-days / sleeping hours |
 
-Examples: **24/7 loop operator**, *defaults*. **9-5 human**, `WORK_DAYS=1-5 WAKE_HOURS=9-17`. **7-day
-indie who sleeps**, `WAKE_HOURS=8-24`. **4-day week**, `WORK_DAYS=1-4 WAKE_HOURS=8-24`.
+Examples: **24/7 loop operator**, *defaults*. **9-5 human**, `WORK_DAYS=1-5 WAKE_HOURS=9-17`.
+**7-day indie who sleeps**, `WAKE_HOURS=8-24`. **4-day week**, `WORK_DAYS=1-4 WAKE_HOURS=8-24`.
 
 `CCPOOL_PACE_PROFILE` is optional shorthand that just presets those knobs: `even` (default, all/24h),
 `weekdays` (`1-5`/24h), `workhours` (`1-5`/`9-17`), or `custom` for graded `CCPOOL_PACE_WEIGHTS` (7,
 Sun-Sat) × `CCPOOL_PACE_HOUR_WEIGHTS` (24). An explicit knob overrides the preset. One setting steers
 `status`, `check`, `warn`, `run`'s downshift, and the statusline bar together, so they can't disagree.
 
+---
+
 ## Config file
 
 ccpool reads a config file at `~/.ccpool/ccpool.json` (override `CCPOOL_CONFIG`). Zero-config still
 works; every setting has a default, and the file just persists your choices so they survive without
-keeping env vars exported. Resolution order is **env > file > default**: env stays the override, the file
-is where a chosen or detected value lives. A realistic file:
+keeping env vars exported. Resolution order is **env > file > default**: env stays the override, the
+file is where a chosen or detected value lives. A realistic file:
 
 ```jsonc
 {
@@ -186,13 +256,15 @@ is where a chosen or detected value lives. A realistic file:
 `enabled: false` is a kill-switch: the statusline and `warn` hook go quiet (no-op) without unwiring
 anything from `settings.json`, handy for a holiday or a focus block.
 
-**Commands.** `ccpool config show` prints the effective value of every setting plus which layer supplied
-it (`env`/`file`/`default`): the "why is my pace X?" answer. `ccpool config init` seeds the file (dry-run
-by default; `--apply` writes it fill-missing-only, `--apply --force` re-detects and overwrites).
-`ccpool init --apply` also seeds the config as part of first-time setup, so a single command wires the
-hooks *and* the file. Detection is off the hot path (only `init`/`config init` run it, never a render);
-the threshold escape hatches (`CCPOOL_CHECK_*`/`WARN_*`/`RUNWAY_*`, below) are deliberately **not** in the
-file, since they're power-user overrides on internal judgment calls, not user-shape settings.
+**Commands.** `ccpool config show` prints the effective value of every setting plus which layer
+supplied it (`env`/`file`/`default`): the "why is my pace X?" answer. `ccpool config init` seeds the
+file (dry-run by default; `--apply` writes it fill-missing-only, `--apply --force` re-detects and
+overwrites). `ccpool init --apply` also seeds the config as part of first-time setup, so a single
+command wires the hooks *and* the file. The threshold escape hatches
+(`CCPOOL_CHECK_*`/`WARN_*`/`RUNWAY_*`, below) are deliberately **not** in the file, since they're
+power-user overrides on internal judgment calls, not user-shape settings.
+
+---
 
 ## Config (env)
 
@@ -209,42 +281,51 @@ file, since they're power-user overrides on internal judgment calls, not user-sh
 | `NO_COLOR` / `TERM=dumb` | unset | standard [no-color.org](https://no-color.org) contract: strips all ANSI |
 | `CCPOOL_HOME`, `CCPOOL_DB` | `~/.ccpool`, `$HOME/ccpool.db` | ccpool state dir + SQLite store path |
 
+---
+
 ## Limitations
 
-- **Downshift is launch-time** (per `ccpool run` invocation), not continuous mid-run. Claude Code hooks
-  can't set model/effort, so the wrapper is the enforcement point. The right grain for an unattended
-  fan-out; it won't slow a single expensive main-loop turn.
-- **`$` values are API-equivalent**, not billed money (you pay a flat subscription). The right signal for
-  "burn it or bank it," not for accounting. Self-calibrated from *your* usage; drifts with model mix or
-  promos (recomputed every `CCPOOL_CALIB_TTL`).
-- **Single data source.** It reads the statusline snapshot; no OAuth fallback. It stamps data age when
-  stale and is robust to the known leak bug (#52326), but it's one source, not ccusage's three-tier
-  hierarchy (yet).
-- **`seven_day` is only the ALL-MODELS weekly window.** Anthropic tracks *separate* per-model weekly caps
-  (a Sonnet-only one, [#27915](https://github.com/anthropics/claude-code/issues/27915), and a distinct
-  Fable bucket) that `/status` shows but that are **not** in the `rate_limits` payload ccpool reads. So
-  you could hit a per-model cap with ccpool showing the main pool healthy. Treat a healthy weekly % as
-  necessary-but-not-sufficient for model-heavy work and check `/status`.
+- **Downshift is launch-time** (per `ccpool run` invocation), not continuous mid-run. Claude Code
+  hooks can't set model/effort, so the wrapper is the enforcement point. The right grain for an
+  unattended fan-out; it won't slow a single expensive main-loop turn.
+- **`$` values are API-equivalent**, not billed money (you pay a flat subscription). The right signal
+  for "burn it or bank it," not for accounting. Self-calibrated from *your* usage; drifts with model
+  mix or promos (recomputed every `CCPOOL_CALIB_TTL`).
+- **Single data source.** It reads the statusline snapshot; no OAuth fallback. It stamps data age
+  when stale and is robust to the known leak bug (#52326), but it's one source, not ccusage's
+  three-tier hierarchy (yet).
+- **`seven_day` is only the ALL-MODELS weekly window.** Anthropic tracks *separate* per-model weekly
+  caps (a Sonnet-only one, [#27915](https://github.com/anthropics/claude-code/issues/27915), and a
+  distinct Fable bucket) that `/status` shows but that are **not** in the `rate_limits` payload
+  ccpool reads. So you could hit a per-model cap with ccpool showing the main pool healthy. Treat a
+  healthy weekly % as necessary-but-not-sufficient for model-heavy work and check `/status`.
 - **`review` proxies effort** from output-token volume plus tool-call count (effort isn't logged
   per-turn); `ultrathink`/thinking inflate output invisibly. Treat it as a hint, not a verdict.
+
+---
 
 ## Acknowledgements
 
 ccpool stands on other people's work:
 
-- **[ccusage](https://github.com/ccusage/ccusage)** (@ryoppippi) is the authoritative `$` engine. ccpool
-  delegates every dollar to it and never hand-rolls pricing.
-- **[ccstatusline](https://github.com/sirmalloc/ccstatusline)** (@sirmalloc) is the composable statusline
-  ccpool embeds into as a `--embed` widget.
-- **[vhs](https://github.com/charmbracelet/vhs)** (Charm) records the `status`/`init`/`check` demo GIFs.
+- **[ccusage](https://github.com/ccusage/ccusage)** (@ryoppippi) is the authoritative `$` engine.
+  ccpool delegates every dollar to it and never hand-rolls pricing.
+- **[ccstatusline](https://github.com/sirmalloc/ccstatusline)** (@sirmalloc) is the composable
+  statusline ccpool embeds into as a `--embed` widget.
+- **[vhs](https://github.com/charmbracelet/vhs)** (Charm) records the `status`/`init`/`check` demo
+  GIFs.
 - **[HyperFrames](https://github.com/heygen-com/hyperframes)** (HeyGen) renders the launch demo video
   from an HTML composition.
 - **[Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor)**
   (@Maciek-roboblog) independently logs the same `rate_limits` history; reading its source informed
   ccpool's ingest guard against Claude's epoch-leak bug and the `user_version` schema migration.
+- **[agent-skills](https://github.com/evilmartians/agent-skills)** (Evil Martians) provided the
+  `good-readme` skill that shaped this README's structure.
 
-Independent and unofficial, **not affiliated with Anthropic**. ccpool reads Claude Code's local data and
-the `rate_limits` number Anthropic already reports; it never circumvents any limit.
+Independent and unofficial, **not affiliated with Anthropic**. ccpool reads Claude Code's local data
+and the `rate_limits` number Anthropic already reports; it never circumvents any limit.
+
+---
 
 ## Tests
 
@@ -252,5 +333,7 @@ the `rate_limits` number Anthropic already reports; it never circumvents any lim
 make check    # gofumpt + vet + staticcheck + govulncheck + go test ./...
 ```
 
-Conformance suites diff every command's output against committed golden files (hermetic `CCPOOL_*` env,
-no `~/.claude` access). ccusage is mocked in tests via `CCPOOL_CCUSAGE_CMD`.
+Conformance suites diff every command's output against committed golden files (hermetic `CCPOOL_*`
+env, no `~/.claude` access). ccusage is mocked in tests via `CCPOOL_CCUSAGE_CMD`.
+</content>
+</invoke>
