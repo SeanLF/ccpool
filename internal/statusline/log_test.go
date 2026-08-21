@@ -14,7 +14,7 @@ func TestDiagCapsAndStructures(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "statusline.log")
 	t.Setenv("CCPOOL_STATUSLINE_LOG", path)
 
-	for i := 0; i < maxLogLines+50; i++ {
+	for range maxLogLines + 50 {
 		diag.Warn("segment schema mismatch", "field", "seven_day", "got", "float64")
 	}
 

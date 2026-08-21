@@ -1,6 +1,6 @@
 module github.com/SeanLF/ccpool
 
-go 1.26.5
+go 1.27.0
 
 tool (
 	golang.org/x/vuln/cmd/govulncheck

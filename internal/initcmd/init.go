@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/SeanLF/ccpool/internal/fmtx"
@@ -591,12 +592,7 @@ func Run(args []string, now int64) error {
 }
 
 func contains(args []string, want string) bool {
-	for _, a := range args {
-		if a == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, want)
 }
 
 // --- ordered JSON (preserve key order so the written settings.json stays byte-identical to its golden) ---

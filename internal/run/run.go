@@ -162,8 +162,8 @@ func mergedEnv(extra map[string]string) []string {
 	}
 	idx := make(map[string]int, len(env))
 	for i, kv := range env {
-		if eq := strings.IndexByte(kv, '='); eq >= 0 {
-			idx[kv[:eq]] = i
+		if before, _, ok := strings.Cut(kv, "="); ok {
+			idx[before] = i
 		}
 	}
 	for k, v := range extra {

@@ -21,7 +21,7 @@ func TestOpenHealsFromBackup(t *testing.T) {
 	if st != store.StateOK || s == nil {
 		t.Fatalf("open = %v", st)
 	}
-	for i := 0; i < 25; i++ {
+	for i := range 25 {
 		if err := s.AppendHistory(store.HistoryRow{T: int64(i), Wk: float64(i)}); err != nil {
 			t.Fatal(err)
 		}

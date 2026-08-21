@@ -24,10 +24,10 @@ jobs:
         with:
           go-version-file: go.mod # single source of truth for the Go version
           check-latest: true
+      # Via make so CI and `make check` stay one definition. Inlining `gofumpt -l .` here meant CI
+      # missed the Makefile's exit-status check, and passed a file that failed to parse.
       - name: format (gofumpt)
-        run: |
-          out="$(go tool gofumpt -l .)"
-          if [ -n "$out" ]; then echo "::error::unformatted files:"; echo "$out"; exit 1; fi
+        run: make fmt-check
       - name: vet
         run: go vet ./...
       - name: staticcheck

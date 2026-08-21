@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -66,16 +67,14 @@ func detectFrom(r float64, hours [24]int, wdays [7]int) *config.Config {
 
 	pace := &config.Pace{}
 	if workDays != "" {
-		pace.WorkDays = strPtr(workDays)
+		pace.WorkDays = new(workDays)
 	}
 	if wakeHours != "" {
-		pace.WakeHours = strPtr(wakeHours)
+		pace.WakeHours = new(wakeHours)
 	}
 	cfg.Pace = pace
 	return cfg
 }
-
-func strPtr(s string) *string { return &s }
 
 // setting is one row of `config show`: the env key env.Resolve reads, its documented default, and
 // the dotted label mirroring the config file's JSON shape. This list IS the in-scope set -- it
@@ -176,10 +175,5 @@ func Init(args []string, now int64) (lines []string, code int) {
 }
 
 func hasFlag(args []string, want string) bool {
-	for _, a := range args {
-		if a == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, want)
 }

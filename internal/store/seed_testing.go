@@ -52,7 +52,7 @@ func SeedHistoryJSONL(dbPath, jsonl string) error {
 		return fmt.Errorf("seed: open %s: state %v", dbPath, st)
 	}
 	defer s.Close()
-	for _, line := range strings.Split(jsonl, "\n") {
+	for line := range strings.SplitSeq(jsonl, "\n") {
 		row, ok := HistoryRowFromJSONL(line)
 		if !ok {
 			continue

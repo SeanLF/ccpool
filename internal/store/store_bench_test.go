@@ -46,7 +46,7 @@ func TestContendedWritesNoDrops(t *testing.T) {
 			const perWriter = 25
 			var wg sync.WaitGroup
 			errs := make(chan error, m)
-			for w := 0; w < m; w++ {
+			for w := range m {
 				wg.Add(1)
 				go func(w int) {
 					defer wg.Done()
@@ -56,7 +56,7 @@ func TestContendedWritesNoDrops(t *testing.T) {
 						return
 					}
 					defer s.Close()
-					for i := 0; i < perWriter; i++ {
+					for i := range perWriter {
 						if err := s.AppendHistory(store.HistoryRow{T: int64(w*10_000 + i), Wk: float64(i)}); err != nil {
 							errs <- fmt.Errorf("writer %d append %d: %w", w, i, err)
 							return
@@ -90,9 +90,7 @@ func BenchmarkContendedAppend(b *testing.B) {
 
 	stop := make(chan struct{})
 	var bg sync.WaitGroup
-	bg.Add(1)
-	go func() {
-		defer bg.Done()
+	bg.Go(func() {
 		c, st := store.Open()
 		if st != store.StateOK || c == nil {
 			return
@@ -106,7 +104,7 @@ func BenchmarkContendedAppend(b *testing.B) {
 				_ = c.AppendHistory(store.HistoryRow{T: int64(1_000_000 + i), Wk: 1})
 			}
 		}
-	}()
+	})
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

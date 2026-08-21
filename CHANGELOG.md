@@ -9,6 +9,16 @@ behaviour doesn't.
 
 ## [Unreleased]
 
+### Changed
+
+- Built with **Go 1.27**. macOS builds now require **13 Ventura or newer**, because Go 1.27 dropped
+  macOS 12 support. Homebrew declines the install on an older macOS rather than delivering a binary
+  that cannot start. There is no supported path on macOS 12: `go.mod` requires Go 1.27, and Go 1.27
+  needs macOS 13 to run. v0.2.1 remains available for Monterey.
+- `ccpool review` is a few percent slower (209ms -> 214ms on its default 7-day window against a
+  387k-message corpus), because Go 1.27 re-backed `encoding/json` with the slower-for-our-shape v2
+  engine. Measured and accepted; see `docs/DECISIONS.md`. No other command is affected.
+
 ## [0.2.1] - 2026-07-20
 
 ### Changed

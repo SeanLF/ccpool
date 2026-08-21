@@ -97,7 +97,7 @@ func stageCorpus(t *testing.T, projects string, fx rhythmFixture, now int64) {
 					h := numI(t, hn)
 					stamp := date.Format("2006-01-02") + fmtHour(h)
 					line := `{"timestamp":"` + stamp + `"}` + "\n"
-					for i := 0; i < count; i++ {
+					for range count {
 						b.WriteString(line)
 					}
 				}
@@ -106,7 +106,7 @@ func stageCorpus(t *testing.T, projects string, fx rhythmFixture, now int64) {
 		for _, rw := range fsp.Raw {
 			count := numI(t, rw.Count)
 			line := `{"timestamp":"` + rw.Timestamp + `"}` + "\n"
-			for i := 0; i < count; i++ {
+			for range count {
 				b.WriteString(line)
 			}
 		}

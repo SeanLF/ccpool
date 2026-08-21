@@ -17,7 +17,7 @@ func TestProjectBurnNonNegative(t *testing.T) {
 		cur := rapid.Int64Range(1_000_000_000, 1_500_000_000).Draw(t, "t0")
 
 		entries := make([]Entry, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			cur += rapid.Int64Range(1, 7200).Draw(t, "dt") // strictly increasing timestamps
 			entries[i] = Entry{
 				"t":        cur,

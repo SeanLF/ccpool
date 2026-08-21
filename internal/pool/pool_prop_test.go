@@ -21,7 +21,7 @@ func TestGetWindowReconcile(t *testing.T) {
 		useds := make([]float64, n)
 		resets := make([]int64, n)
 		snaps := make([]map[string]any, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			useds[i] = float64(rapid.IntRange(0, 100).Draw(t, "used")) // integral -> exact float equality
 			resets[i] = now + rapid.Int64Range(1, maxAhead).Draw(t, "resetAhead")
 			snaps[i] = map[string]any{"rate_limits": map[string]any{"seven_day": map[string]any{

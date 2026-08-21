@@ -680,3 +680,117 @@ Then a config-file feature emerged from a conversation about how users actually 
     mechanics` stands. Structural blind spot recorded: the CC statusline payload exposes only one
     `seven_day` (the All-models bucket); if hooks ever expose the per-model (Fable) bar, a per-bucket
     calibration becomes possible and is the cleanest future fix.
+
+## Go 1.27 adoption + the macOS 13 floor (2026-08-21)
+
+Go 1.27.0 shipped 2026-08. Bumped `go.mod` `go 1.26.5 -> 1.27.0`; CI, release builds and the
+language version all move together because every workflow reads `go-version-file: go.mod`.
+
+- **Superseded:** the `Go 1.26.5` pin recorded in "Go migration -- execution decisions
+  (2026-07-10)" above. That entry stays as written; this one is the current state.
+- **The `go` line is a floor, not a pin.** The local machine had been on go1.27.0 for weeks while
+  CI still fetched 1.26.5, with no signal that the two had diverged. Worth knowing the next time a
+  "works locally" bug shows up: check `go version` against `go.mod` first.
+- **DECISION: accept a macOS 13 Ventura floor.** Go 1.27 dropped Monterey; the built darwin
+  binaries now stamp `LC_BUILD_VERSION minos 13.0` (verified with `vtool -show-build-version` on a
+  snapshot build). This strands macOS 12 users, mostly older Intel Macs.
+  - **How many is that? Measured, not guessed.** The first draft defended this with a purely
+    forward-looking argument ("staying on 1.26 costs us every future Go release"), which is true but
+    was the wrong reason to reach for when the backward-looking number is one `gh api` call away:
+    3 stars, 0 forks, and across all six releases `darwin_amd64` has **1 download, ever** (on
+    v0.1.1, the release that SIGKILLed at launch, so plausibly a test of the author's own). For
+    scale, Homebrew's own `HOMEBREW_MACOS_OLDEST_SUPPORTED` is **14**, two releases newer than
+    Monterey, so a macOS 12 user's `brew` is unsupported before it ever reads our cask. The cost
+    side is empirically ~0. Keep citing the number, not the intuition.
+  - **Be precise about what it leaves them, which is less than it first appears.** The first draft
+    of this entry said "the source path still works for them." It does not: the `go` directive is
+    an enforced minimum (`GOTOOLCHAIN=go1.26.5 go build ./...` -> `go.mod requires go >= 1.27.0`),
+    and Go 1.27 will not run on macOS 12 anyway, so `go install` is out too. What remains is v0.2.1,
+    or a clone with the directive lowered to `1.26` -- the tree does still build and test clean that
+    way under a real go1.26.5 (checked), but nothing in CI keeps it that way. README and CHANGELOG
+    now say that rather than the comfortable version.
+  - **Mechanism, not prose:** both casks carry `depends_on macos: ">= :ventura"`, so `brew` refuses
+    the install instead of handing over a binary dyld would refuse to exec. GoReleaser's
+    `dependencies:` only models cask/formula deps, so this goes through `custom_block` as raw cask
+    DSL. Verified by generating the casks (`goreleaser release --snapshot`) and `ruby -c`-ing them.
+  - **Two gaps in that guard, named because they are real and we are shipping anyway.** It is
+    Homebrew-only: the README also points at the Releases page, and a raw tarball has nothing to
+    check the OS, so that path gets a plain sentence in the README instead. And the guard fires on
+    every `brew upgrade`, so a Monterey user sees a recurring error rather than a quiet pin at
+    v0.2.1. Loud beats silent-and-broken, but that is the behaviour.
+
+### The measured surprise: `encoding/json` v2 costs us 38% of the decode, ~4% of the command
+
+1.27 re-backs `encoding/json` with the v2 engine. The release notes frame v2 as faster; for our
+shape it is materially slower, and nothing but a benchmark would have caught it. Added
+`internal/analyzer/analyzer_bench_test.go` (20k-line synthetic corpus, single file, sequential,
+`-cpu=1`, M4 Pro, `-count=8`) to make it a standing tripwire. It carries a negative control: it
+asserts the scan actually parsed before timing, because an mtime gate or a cutoff would otherwise
+let it time an early return and report a flattering number.
+
+| build | ns/op | MB/s | allocs/op |
+| --- | --- | --- | --- |
+| go1.26.5 | 37.6M | 137 | 864,858 |
+| go1.27.0 (default) | 51.9M | 99 | 928,333 |
+| go1.27.0 `GOEXPERIMENT=nojsonv2` | 37.6M | 137 | 864,858 |
+| go1.27.0 `GOEXPERIMENT=nosizespecializedmalloc` | 54.7M | 94 | 928,333 |
+
+Attribution is clean: `nojsonv2` reproduces 1.26.5 to the allocation, so **all** of the loss is the
+v2 engine. The cost is in `rb.ParseObject`: a fresh `json.NewDecoder` + `UseNumber` per line
+decoding into `map[string]any`, which is the slowest shape v2 has.
+
+Read the malloc rows carefully, because the obvious summary is wrong. Size-specialized allocation
+is worth 5.1% **on the v2 path** (54.7M -> 51.9M), but it buys nothing on the other one: rows 1 and
+3 are identical to the allocation, so with the v2 engine off, 1.27 and 1.26.5 perform the same. On
+this workload the malloc win exists only to partly refund allocations that v2 itself added. An
+earlier draft here said "separately worth ~5%", which reads as a free win that would apply anywhere;
+the table never supported that.
+
+**Then we measured the actual command, and the 38% mostly evaporated.** Against the live corpus
+(8357 files, 4.7 GB; median of 9, page cache warm, `ccpool review N`):
+
+| window | share of corpus past the mtime gate | go1.26.5 | go1.27.0 | delta |
+| --- | --- | --- | --- | --- |
+| 7d (default) | ~10% | 209ms | 214ms | +2.4% |
+| 30d | ~44% | 770ms | 805ms | +4.5% |
+| 60d | ~78% | 1302ms | 1357ms | +4.2% |
+| 3650d | 100% (nothing gated) | 1810ms | 1884ms | +4.1% |
+
+**The obvious explanation for that gap is wrong, and the last row is what proves it.** The first
+draft of this entry said the delta shrinks because `review` "mtime-gates most of the corpus away".
+If that were the cause, the delta would climb as the window widens. It does not: gating nothing at
+all still gives +4.1%. What actually keeps the decode a minority of wall time is the
+`bytes.Contains(line, tokLit)` pre-filter (`tokLit` is declared at `internal/analyzer/analyzer.go:60`), which rejects most
+lines before any parse, plus I/O and the fan-out across cores. Keep the 3650d row: it is the row
+that answers "but what about a user whose corpus is all inside the window?" (+4.1%, not +38%).
+
+Both numbers are worth keeping. The microbenchmark is the sensitive instrument that says *what
+changed*; the end-to-end run says *whether anyone cares*. Reporting only the first would have
+turned a 5ms difference into a scary changelog entry, which is why the changelog reports the 5ms and
+not the 38%.
+
+**The other cost, which the first draft of this ledger omitted: the binary grew.** Same release
+flags (`CGO_ENABLED=0 -trimpath -s -w`), both toolchains: 7,458,994 -> 7,879,250 bytes, **+420 KB
+(+5.6%)**. `docs/standards/go.md` states "small static binary is the goal", so a size regression
+belongs in the ledger next to the time one. (Watch for this trap when measuring: an early
+comparison here read +6.9% purely because the 1.26 build omitted `CGO_ENABLED=0`. Build both sides
+with identical flags or the number is fiction.) Weight it honestly, though: "Post-v1 architecture
+-- measured options (2026-07-10)" above already ruled that **binary size is not sacred**, calling
+1 MB vs 5 MB noise for a `brew`/curl install while accepting a +4.72 MB dependency as a live
+option. 420 KB is under a tenth of what that entry called noise. Worth measuring and tracking,
+not worth deciding on.
+
+- **Accepted, no mitigation needed.** `review` is an on-demand diagnostic, not the fail-open hot
+  path (`warn`/`statusline` do no bulk decoding), and 5ms on its default window is invisible.
+- **Net verdict, stated plainly:** on measured merits alone 1.27 is a small regression for this
+  program (`review` +4%, and nothing in 1.27 that ccpool uses; the +420 KB is noise by this
+  ledger's own standing rule). What justifies taking
+  it is not a benefit, it is the cost of NOT taking it: staying behind compounds, and the platform
+  we give up has ~0 users. Record it that way rather than pretending there was a win.
+- **REJECTED: pinning `GOEXPERIMENT=nojsonv2` in the build.** Tempting when the number was 38%,
+  clearly wrong at 5ms. It is also a deadline rather than a fix (the experiment is documented as
+  slated for removal) and would make our shipped binary diverge from the stdlib everyone else
+  tests against. If the scan ever does need the time back, fix `internal/rb` (a `jsontext`-based
+  or hand-rolled parse of the handful of fields we actually read) rather than pin the toolchain.
+- Conformance goldens were byte-unchanged across the bump, and no golden embeds JSON error text
+  (checked), which is the documented place v1-over-v2 compat is allowed to differ.

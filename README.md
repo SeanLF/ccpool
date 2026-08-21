@@ -11,7 +11,7 @@ over pace, and downshifts subagent model/effort so an unattended run conserves t
 only local data and delegates every dollar to ccusage: **complementary to ccusage and native
 `/status`, not a replacement.**
 
-- **One static binary, ~7 MB.** A single Go binary (darwin/arm64, stripped), no runtime deps. Only
+- **One static binary, ~7.5 MB.** A single Go binary (darwin/arm64, stripped), no runtime deps. Only
   the `$` readout shells out to `ccusage` (Node/`npx`); without it, ccpool degrades gracefully to
   `%`-only.
 - **Reads the number ccusage can't.** ccusage reports *what you spent*; it's blind to the
@@ -67,7 +67,14 @@ brew install SeanLF/tap/ccpool
 # or grab a prebuilt binary from the GitHub Releases page (macOS + Linux, amd64 + arm64)
 ```
 
-**From source** (needs a Go toolchain, currently Go 1.26+ per `go.mod`):
+macOS builds need **13 Ventura or newer** (the Go 1.27 floor). Homebrew checks before it installs
+anything; the Releases tarballs carry no OS check of their own, so confirm your version first if
+you take one of those. macOS 12 is no longer supported, and `go install` won't rescue it: `go.mod`
+requires Go 1.27, and Go 1.27 itself needs macOS 13. The last release that runs on Monterey is
+v0.2.1. To keep building on 12, clone, lower the `go` directive in `go.mod` to `1.26`, and build
+with Go 1.26; the code still compiles there today, but nothing enforces that it keeps doing so.
+
+**From source** (needs a Go toolchain, currently Go 1.27+ per `go.mod`):
 
 ```sh
 go install github.com/SeanLF/ccpool@latest          # or pin a version: @v0.2.0

@@ -109,10 +109,7 @@ func (c Config) Integral(a, b int64) float64 {
 	t := a
 	for t < b {
 		// align to the next hour boundary (or the end)
-		step := 3600 - (t % 3600)
-		if b-t < step {
-			step = b - t
-		}
+		step := min(b-t, 3600-(t%3600))
 		total += c.weightAt(t) * float64(step)
 		t += step
 	}
@@ -145,7 +142,7 @@ func intSet(str string, def map[int]bool) map[int]bool {
 		return def
 	}
 	out := map[int]bool{}
-	for _, part := range strings.Split(str, ",") {
+	for part := range strings.SplitSeq(str, ",") {
 		part = strings.TrimSpace(part)
 		if lo, hi, ok := parseRange(part); ok {
 			for d := lo; d <= hi; d++ {

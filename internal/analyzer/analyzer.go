@@ -232,10 +232,7 @@ func render(r Result) string {
 		b.WriteString("  no Claude turns found in the window.\n")
 		return b.String()
 	}
-	n := len(r.ByModel)
-	if n > 6 {
-		n = 6
-	}
+	n := min(len(r.ByModel), 6)
 	for _, m := range r.ByModel[:n] {
 		fmt.Fprintf(&b, "  %6d turns  %6dk out  %s\n", m.Turns, m.Out/1000, m.Model)
 	}

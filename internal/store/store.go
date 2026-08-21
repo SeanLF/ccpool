@@ -219,8 +219,7 @@ func classify(err error) ReadState {
 	if err == nil {
 		return StateOK
 	}
-	var e *sqlite.Error
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*sqlite.Error](err); ok {
 		switch e.Code() & 0xff { // mask extended codes (e.g. CORRUPT_VTAB) down to the primary code
 		case sqliteCorrupt, sqliteNotADB:
 			return StateCorrupt

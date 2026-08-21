@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -317,7 +318,7 @@ func meter(usedFrac float64, paceFrac *float64, width int, pal palette) string {
 	}
 	paceW := pw * float64(width)
 	var b strings.Builder
-	for i := 0; i < width; i++ {
+	for i := range width {
 		fi := float64(i)
 		switch {
 		case fi+1 <= usedW:
@@ -331,10 +332,7 @@ func meter(usedFrac float64, paceFrac *float64, width int, pal palette) string {
 			if fi+0.5 >= paceW {
 				col = pal.red
 			}
-			idx := rb.RoundToInt((usedW - fi) * 8)
-			if idx < 1 {
-				idx = 1
-			}
+			idx := max(rb.RoundToInt((usedW-fi)*8), 1)
 			b.WriteString(col + eighths[idx] + pal.reset)
 		default:
 			b.WriteString(pal.dim + track + pal.reset)
@@ -415,10 +413,7 @@ func cacheState(path string) *cacheInfo {
 
 	const window = 32768
 	size := fi.Size()
-	off := size - window
-	if off < 0 {
-		off = 0
-	}
+	off := max(size-window, 0)
 	if _, err := f.Seek(off, 0); err != nil {
 		return nil
 	}
@@ -448,8 +443,8 @@ func cacheState(path string) *cacheInfo {
 	// last entry with a string timestamp
 	var tsStr string
 	found := false
-	for i := len(entries) - 1; i >= 0; i-- {
-		if s, ok := entries[i]["timestamp"].(string); ok {
+	for _, e := range slices.Backward(entries) {
+		if s, ok := e["timestamp"].(string); ok {
 			tsStr = s
 			found = true
 			break
@@ -464,8 +459,8 @@ func cacheState(path string) *cacheInfo {
 	}
 
 	var ttl *int
-	for i := len(entries) - 1; i >= 0; i-- {
-		cc := digObject(entries[i], "message", "usage", "cache_creation")
+	for _, e := range slices.Backward(entries) {
+		cc := digObject(e, "message", "usage", "cache_creation")
 		if cc == nil {
 			continue
 		}

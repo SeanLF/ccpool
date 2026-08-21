@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/analyzer"
@@ -188,12 +189,7 @@ func printLinesToCode(lines []string, code int) {
 }
 
 func hasFlag(args []string, flag string) bool {
-	for _, a := range args {
-		if a == flag {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, flag)
 }
 
 func usage(w io.Writer) {

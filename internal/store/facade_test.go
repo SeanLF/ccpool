@@ -144,7 +144,7 @@ func TestCaptureAndAppendAtomic(t *testing.T) {
 	reset := int64(1700500000)
 	payload := []byte(`{"x":1,"captured_at":1700000000}`)
 	err := s.CaptureAndAppend("sess", 1700000000, payload,
-		store.HistoryRow{T: 1700000000, Wk: 50, WkReset: &reset, Session: strptr("sess")})
+		store.HistoryRow{T: 1700000000, Wk: 50, WkReset: &reset, Session: new("sess")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,14 +164,14 @@ func TestCaptureAndAppendAtomic(t *testing.T) {
 func TestLastSessionRowTypedAndFiltered(t *testing.T) {
 	s := freshStore(t)
 	r1, r2 := int64(1700500000), int64(1700600000)
-	must(t, s.AppendHistory(store.HistoryRow{T: 100, Wk: 10, WkReset: &r1, Session: strptr("A")}))
-	must(t, s.AppendHistory(store.HistoryRow{T: 200, Wk: 20, WkReset: &r2, Session: strptr("B")}))
+	must(t, s.AppendHistory(store.HistoryRow{T: 100, Wk: 10, WkReset: &r1, Session: new("A")}))
+	must(t, s.AppendHistory(store.HistoryRow{T: 200, Wk: 20, WkReset: &r2, Session: new("B")}))
 
 	last, st := s.LastSessionRow(nil) // overall latest = B
 	if st != store.StateOK || last == nil || last.Session == nil || *last.Session != "B" || last.Wk != 20 {
 		t.Fatalf("overall last = %+v state %v", last, st)
 	}
-	lastA, _ := s.LastSessionRow(strptr("A")) // filtered to session A
+	lastA, _ := s.LastSessionRow(new("A")) // filtered to session A
 	if lastA == nil || lastA.Wk != 10 || *lastA.WkReset != r1 {
 		t.Fatalf("session A last = %+v", lastA)
 	}
@@ -236,8 +236,6 @@ func TestWkPoints(t *testing.T) {
 		t.Fatalf("WkPoints = %+v, want %+v", pts, want)
 	}
 }
-
-func strptr(s string) *string { return &s }
 
 func must(t *testing.T, err error) {
 	t.Helper()

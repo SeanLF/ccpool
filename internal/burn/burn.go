@@ -93,7 +93,7 @@ func Read(path string, now int64) (entries []Entry, readable bool) {
 
 	var parsed []Entry
 	anyContent := false
-	for _, l := range strings.Split(string(b), "\n") {
+	for l := range strings.SplitSeq(string(b), "\n") {
 		if strings.TrimSpace(l) != "" {
 			anyContent = true
 		}

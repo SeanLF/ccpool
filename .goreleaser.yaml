@@ -85,6 +85,12 @@ homebrew_casks:
     homepage: "https://github.com/SeanLF/ccpool"
     description: "Get the most out of a fixed Claude subscription pool"
     license: MIT
+    # Go 1.27 dropped macOS 12, so a Monterey install would fetch a binary dyld refuses to exec.
+    # `depends_on macos:` makes brew decline up front instead. GoReleaser's `dependencies:` only
+    # models cask/formula deps, so the macOS floor has to go through `custom_block` as raw cask
+    # DSL (`goreleaser check` rejects a `depends_on:` key). See docs/DECISIONS.md.
+    custom_block: |
+      depends_on macos: ">= :ventura"
     # Printed on every install/upgrade. Static (no detection logic); it just points at `init`, which
     # is plan-based + idempotent + never-clobber, so re-running after an upgrade is a safe no-op.
     caveats: |
@@ -105,6 +111,8 @@ homebrew_casks:
     homepage: "https://github.com/SeanLF/ccpool"
     description: "Get the most out of a fixed Claude subscription pool (bleeding-edge channel)"
     license: MIT
+    custom_block: |
+      depends_on macos: ">= :ventura"
     caveats: |
       Run `ccpool init` to wire the statusline + warn hooks into
       ~/.claude/settings.json. It is idempotent (skips what is already wired);
