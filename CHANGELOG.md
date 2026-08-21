@@ -9,6 +9,8 @@ behaviour doesn't.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-21
+
 ### Changed
 
 - Built with **Go 1.27**. macOS builds now require **13 Ventura or newer**, because Go 1.27 dropped
