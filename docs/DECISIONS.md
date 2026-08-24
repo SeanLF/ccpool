@@ -709,7 +709,7 @@ language version all move together because every workflow reads `go-version-file
     or a clone with the directive lowered to `1.26` -- the tree does still build and test clean that
     way under a real go1.26.5 (checked), but nothing in CI keeps it that way. README and CHANGELOG
     now say that rather than the comfortable version.
-  - **Mechanism, not prose:** both casks carry `depends_on macos: ">= :ventura"`, so `brew` refuses
+  - **Mechanism, not prose:** both casks carry `depends_on macos: :ventura`, so `brew` refuses
     the install instead of handing over a binary dyld would refuse to exec. GoReleaser's
     `dependencies:` only models cask/formula deps, so this goes through `custom_block` as raw cask
     DSL. Verified by generating the casks (`goreleaser release --snapshot`) and `ruby -c`-ing them.

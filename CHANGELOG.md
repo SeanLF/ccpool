@@ -9,6 +9,14 @@ behaviour doesn't.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-24
+
+### Fixed
+
+- Homebrew casks declare the macOS floor as `depends_on macos: :ventura`. The string form Homebrew
+  deprecated made every `brew` command touching the tap print a warning. Same requirement (`>= 13`),
+  no change to what installs.
+
 ## [0.3.0] - 2026-08-21
 
 ### Changed
