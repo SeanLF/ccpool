@@ -11,7 +11,7 @@ tool (
 require (
 	github.com/muesli/termenv v0.16.0
 	github.com/rogpeppe/go-internal v1.16.0
-	modernc.org/sqlite v1.57.0
+	modernc.org/sqlite v1.58.0
 	pgregory.net/rapid v1.3.0
 )
 
@@ -33,8 +33,8 @@ require (
 	golang.org/x/tools v0.49.0 // indirect
 	golang.org/x/vuln v1.7.0 // indirect
 	honnef.co/go/tools v0.8.0 // indirect
-	modernc.org/libc v1.74.4 // indirect
+	modernc.org/libc v1.75.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.11.0 // indirect
+	modernc.org/memory v1.12.1 // indirect
 	mvdan.cc/gofumpt v0.11.0 // indirect
 )
