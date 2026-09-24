@@ -50,10 +50,10 @@ jobs:
         with:
           ruby-version: "3.4"
 
-      - uses: SeanLF/still_active-action@v0.3.0
+      - uses: SeanLF/still_active-action@v0.4.1
         with:
-          version: "3.0.0.rc4" # rc4: ecosystem-neutral SARIF on the --sbom path (was Ruby-worded) + valid SemVer driver version
-          extra-args: "--sbom=sbom.json" # audit the SBOM, not a (nonexistent) Gemfile
+          version: "3.1.0" # pinned so a new still_active can't turn CI red unannounced
+          sbom: sbom.json # audit the SBOM, not a (nonexistent) Gemfile
           fail-if-vulnerable: high # block on real security; leave maintenance signals informational
           bundler-audit: "false" # ruby-advisory-db is Ruby-only; Go vulns come via deps.dev + OSV
           github-token: ${{ github.token }}
