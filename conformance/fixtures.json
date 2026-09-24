@@ -254,5 +254,11 @@
     "now": 1720000000,
     "env": {},
     "payload": { "prompt_cache": { "caching_observed": true, "warm": true, "ttl": "1h" } }
+  },
+  {
+    "name": "cache_full_hour_no_shift",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "prompt_cache": { "caching_observed": true, "warm": true, "ttl": "1h", "expires_at": 1720003600 } }
   }
 ]

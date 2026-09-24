@@ -213,19 +213,19 @@ Run `ccpool statusline` **bare in a terminal** to preview the line (it renders f
 stored snapshot instead of hanging on stdin).
 
 ```
-ctx 50% 1M  cache 6m left · 5h-ses 41% ↻2h10m · wk ████▂·· 60% +4↑ ↻3d1h
+ctx 50% 1M · cache 06m left · 5h-ses 41% ↻2h10m · wk ████▂·· 60% +3↑ ↻3d01h
 ```
 
 Everything is dim while it's fine; a value lights up (yellow, then red) when it needs you, and the
 week's cells turn red past pace.
 
 - `ctx`: context window used, and its size.
-- `cache 6m left`: time until the prompt cache expires; dim until it's close, then yellow, then
+- `cache 06m left`: time until the prompt cache expires; dim until it's close, then yellow, then
   red, then `cold`. A cold cache re-sends the whole context (about `ctx` worth of tokens) on your next
   message.
 - `5h-ses`: the 5-hour session limit used, `↻` time until it resets.
 - `wk`: the week as 7 cells, each a day's worth, filled in order as you use it. When you're ahead
-  of pace, the use past where you should be is red and `+4↑` says by how many points (the same
+  of pace, the use past where you should be is red and `+3↑` says by how many points (the same
   verdict as `ccpool status`). Dim dots are days' worth not yet used.
 
 ---

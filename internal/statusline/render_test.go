@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/SeanLF/ccpool/internal/pool"
 	"github.com/SeanLF/ccpool/internal/rb"
@@ -61,6 +62,16 @@ func TestWeekCellsRedAgreesWithPoolPace(t *testing.T) {
 					t.Fatalf("profile=%q used=%.1f now=%d: red cells=%v, pool ahead=%v", prof, used, now, gotRed, wantRed)
 				}
 			}
+		}
+	}
+}
+
+// Every reset renders at the same width for any real window, so the segments after it don't shift
+// as it counts down (the 10h..23h59m band was 6 wide before the day form took over at 10h).
+func TestResetInFixedWidth(t *testing.T) {
+	for secs := int64(-60); secs <= week; secs += 60 {
+		if got := resetIn(secs); utf8.RuneCountInString(got) != 6 {
+			t.Fatalf("resetIn(%d) = %q, %d runes, want 6", secs, got, utf8.RuneCountInString(got))
 		}
 	}
 }

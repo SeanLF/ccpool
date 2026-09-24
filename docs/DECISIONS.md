@@ -854,3 +854,13 @@ not worth deciding on.
   terminal-defined, so if it reads too faint on some light theme, the fallback is dimming only
   labels and separators. `--embed` keeps its own layout (it sits in someone else's line) but shares the palette: `+N↑`
   red when ahead, the behind-pace `-N↓` dim.
+- **Uniform ` · ` separators and fixed-width fields.** The two-space gap that grouped `ctx` with
+  `cache` read as an uneven space, not a grouping, so every segment is joined by ` · `. Values that
+  change width (`9%` -> `10%`, `58m` -> `9m`) shifted every segment after them, so percentages pad
+  to two digits and durations zero-pad clock-style (`↻0h15m`, `↻4d00h`, `cache 09m left`), and a reset
+  switches to the day form from 10h (`↻0d23h`, since `↻23h59m` is 6): every reset is exactly 5
+  wide for any real window, with no visible double spaces (`TestResetInFixedWidth`). 99% -> 100%
+  and the `+N↑` cue appearing still shift the line; those are state changes, not countdowns. Rejected: spreading segments across the
+  terminal (flexbox `space-between`, ccstatusline's "flex mode"). It puts ~125 empty columns
+  between `ctx` and `wk` on a 200-column terminal, and filling `COLUMNS` exactly risks a wrap onto
+  a second row if one glyph's width is miscounted. Stable positions come cheaper from fixed widths.

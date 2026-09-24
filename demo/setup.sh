@@ -27,12 +27,16 @@ JSON
 
 # Prime the store: one render captures the snapshot, creates the schema, and writes the first history
 # row (wk 47 @ now). Fail-open, so a hiccup here doesn't abort the demo.
+# Touch the warm-up throttle first, so the render doesn't fork a detached calibration (ccusage via
+# npx) that holds the DB while the seed below writes to it ("database is locked").
+touch "$data/calib.warming"
 ccpool statusline < "$data/payload.json" > /dev/null 2>&1 || true
 
 # Seed the rest directly into the store's tables (sqlite3, a demo-only dev dependency): two earlier
 # weekly points so the run is monotonic (30 -> 40 -> 47) and burn/runway project, plus a warm $/1%
 # calibration so the $ shows immediately (ccusage isn't available in the sandbox to compute it).
 sqlite3 "$CCPOOL_DB" <<SQL
+.timeout 5000
 INSERT INTO history (t, wk, wk_reset) VALUES ($((now - 36000)), 30, $reset), ($((now - 18000)), 40, $reset);
 INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES ('calibration', '{"dpp":26.0,"at":$now}', $now);
 SQL

@@ -126,7 +126,7 @@ func Render(data map[string]any, now int64) string {
 	if cw := typedHash(data, "context_window", "context_window"); cw != nil {
 		if ctx, ok := typedNum(cw, "used_percentage", "context_window.used_percentage"); ok {
 			r := rb.RoundToInt(ctx)
-			seg := pal.quiet("ctx") + " " + sev(fmt.Sprintf("%d%%", r), r, 70, 90, pal)
+			seg := pal.quiet("ctx") + " " + sev(pct(r), r, 70, 90, pal)
 			if s := fmtSize(cw["context_window_size"]); s != "" {
 				seg += " " + pal.dim + s + pal.reset
 			}
@@ -152,9 +152,9 @@ func Render(data map[string]any, now int64) string {
 				if left < cacheCrit {
 					col = pal.bold + pal.red
 				}
-				nowGrp = append(nowGrp, pal.quiet("cache")+" "+col+fmtDur(left)+" left"+pal.reset)
+				nowGrp = append(nowGrp, pal.quiet("cache")+" "+col+cacheLeft(left)+pal.reset)
 			default:
-				nowGrp = append(nowGrp, pal.quiet("cache "+fmtDur(left)+" left"))
+				nowGrp = append(nowGrp, pal.quiet("cache "+cacheLeft(left)))
 			}
 		}
 	}
@@ -163,9 +163,9 @@ func Render(data map[string]any, now int64) string {
 	if fh := typedHash(rl, "five_hour", "five_hour"); fh != nil {
 		if used, ok := typedNum(fh, "used_percentage", "five_hour.used_percentage"); ok {
 			s := rb.RoundToInt(used)
-			seg := pal.quiet("5h-ses") + " " + sev(fmt.Sprintf("%d%%", s), s, 80, 92, pal)
+			seg := pal.quiet("5h-ses") + " " + sev(pct(s), s, 80, 92, pal)
 			if reset, ok := typedNum(fh, "resets_at", "five_hour.resets_at"); ok {
-				seg += " " + pal.dim + "↻" + fmtDur(int64(reset)-now) + pal.reset
+				seg += " " + pal.quiet(resetIn(int64(reset)-now))
 			}
 			sesGrp = append(sesGrp, seg)
 		}
@@ -182,7 +182,7 @@ func Render(data map[string]any, now int64) string {
 			// hour before reset is fine). The +N↑ repeats the red cells in text, so the signal survives
 			// colour-blindness and NO_COLOR.
 			// The label, % and on-pace cells stay quiet; only ahead-of-pace lights up.
-			wknum := fmt.Sprintf("%d%%", rb.RoundToInt(used))
+			wknum := pct(rb.RoundToInt(used))
 			if hasReset {
 				reset := int64(resetF)
 				pace := prof.ElapsedFraction(reset-week, now, reset)
@@ -193,7 +193,7 @@ func Render(data map[string]any, now int64) string {
 				} else {
 					seg += pal.quiet(wknum)
 				}
-				wkGrp = append(wkGrp, seg+" "+pal.dim+"↻"+fmtDur(reset-now)+pal.reset)
+				wkGrp = append(wkGrp, seg+" "+pal.quiet(resetIn(reset-now)))
 			} else {
 				wkGrp = append(wkGrp, pal.quiet("wk")+" "+days(used/100.0, 1.0, false, pal)+" "+pal.quiet(wknum))
 			}
@@ -263,23 +263,27 @@ func sev(text string, pct int, warn, crit int, pal palette) string {
 // quiet dims text that should sit in the background: labels, countdowns, healthy values.
 func (p palette) quiet(text string) string { return p.dim + text + p.reset }
 
-func fmtDur(secs int64) string {
-	if secs < 0 {
-		secs = 0
+// Fixed-width fields, like tabular figures, so a value changing width (9% -> 10%, 58m -> 9m)
+// doesn't shift every segment after it. Durations zero-pad their inner unit for the same reason,
+// which keeps widths steady without visible double spaces.
+func pct(n int) string { return fmt.Sprintf("%2d%%", n) }
+
+// resetIn is "↻" plus exactly 5 runes for any real window (up to 7d): "0h15m", "9h59m", then the
+// day form from 10h ("0d23h", "6d23h"), since "23h59m" would be 6. Minutes only matter under 10h,
+// which is the whole 5h window.
+func resetIn(secs int64) string {
+	secs = max(secs, 0)
+	switch {
+	case secs < 36000:
+		return fmt.Sprintf("↻%dh%02dm", secs/3600, secs%3600/60)
+	default:
+		return fmt.Sprintf("↻%dd%02dh", secs/86400, secs%86400/3600)
 	}
-	d := secs / 86400
-	r := secs % 86400
-	h := r / 3600
-	r %= 3600
-	m := r / 60
-	if d > 0 {
-		return fmt.Sprintf("%dd%dh", d, h)
-	}
-	if h > 0 {
-		return fmt.Sprintf("%dh%dm", h, m)
-	}
-	return fmt.Sprintf("%dm", m)
 }
+
+// cacheLeft caps at 59m: the TTL is at most an hour, so only the first second after a write would
+// read "1h00m" and shift everything after it by two columns.
+func cacheLeft(secs int64) string { return fmt.Sprintf("%02dm left", min(max(secs, 0), 3599)/60) }
 
 // fmtSize renders a token count as "1M"/"200k"; "" unless the value is a positive JSON number.
 func fmtSize(v any) string {
@@ -319,15 +323,14 @@ func days(usedFrac, paceFrac float64, ahead bool, pal palette) string {
 	return b.String()
 }
 
-// joinGroups joins each non-empty group's items with two spaces, then the groups with SEP.
+// joinGroups joins every segment with SEP. The groups (now, 5h, week) only order the segments; a
+// wider gap inside a group read as an uneven space rather than a grouping.
 func joinGroups(pal palette, groups ...[]string) string {
-	var joined []string
+	var all []string
 	for _, g := range groups {
-		if len(g) > 0 {
-			joined = append(joined, strings.Join(g, "  "))
-		}
+		all = append(all, g...)
 	}
-	return strings.Join(joined, pal.sep)
+	return strings.Join(all, pal.sep)
 }
 
 // --- typed payload access (mirrors statusline.rb typed?) ---
