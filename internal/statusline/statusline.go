@@ -1,45 +1,36 @@
 // Package statusline renders the Claude Code statusLine from a fresh CC payload. The rate_limits %
-// is account-global, so the payload IS current; the cached $/1% turns % into a dollar value. Output
+// is account-global, so the payload IS current. No $ here (see Render); `status` has it. Output
 // must stay byte-identical to the committed goldens (conformance/golden/, ANSI included).
 //
-// Groups by timescale:  now (context window + cache-TTL) · ses (5h) · wk (weekly meter + $ + day).
+// Groups by timescale:  now (context window + cache-TTL) · 5h · wk (7 day cells + % + reset).
 // ANSI is officially supported in statuslines (code.claude.com/docs/en/statusline).
 package statusline
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
-	"slices"
 	"strings"
-	"time"
 
-	"github.com/SeanLF/ccpool/internal/calib"
 	"github.com/SeanLF/ccpool/internal/env"
 	"github.com/SeanLF/ccpool/internal/fmtx"
 	"github.com/SeanLF/ccpool/internal/profile"
 	"github.com/SeanLF/ccpool/internal/rb"
-	"github.com/SeanLF/ccpool/internal/store"
 	"github.com/muesli/termenv"
 )
 
 const (
 	week      = 7 * 86400
-	cacheTTL  = 3600 // statusline staleness display tiers (secs): fresh past this
-	cacheWarn = 900  // ...dim/warn past this
-	cacheCrit = 180  // ...and flag as critically stale past this
+	cacheWarn = 900 // prompt-cache seconds left: yellow (not dim) under this
+	cacheCrit = 180 // ...and bold red under this
 )
 
-// eighths are the partial-cell glyphs (index 0..8); solid/track are the full and empty cells.
-var eighths = [...]string{" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"}
+// heights are the partial-height cell glyphs (index 0..8, empty to full).
+var heights = [...]string{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
 
-const (
-	solid = "█"
-	track = "░"
-)
+// future is an empty day cell: dim, and a dot rather than a grey background, which reads as a heavy
+// block on light terminal themes (and a non-tty statusline can't detect the theme).
+const future = "·"
 
 // palette holds the ANSI escapes, each already gated on the colour decision (empty when colour is
 // off). Resolved per render so per-call NO_COLOR/TERM/CCPOOL_BAR_COLOR env is honoured.
@@ -67,15 +58,14 @@ func loadPalette() palette {
 		return code
 	}
 
-	// The bar is the default teal-cyan (downgraded to the active tier), unless CCPOOL_BAR_COLOR gives
-	// an explicit raw-escape override; either way it is suppressed when colour is off (attr/seq both
-	// return "" under Ascii).
+	// The bar is dim like the rest of the line while on pace, so red past pace is the only colour
+	// that means "look". CCPOOL_BAR_COLOR gives an explicit raw-escape override; either way it is
+	// suppressed when colour is off (attr returns "" under Ascii).
 	bar := os.Getenv("CCPOOL_BAR_COLOR")
 	if bar == "" {
-		bar = seq("#56B6C2")
-	} else {
-		bar = attr(bar)
+		bar = "\x1b[2m"
 	}
+	bar = attr(bar)
 
 	p := palette{
 		reset:  attr("\x1b[0m"),
@@ -119,10 +109,10 @@ func noColorEnv() bool {
 	return (ok && v != "") || os.Getenv("TERM") == "dumb"
 }
 
-// Render builds the whole line from the CC payload. now is unix seconds. The store is threaded in for
-// the (read-only, cache-only) $ lookup, so a render reads the calibration through the invocation's
-// single open (nil store -> no $, fail open).
-func Render(s *store.Store, data map[string]any, now int64) string {
+// Render builds the whole line from the CC payload. now is unix seconds. No $ (here or in
+// RenderCompact): a glance should answer "am I ahead of pace", and cold reads took "$1.4k" for money
+// spent; `status` has it.
+func Render(data map[string]any, now int64) string {
 	pal := loadPalette()
 	prof := profile.Load()
 
@@ -130,39 +120,41 @@ func Render(s *store.Store, data map[string]any, now int64) string {
 	if rl == nil {
 		rl = map[string]any{}
 	}
-	dppVal, hasDPP := calib.DPP(s)
-
 	var nowGrp, sesGrp, wkGrp []string
 
 	// context window %
 	if cw := typedHash(data, "context_window", "context_window"); cw != nil {
 		if ctx, ok := typedNum(cw, "used_percentage", "context_window.used_percentage"); ok {
 			r := rb.RoundToInt(ctx)
-			seg := "ctx " + sev(fmt.Sprintf("%d%%", r), r, 70, 90, pal)
+			seg := pal.quiet("ctx") + " " + sev(fmt.Sprintf("%d%%", r), r, 70, 90, pal)
 			if s := fmtSize(cw["context_window_size"]); s != "" {
-				seg += " " + s
+				seg += " " + pal.dim + s + pal.reset
 			}
 			nowGrp = append(nowGrp, seg)
 		}
 	}
 
-	// prompt-cache countdown (only when near expiry)
-	if path, ok := data["transcript_path"].(string); ok {
-		if st := cacheState(path); st != nil {
-			ttl := int64(cacheTTL)
-			if st.ttl != nil {
-				ttl = int64(*st.ttl)
-			}
-			left := st.ts + ttl - now
+	// prompt-cache countdown from CC's own prompt_cache (v2.1.251+): always shown so the line doesn't
+	// shift, dim until it's near expiry, where colour becomes the alert. CC re-renders at expires_at,
+	// so the flip to cold lands on time without a refresh tick.
+	if pc := typedHash(data, "prompt_cache", "prompt_cache"); pc != nil {
+		if seen, _ := pc["caching_observed"].(bool); seen {
+			warm, _ := pc["warm"].(bool)
+			exp, hasExp := typedNum(pc, "expires_at", "prompt_cache.expires_at")
+			left := int64(exp) - now
 			switch {
-			case left <= 0:
-				nowGrp = append(nowGrp, "cache "+pal.bold+pal.red+"cold"+pal.reset)
+			case warm && !hasExp:
+				// warm but no expiry to count down: say nothing rather than a false "cold"
+			case !warm || left <= 0:
+				nowGrp = append(nowGrp, pal.quiet("cache")+" "+pal.bold+pal.red+"cold"+pal.reset)
 			case left < cacheWarn:
 				col := pal.yellow
 				if left < cacheCrit {
 					col = pal.bold + pal.red
 				}
-				nowGrp = append(nowGrp, "cache "+col+fmtDur(left)+pal.reset)
+				nowGrp = append(nowGrp, pal.quiet("cache")+" "+col+fmtDur(left)+" left"+pal.reset)
+			default:
+				nowGrp = append(nowGrp, pal.quiet("cache "+fmtDur(left)+" left"))
 			}
 		}
 	}
@@ -171,42 +163,39 @@ func Render(s *store.Store, data map[string]any, now int64) string {
 	if fh := typedHash(rl, "five_hour", "five_hour"); fh != nil {
 		if used, ok := typedNum(fh, "used_percentage", "five_hour.used_percentage"); ok {
 			s := rb.RoundToInt(used)
-			seg := "ses " + sev(fmt.Sprintf("%d%%", s), s, 80, 92, pal)
+			seg := pal.quiet("5h-ses") + " " + sev(fmt.Sprintf("%d%%", s), s, 80, 92, pal)
 			if reset, ok := typedNum(fh, "resets_at", "five_hour.resets_at"); ok {
-				seg += " " + fmtDur(int64(reset)-now)
+				seg += " " + pal.dim + "↻" + fmtDur(int64(reset)-now) + pal.reset
 			}
 			sesGrp = append(sesGrp, seg)
 		}
 	}
 
-	// weekly meter + $ + day-share
+	// weekly: 7 day cells + % + reset
 	if sd := typedHash(rl, "seven_day", "seven_day"); sd != nil {
 		used, hasUsed := typedNum(sd, "used_percentage", "seven_day.used_percentage")
 		resetF, hasReset := typedNum(sd, "resets_at", "seven_day.resets_at")
 		// Past-reset guard: a stale payload whose window already reset must not show its old % (mirrors
 		// pool.GetWindow dropping reset<=now); suppress the whole weekly segment until the payload catches up.
 		if hasUsed && !(hasReset && int64(resetF) <= now) {
-			cols := env.Int("COLUMNS", 120)
-			width := clampInt(cols-82, 14, 40)
-			wr := rb.RoundToInt(used)
-			wknum := sev(fmt.Sprintf("%d%%", wr), wr, 75, 90, pal)
-			dollars := ""
-			if hasDPP {
-				left := (100 - used) * dppVal
-				dollars = " " + pal.dim + fmtDollars(left) + pal.reset
-			}
+			// No %-threshold colour here: pace is the weekly alarm, so red means one thing (97% used an
+			// hour before reset is fine). The +N↑ repeats the red cells in text, so the signal survives
+			// colour-blindness and NO_COLOR.
+			// The label, % and on-pace cells stay quiet; only ahead-of-pace lights up.
+			wknum := fmt.Sprintf("%d%%", rb.RoundToInt(used))
 			if hasReset {
 				reset := int64(resetF)
 				pace := prof.ElapsedFraction(reset-week, now, reset)
-				daysLeft := float64(reset-now) / 86400.0
-				if daysLeft < 0.0001 {
-					daysLeft = 0.0001
+				d := paceDelta(used, pace)
+				seg := pal.quiet("wk") + " " + days(used/100.0, pace, d >= 1, pal) + " "
+				if d >= 1 {
+					seg += wknum + " " + pal.red + fmt.Sprintf("+%d↑", d) + pal.reset
+				} else {
+					seg += pal.quiet(wknum)
 				}
-				day := clampFloat(min(100-used, (100-used)/daysLeft), 0, 100)
-				wkGrp = append(wkGrp, "wk "+meter(used/100.0, &pace, width, pal)+" "+wknum+dollars+" "+
-					fmtDur(reset-now)+" "+pal.dim+"day "+fmt.Sprintf("%d", rb.RoundToInt(day))+"%"+pal.reset)
+				wkGrp = append(wkGrp, seg+" "+pal.dim+"↻"+fmtDur(reset-now)+pal.reset)
 			} else {
-				wkGrp = append(wkGrp, "wk "+meter(used/100.0, nil, width, pal)+" "+wknum+dollars)
+				wkGrp = append(wkGrp, pal.quiet("wk")+" "+days(used/100.0, 1.0, false, pal)+" "+pal.quiet(wknum))
 			}
 		}
 	}
@@ -215,9 +204,9 @@ func Render(s *store.Store, data map[string]any, now int64) string {
 }
 
 // RenderCompact is the one-segment render for embedding in another statusline: ONLY ccpool's
-// differentiator (pool $-left + pace), leaving ctx/5h/model/git to the host. "" when there's no
-// weekly window to speak to.
-func RenderCompact(s *store.Store, data map[string]any, now int64) string {
+// differentiator (weekly % + pace), leaving ctx/5h/model/git to the host. "" when there's no weekly
+// window to speak to.
+func RenderCompact(data map[string]any, now int64) string {
 	pal := loadPalette()
 	prof := profile.Load()
 
@@ -239,17 +228,12 @@ func RenderCompact(s *store.Store, data map[string]any, now int64) string {
 	}
 
 	r := rb.RoundToInt(used)
-	parts := []string{"pool " + sev(fmt.Sprintf("%d%%", r), r, 75, 90, pal)}
+	parts := []string{fmt.Sprintf("pool %d%%", r)} // uncoloured: the pace arrow is the alarm, as in Render
 
-	if dppVal, hasDPP := calib.DPP(s); hasDPP {
-		left := (100 - used) * dppVal
-		parts = append(parts, pal.dim+fmtDollars(left)+pal.reset)
-	}
-
-	// pace: over-pace (burning fast) is the red risk signal, under-pace is banked headroom (cyan).
+	// pace: over-pace (burning fast) is the red risk signal, under-pace is banked headroom (dim).
 	if resetF, ok := typedNum(sd, "resets_at", "seven_day.resets_at"); ok {
 		reset := int64(resetF)
-		d := rb.RoundToInt(used - prof.ElapsedFraction(reset-week, now, reset)*100)
+		d := paceDelta(used, prof.ElapsedFraction(reset-week, now, reset))
 		if d >= 1 || d <= -1 {
 			if d > 0 {
 				parts = append(parts, fmt.Sprintf("%s+%d↑%s", pal.red, d, pal.reset))
@@ -264,6 +248,8 @@ func RenderCompact(s *store.Store, data map[string]any, now int64) string {
 
 // --- rendering helpers ---
 
+// sev is a value's severity: dim while healthy, yellow near its limit, red at it. The line is
+// ambient by default, so anything not dim means "look at me".
 func sev(text string, pct int, warn, crit int, pal palette) string {
 	if pct >= crit {
 		return pal.red + text + pal.reset
@@ -271,8 +257,11 @@ func sev(text string, pct int, warn, crit int, pal palette) string {
 	if pct >= warn {
 		return pal.yellow + text + pal.reset
 	}
-	return text
+	return pal.quiet(text)
 }
+
+// quiet dims text that should sit in the background: labels, countdowns, healthy values.
+func (p palette) quiet(text string) string { return p.dim + text + p.reset }
 
 func fmtDur(secs int64) string {
 	if secs < 0 {
@@ -300,43 +289,32 @@ func fmtSize(v any) string {
 	return ""
 }
 
-// fmtDollars is the $-left readout: "$1.2k" past a grand, else "$47".
-func fmtDollars(n float64) string {
-	if n >= 1000 {
-		return "$" + rb.Fmt1(n/1000) + "k"
-	}
-	return fmt.Sprintf("$%d", rb.RoundToInt(n))
+// paceDelta is used% minus the pace-profile elapsed%, rounded: the same number pool.GetPace (status,
+// warn) reports, so every surface agrees on "ahead" (>= 1).
+func paceDelta(used, paceFrac float64) int {
+	return rb.RoundToInt(used - paceFrac*100)
 }
 
-// meter is the coloured usage bar: on-pace fill cyan, over-pace tail red, partial leading edge in
-// eighths, remaining dim. paceFrac nil => no pace overlay (pw defaults to 1.0, all cyan).
-func meter(usedFrac float64, paceFrac *float64, width int, pal palette) string {
-	usedW := usedFrac * float64(width)
-	pw := 1.0
-	if paceFrac != nil {
-		pw = *paceFrac
-	}
-	paceW := pw * float64(width)
+// days is the week as 7 cells, each a seventh of it, filled in order by cumulative use. When ahead
+// of pace (paceDelta >= 1), the cells holding use past the pace point are red.
+// At most one colour per cell plus empty space, so a cell never needs a background colour.
+func days(usedFrac, paceFrac float64, ahead bool, pal palette) string {
 	var b strings.Builder
-	for i := range width {
-		fi := float64(i)
-		switch {
-		case fi+1 <= usedW:
-			col := pal.bar
-			if fi+0.5 >= paceW {
-				col = pal.red
-			}
-			b.WriteString(col + solid + pal.reset)
-		case fi < usedW:
-			col := pal.bar
-			if fi+0.5 >= paceW {
-				col = pal.red
-			}
-			idx := max(rb.RoundToInt((usedW-fi)*8), 1)
-			b.WriteString(col + eighths[idx] + pal.reset)
-		default:
-			b.WriteString(pal.dim + track + pal.reset)
+	for k := range 7 {
+		f := min(max(usedFrac*7-float64(k), 0), 1)
+		n := rb.RoundToInt(f * 8)
+		if n == 0 && f > 1e-9 {
+			n = 1 // any use shows, however small
 		}
+		if n == 0 {
+			b.WriteString(pal.dim + future + pal.reset)
+			continue
+		}
+		col := pal.bar
+		if ahead && float64(k+1)/7 > paceFrac {
+			col = pal.red
+		}
+		b.WriteString(col + heights[n] + pal.reset)
 	}
 	return b.String()
 }
@@ -385,164 +363,4 @@ func typedNum(m map[string]any, key, label string) (float64, bool) {
 		diag.Warn("segment not a number", "field", label, "got", fmt.Sprintf("%T", v))
 	}
 	return 0, false
-}
-
-// --- transcript cache state ---
-
-type cacheInfo struct {
-	ts  int64
-	ttl *int // 300 (5m), 3600 (1h), or nil (unknown -> caller uses cacheTTL)
-}
-
-// cacheState reads the transcript tail for the last-activity epoch + live prompt-cache TTL.
-// Returns nil on any problem (fail open). Not exercised by the conformance fixtures, but ported
-// for real use.
-func cacheState(path string) *cacheInfo {
-	if path == "" {
-		return nil
-	}
-	fi, err := os.Stat(path)
-	if err != nil {
-		return nil
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-
-	const window = 32768
-	size := fi.Size()
-	off := max(size-window, 0)
-	if _, err := f.Seek(off, 0); err != nil {
-		return nil
-	}
-	// Read to EOF from the seek point (Ruby f.read); io.ReadAll avoids the short-read/zero-fill
-	// artifact a single Read can leave.
-	tail, err := io.ReadAll(f)
-	if err != nil {
-		return nil
-	}
-
-	lines := splitLines(tail)
-	// Drop a leading partial line when we seeked into the middle of the file.
-	if size >= window && len(lines) > 1 {
-		lines = lines[1:]
-	}
-
-	var entries []map[string]any
-	for _, l := range lines {
-		if m := rb.ParseObject(l); m != nil {
-			entries = append(entries, m)
-		}
-	}
-	if len(entries) == 0 {
-		return nil
-	}
-
-	// last entry with a string timestamp
-	var tsStr string
-	found := false
-	for _, e := range slices.Backward(entries) {
-		if s, ok := e["timestamp"].(string); ok {
-			tsStr = s
-			found = true
-			break
-		}
-	}
-	if !found {
-		return nil
-	}
-	ts, ok := parseTimestamp(tsStr)
-	if !ok {
-		return nil
-	}
-
-	var ttl *int
-	for _, e := range slices.Backward(entries) {
-		cc := digObject(e, "message", "usage", "cache_creation")
-		if cc == nil {
-			continue
-		}
-		if numToInt(cc["ephemeral_5m_input_tokens"]) > 0 {
-			v := 300
-			ttl = &v
-			break
-		}
-		if numToInt(cc["ephemeral_1h_input_tokens"]) > 0 {
-			v := 3600
-			ttl = &v
-			break
-		}
-	}
-	return &cacheInfo{ts: ts, ttl: ttl}
-}
-
-func splitLines(b []byte) [][]byte {
-	var out [][]byte
-	sc := bufio.NewScanner(bytes.NewReader(b))
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		out = append(out, append([]byte(nil), sc.Bytes()...))
-	}
-	return out
-}
-
-// parseTimestamp parses an ISO8601 transcript timestamp to unix seconds (Ruby Time.parse().to_i).
-func parseTimestamp(s string) (int64, bool) {
-	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
-		if t, err := time.Parse(layout, s); err == nil {
-			return t.Unix(), true
-		}
-	}
-	return 0, false
-}
-
-func digObject(m map[string]any, keys ...string) map[string]any {
-	cur := m
-	for _, k := range keys {
-		next, ok := cur[k].(map[string]any)
-		if !ok {
-			return nil
-		}
-		cur = next
-	}
-	return cur
-}
-
-// numToInt coerces a JSON value to int like Ruby `x.to_i` for the cache-token fields (nil -> 0).
-func numToInt(v any) int {
-	n, ok := v.(json.Number)
-	if !ok {
-		return 0
-	}
-	if i, err := n.Int64(); err == nil {
-		return int(i)
-	}
-	if f, err := n.Float64(); err == nil {
-		return int(f)
-	}
-	return 0
-}
-
-// --- small numeric helpers ---
-
-func clampInt(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
-}
-
-func clampFloat(v, lo, hi float64) float64 {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }

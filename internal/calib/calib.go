@@ -29,13 +29,3 @@ func ReadCache(s *store.Store) map[string]any {
 	// compute.go's num()/cachedDPP() — decoding as float64 here would silently disable them.
 	return rb.ParseObject(b)
 }
-
-// DPP returns the cached $/1% and whether it is present and numeric. Value 0 still reports true
-// (Ruby treats 0 as truthy: only nil/false are falsy), so a genuine zero calibration shows a $.
-func DPP(s *store.Store) (float64, bool) {
-	c := ReadCache(s)
-	if c == nil {
-		return 0, false
-	}
-	return cachedDPP(c)
-}

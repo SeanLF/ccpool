@@ -16,12 +16,13 @@ reset=$((now + 4 * 86400)) # ~4 days to the weekly reset
 export CCPOOL_HOME="$data"
 export CCPOOL_DB="$data/ccpool.db"
 export CCPOOL_SETTINGS="$data/settings.json" # empty -> `init` shows a full fresh-wiring diff
+export CCPOOL_SKILLS_DIR="$data/skills" # never read the real ~/.claude/skills
 ( cd "$repo" && go build -o "$data/ccpool" . )
 export PATH="$data:$PATH"
 
 # the demo payload the statusline reads on stdin
 cat > "$data/payload.json" <<JSON
-{"session_id":"demo","context_window":{"used_percentage":38,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":22,"resets_at":$((now + 7200))},"seven_day":{"used_percentage":47,"resets_at":$reset}}}
+{"session_id":"demo","context_window":{"used_percentage":38,"context_window_size":200000},"prompt_cache":{"caching_observed":true,"warm":true,"ttl":"1h","expires_at":$((now + 3240))},"rate_limits":{"five_hour":{"used_percentage":22,"resets_at":$((now + 7200))},"seven_day":{"used_percentage":47,"resets_at":$reset}}}
 JSON
 
 # Prime the store: one render captures the snapshot, creates the schema, and writes the first history

@@ -191,11 +191,9 @@ model/git/dir, that's your host statusline's job). So if you already run one, ad
 ccpool statusline --embed
 ```
 
-`--embed` prints just ccpool's differentiator, `pool 45% $1.4k +2↑` (weekly % · $-of-pool left ·
-pace), and leaves ctx/5h/model/git to the host. `ccpool init` auto-detects a ccstatusline statusLine
-and prints this recipe instead of offering to replace it. The `$` self-populates even if ccpool is
-*only* ever a widget: each render kicks off a throttled background calibration warm-up (never
-blocking the line). (claude-powerline and CCometixLine don't forward the payload or don't take
+`--embed` prints just ccpool's differentiator, `pool 45% +2↑` (weekly % and pace: points ahead `↑`
+or behind `↓`), and leaves ctx/5h/model/git to the host. `ccpool init` auto-detects a ccstatusline
+statusLine and prints this recipe instead of offering to replace it. (claude-powerline and CCometixLine don't forward the payload or don't take
 external commands, so there ccpool has to be the statusLine: `ccpool init --replace-statusline`.)
 
 **Want provider-outage warnings too?** That's a different question from *what your pool is worth*,
@@ -213,6 +211,22 @@ Doing it by hand instead of via `init`:
 
 Run `ccpool statusline` **bare in a terminal** to preview the line (it renders from the freshest
 stored snapshot instead of hanging on stdin).
+
+```
+ctx 50% 1M  cache 6m left · 5h-ses 41% ↻2h10m · wk ████▂·· 60% +4↑ ↻3d1h
+```
+
+Everything is dim while it's fine; a value lights up (yellow, then red) when it needs you, and the
+week's cells turn red past pace.
+
+- `ctx`: context window used, and its size.
+- `cache 6m left`: time until the prompt cache expires; dim until it's close, then yellow, then
+  red, then `cold`. A cold cache re-sends the whole context (about `ctx` worth of tokens) on your next
+  message.
+- `5h-ses`: the 5-hour session limit used, `↻` time until it resets.
+- `wk`: the week as 7 cells, each a day's worth, filled in order as you use it. When you're ahead
+  of pace, the use past where you should be is red and `+4↑` says by how many points (the same
+  verdict as `ccpool status`). Dim dots are days' worth not yet used.
 
 ---
 

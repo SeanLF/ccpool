@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/SeanLF/ccpool/internal/golden"
-	"github.com/SeanLF/ccpool/internal/store"
 )
 
 // The statusline render must stay byte-identical to the committed goldens (conformance/golden/,
@@ -17,16 +16,15 @@ import (
 // is a regression until an intentional, reviewed change is refreshed via CCPOOL_UPDATE_GOLDEN=1.
 
 type fixture struct {
-	Name     string            `json:"name"`
-	Now      json.Number       `json:"now"`
-	Env      map[string]string `json:"env"`
-	CalibDPP *json.Number      `json:"calib_dpp"`
-	Payload  map[string]any    `json:"payload"`
+	Name    string            `json:"name"`
+	Now     json.Number       `json:"now"`
+	Env     map[string]string `json:"env"`
+	Payload map[string]any    `json:"payload"`
 }
 
 // envKeys are every variable a fixture may set; cleared before each case so cases don't leak env.
 var envKeys = []string{
-	"NO_COLOR", "TERM", "COLUMNS", "CCPOOL_BAR_COLOR", "CCPOOL_PACE_PROFILE",
+	"NO_COLOR", "TERM", "CCPOOL_COLOR", "CCPOOL_BAR_COLOR", "CCPOOL_PACE_PROFILE",
 	"CCPOOL_WORK_DAYS", "CCPOOL_WAKE_HOURS", "CCPOOL_PACE_FLOOR",
 	"CCPOOL_PACE_WEIGHTS", "CCPOOL_PACE_HOUR_WEIGHTS", "USAGE_TIER", "CCPOOL_CONFIG",
 }
@@ -44,25 +42,19 @@ func TestStatuslineConformance(t *testing.T) {
 	for _, fx := range fixtures {
 		t.Run(fx.Name, func(t *testing.T) {
 			applyEnv(t, fx.Env)
-			// The calibration cache lives in the store (kv) now, so each case gets a fresh isolated DB
-			// and seeds the $/1% into it (a case with no dpp leaves the row absent -> DPP fails open).
+			// Neither render touches the store, but isolate ccpool's home anyway so a regression that
+			// starts reading it can't pick up the dev's real DB.
 			dir := t.TempDir()
 			t.Setenv("CCPOOL_HOME", dir)
 			t.Setenv("CCPOOL_DB", filepath.Join(dir, "ccpool.db"))
-			s, st := store.Open()
-			if st != store.StateOK || s == nil {
-				t.Fatalf("open = %v", st)
-			}
-			defer s.Close()
-			seedCalib(t, s, fx)
 
 			now, err := fx.Now.Int64()
 			if err != nil {
 				t.Fatalf("bad now %q: %v", fx.Now, err)
 			}
 
-			goRender := Render(s, fx.Payload, now)
-			goCompact := RenderCompact(s, fx.Payload, now)
+			goRender := Render(fx.Payload, now)
+			goCompact := RenderCompact(fx.Payload, now)
 
 			golden.Assert(t, filepath.Join(root, "conformance", "golden", "statusline", fx.Name+".render.txt"), []byte(goRender))
 			golden.Assert(t, filepath.Join(root, "conformance", "golden", "statusline", fx.Name+".compact.txt"), []byte(goCompact))
@@ -99,19 +91,6 @@ func applyEnv(t *testing.T, env map[string]string) {
 		t.Setenv(k, v)
 	}
 	t.Setenv("CCPOOL_CONFIG", filepath.Join(t.TempDir(), "no-config.json")) // isolate: never read the dev's real ~/.ccpool/ccpool.json
-}
-
-// seedCalib puts the fixture's $/1% into the kv calibration row (same {dpp,at} blob the file held).
-// A case with no dpp leaves the row absent, so DPP() reads a cold cache and fails open.
-func seedCalib(t *testing.T, s *store.Store, fx fixture) {
-	t.Helper()
-	if fx.CalibDPP == nil {
-		return
-	}
-	blob := `{"dpp":` + fx.CalibDPP.String() + `,"at":` + fx.Now.String() + `}`
-	if err := s.PutKV("calibration", []byte(blob)); err != nil {
-		t.Fatalf("seed calib: %v", err)
-	}
 }
 
 // repoRoot walks up from the test's working directory to the module root (the dir with go.mod).

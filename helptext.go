@@ -26,7 +26,7 @@ VERDICT (KEEP GOING / COAST / WIND DOWN / SESSION-LIMITED / ...). Exit 0 with a 
 Usage: ccpool statusline [--embed]        (stdin = the CC payload)
 
 Prints the status line from the payload; in a terminal (no payload) shows a preview from the newest
-snapshot. --embed/--compact prints only the $-left + pace gauge, to embed in another statusline.
+snapshot. --embed/--compact prints only the weekly % + pace gauge, to embed in another statusline.
 Wire it as your statusLine command with ` + "`ccpool init`" + `.`,
 
 	"warn": `ccpool warn -- Claude Code hook: mid-turn pace / 5h / context warnings.

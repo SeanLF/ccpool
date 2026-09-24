@@ -445,7 +445,7 @@ func composeRecipe() {
 	fmt.Println("  1. open ccstatusline's config  (e.g. `npx ccstatusline`)")
 	fmt.Println("  2. add a 'Custom Command' widget with command:")
 	fmt.Println("       " + statuslineCmd() + " --embed")
-	fmt.Println("  ccstatusline forwards Claude's full payload, so ccpool renders its $-left + pace inside your line.")
+	fmt.Println("  ccstatusline forwards Claude's full payload, so ccpool renders its weekly % + pace inside your line.")
 }
 
 // preview shows what the statusline looks like from the freshest snapshot (init's final reassurance).
@@ -468,7 +468,7 @@ func previewStatusline(now int64) {
 		return
 	}
 	age := now - statusline.SnapshotCapturedAt(data)
-	line := statusline.Render(s, data, now)
+	line := statusline.Render(data, now)
 	fmt.Fprintf(os.Stderr, "[preview from a %s-old snapshot -- ctx/cache may be stale; live values come from Claude Code]\n", fmtx.Dur(age))
 	if line != "" {
 		fmt.Println(line)

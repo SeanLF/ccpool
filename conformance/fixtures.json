@@ -6,28 +6,19 @@
     "payload": { "rate_limits": { "seven_day": { "used_percentage": 45, "resets_at": 1720345600 } } }
   },
   {
-    "name": "wk_45_calib_plain",
+    "name": "wk_45_color",
     "now": 1720000000,
-    "env": { "NO_COLOR": "1" },
-    "calib_dpp": 24.0,
+    "env": {},
     "payload": { "rate_limits": { "seven_day": { "used_percentage": 45, "resets_at": 1720345600 } } }
   },
   {
-    "name": "wk_45_calib_color",
+    "name": "wk_95_ahead_color",
     "now": 1720000000,
     "env": {},
-    "calib_dpp": 24.0,
-    "payload": { "rate_limits": { "seven_day": { "used_percentage": 45, "resets_at": 1720345600 } } }
-  },
-  {
-    "name": "wk_95_crit_color",
-    "now": 1720000000,
-    "env": {},
-    "calib_dpp": 12.0,
     "payload": { "rate_limits": { "seven_day": { "used_percentage": 95, "resets_at": 1720345600 } } }
   },
   {
-    "name": "wk_78_warn_color",
+    "name": "wk_78_ahead_color",
     "now": 1720000000,
     "env": {},
     "payload": { "rate_limits": { "seven_day": { "used_percentage": 78, "resets_at": 1720345600 } } }
@@ -36,14 +27,12 @@
     "name": "wk_5_under_pace_color",
     "now": 1720000000,
     "env": {},
-    "calib_dpp": 30.0,
     "payload": { "rate_limits": { "seven_day": { "used_percentage": 5, "resets_at": 1720345600 } } }
   },
   {
     "name": "wk_no_reset",
     "now": 1720000000,
     "env": {},
-    "calib_dpp": 24.0,
     "payload": { "rate_limits": { "seven_day": { "used_percentage": 45 } } }
   },
   {
@@ -56,7 +45,6 @@
     "name": "full_payload_color",
     "now": 1720000000,
     "env": {},
-    "calib_dpp": 18.5,
     "payload": {
       "context_window": { "used_percentage": 63, "context_window_size": 190000 },
       "rate_limits": {
@@ -90,42 +78,10 @@
     "payload": { "rate_limits": { "five_hour": { "used_percentage": 84 } } }
   },
   {
-    "name": "columns_narrow",
-    "now": 1720000000,
-    "env": { "COLUMNS": "80" },
-    "payload": { "rate_limits": { "seven_day": { "used_percentage": 60, "resets_at": 1720345600 } } }
-  },
-  {
-    "name": "columns_wide",
-    "now": 1720000000,
-    "env": { "COLUMNS": "200" },
-    "payload": { "rate_limits": { "seven_day": { "used_percentage": 60, "resets_at": 1720345600 } } }
-  },
-  {
-    "name": "columns_garbage",
-    "now": 1720000000,
-    "env": { "COLUMNS": "abc" },
-    "payload": { "rate_limits": { "seven_day": { "used_percentage": 33, "resets_at": 1720345600 } } }
-  },
-  {
     "name": "bar_color_custom",
     "now": 1720000000,
     "env": { "CCPOOL_BAR_COLOR": "\u001b[35m" },
     "payload": { "rate_limits": { "seven_day": { "used_percentage": 50, "resets_at": 1720345600 } } }
-  },
-  {
-    "name": "big_dollars",
-    "now": 1720000000,
-    "env": { "NO_COLOR": "1" },
-    "calib_dpp": 50.0,
-    "payload": { "rate_limits": { "seven_day": { "used_percentage": 30, "resets_at": 1720345600 } } }
-  },
-  {
-    "name": "small_dollars",
-    "now": 1720000000,
-    "env": { "NO_COLOR": "1" },
-    "calib_dpp": 0.5,
-    "payload": { "rate_limits": { "seven_day": { "used_percentage": 6, "resets_at": 1720345600 } } }
   },
   {
     "name": "rate_limits_wrong_type",
@@ -143,7 +99,6 @@
     "name": "term_dumb_no_color",
     "now": 1720000000,
     "env": { "TERM": "dumb" },
-    "calib_dpp": 24.0,
     "payload": { "rate_limits": { "seven_day": { "used_percentage": 45, "resets_at": 1720345600 } } }
   },
   {
@@ -162,7 +117,6 @@
     "name": "float_used_percentage",
     "now": 1720000000,
     "env": { "NO_COLOR": "1" },
-    "calib_dpp": 24.0,
     "payload": { "rate_limits": { "seven_day": { "used_percentage": 44.6, "resets_at": 1720345600 } } }
   },
   {
@@ -170,5 +124,135 @@
     "now": 1720000000,
     "env": { "NO_COLOR": "1" },
     "payload": { "rate_limits": { "seven_day": { "used_percentage": 43, "resets_at": 1720345600 } } }
+  },
+  {
+    "name": "cache_warm_dim_color",
+    "now": 1720000000,
+    "env": {},
+    "payload": {
+      "context_window": { "used_percentage": 30, "context_window_size": 200000 },
+      "prompt_cache": { "caching_observed": true, "warm": true, "ttl": "1h", "expires_at": 1720002000 },
+      "rate_limits": { "seven_day": { "used_percentage": 45, "resets_at": 1720345600 } }
+    }
+  },
+  {
+    "name": "cache_warn_color",
+    "now": 1720000000,
+    "env": {},
+    "payload": {
+      "context_window": { "used_percentage": 30, "context_window_size": 200000 },
+      "prompt_cache": { "caching_observed": true, "warm": true, "ttl": "1h", "expires_at": 1720000600 },
+      "rate_limits": { "seven_day": { "used_percentage": 45, "resets_at": 1720345600 } }
+    }
+  },
+  {
+    "name": "cache_crit_color",
+    "now": 1720000000,
+    "env": {},
+    "payload": {
+      "context_window": { "used_percentage": 30, "context_window_size": 200000 },
+      "prompt_cache": { "caching_observed": true, "warm": true, "ttl": "1h", "expires_at": 1720000090 },
+      "rate_limits": { "seven_day": { "used_percentage": 45, "resets_at": 1720345600 } }
+    }
+  },
+  {
+    "name": "cache_expired_color",
+    "now": 1720000000,
+    "env": {},
+    "payload": {
+      "context_window": { "used_percentage": 30, "context_window_size": 200000 },
+      "prompt_cache": { "caching_observed": true, "warm": true, "ttl": "1h", "expires_at": 1719999995 },
+      "rate_limits": { "seven_day": { "used_percentage": 45, "resets_at": 1720345600 } }
+    }
+  },
+  {
+    "name": "cache_not_warm_color",
+    "now": 1720000000,
+    "env": {},
+    "payload": {
+      "context_window": { "used_percentage": 30, "context_window_size": 200000 },
+      "prompt_cache": { "caching_observed": true, "warm": false, "ttl": "1h", "expires_at": 1720000600 },
+      "rate_limits": { "seven_day": { "used_percentage": 45, "resets_at": 1720345600 } }
+    }
+  },
+  {
+    "name": "cache_unobserved_hidden",
+    "now": 1720000000,
+    "env": {},
+    "payload": {
+      "context_window": { "used_percentage": 30, "context_window_size": 200000 },
+      "prompt_cache": { "caching_observed": false, "warm": false },
+      "rate_limits": { "seven_day": { "used_percentage": 45, "resets_at": 1720345600 } }
+    }
+  },
+  {
+    "name": "cache_wrong_types",
+    "now": 1720000000,
+    "env": {},
+    "payload": {
+      "context_window": { "used_percentage": 30, "context_window_size": 200000 },
+      "prompt_cache": { "caching_observed": "yes", "warm": 1, "expires_at": "soon" },
+      "rate_limits": { "seven_day": { "used_percentage": 45, "resets_at": 1720345600 } }
+    }
+  },
+  {
+    "name": "wk_just_under_pace_color",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "rate_limits": { "seven_day": { "used_percentage": 43.3, "resets_at": 1720345600 } } }
+  },
+  {
+    "name": "wk_just_over_pace_color",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "rate_limits": { "seven_day": { "used_percentage": 44.2, "resets_at": 1720345600 } } }
+  },
+  {
+    "name": "wk_weekdays_uniform_would_be_red",
+    "now": 1720000000,
+    "env": { "CCPOOL_PACE_PROFILE": "weekdays", "TZ": "UTC" },
+    "payload": { "rate_limits": { "seven_day": { "used_percentage": 46, "resets_at": 1720345600 } } }
+  },
+  {
+    "name": "wk_weekdays_ahead_color",
+    "now": 1720000000,
+    "env": { "CCPOOL_PACE_PROFILE": "weekdays", "TZ": "UTC" },
+    "payload": { "rate_limits": { "seven_day": { "used_percentage": 60, "resets_at": 1720345600 } } }
+  },
+  {
+    "name": "wk_last_day_color",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "rate_limits": { "seven_day": { "used_percentage": 97, "resets_at": 1720003600 } } }
+  },
+  {
+    "name": "wk_over_100_color",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "rate_limits": { "seven_day": { "used_percentage": 150, "resets_at": 1720345600 } } }
+  },
+  {
+    "name": "wk_negative_color",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "rate_limits": { "seven_day": { "used_percentage": -5, "resets_at": 1720345600 } } }
+  },
+  {
+    "name": "wk_tiny_color",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "rate_limits": { "seven_day": { "used_percentage": 0.5, "resets_at": 1720345600 } } }
+  },
+  {
+    "name": "wk_ahead_no_reset_color",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "rate_limits": { "seven_day": { "used_percentage": 150 } } }
+  },
+  {
+    "name": "cache_warm_no_expiry_hidden",
+    "now": 1720000000,
+    "env": {},
+    "payload": { "prompt_cache": { "caching_observed": true, "warm": true, "ttl": "1h" } }
   }
 ]

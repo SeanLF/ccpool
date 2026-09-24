@@ -55,9 +55,6 @@ func TestCacheFreshPaths(t *testing.T) {
 	if Stale(s, now) {
 		t.Error("Stale = true for a fresh cache, want false")
 	}
-	if dpp, ok := DPP(s); !ok || dpp != 2.5 {
-		t.Errorf("DPP() = (%v, %v), want (2.5, true)", dpp, ok)
-	}
 	// force=false must hit the cache and return without recomputing (no history / ccusage present).
 	if dpp, ok := DollarPerPct(s, now, false); !ok || dpp != 2.5 {
 		t.Errorf("DollarPerPct(now,false) = (%v, %v), want (2.5, true)", dpp, ok)
@@ -65,8 +62,8 @@ func TestCacheFreshPaths(t *testing.T) {
 
 	// Integer dpp (a Go-written cache drops the .0) must still read back as numeric.
 	seed(`{"dpp":3,"at":1000000}`)
-	if dpp, ok := DPP(s); !ok || dpp != 3 {
-		t.Errorf("DPP() with integer dpp = (%v, %v), want (3, true)", dpp, ok)
+	if dpp, ok := DollarPerPct(s, now, false); !ok || dpp != 3 {
+		t.Errorf("DollarPerPct with integer dpp = (%v, %v), want (3, true)", dpp, ok)
 	}
 
 	// Stale cache (older than the 6h TTL).
@@ -90,9 +87,6 @@ func TestCacheFreshPaths(t *testing.T) {
 	}{{"empty store", empty}, {"nil store", nil}} {
 		if !Stale(tc.s, now) {
 			t.Errorf("Stale(%s) = false, want true", tc.name)
-		}
-		if _, ok := DPP(tc.s); ok {
-			t.Errorf("DPP(%s) ok = true, want false", tc.name)
 		}
 	}
 }

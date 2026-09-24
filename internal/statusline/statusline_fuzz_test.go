@@ -8,8 +8,7 @@ import (
 
 // FuzzRender feeds arbitrary JSON, decoded into the payload map via the shared rb.ParseObject, into
 // the full Render + RenderCompact. These are the fail-open hot path (a panic escapes to Claude
-// Code), so no input may panic. A nil store is passed so DPP() takes the cold-cache/fail-open branch
-// (the exact state when store.Open fails on a render) rather than reading the dev's real DB.
+// Code), so no input may panic.
 func FuzzRender(f *testing.F) {
 	f.Setenv("NO_COLOR", "1")
 
@@ -21,7 +20,9 @@ func FuzzRender(f *testing.F) {
 		`{"rate_limits":{"seven_day":{"used_percentage":"notanum"}}}`,
 		`{"rate_limits":{"seven_day":{"used_percentage":1e400,"resets_at":-1e400}}}`,
 		`{"rate_limits":{"five_hour":[],"seven_day":123}}`,
-		`{"transcript_path":"/nope/does/not/exist","rate_limits":{}}`,
+		`{"prompt_cache":{"caching_observed":true,"warm":true,"expires_at":1720000600},"rate_limits":{}}`,
+		`{"prompt_cache":{"caching_observed":true,"warm":"x","expires_at":-1e400}}`,
+		`{"prompt_cache":[]}`,
 		`{}`, `{"rate_limits":null}`,
 		`{"rate_limits":{"seven_day":{"used_percentage":50,"resets_at":9999999999999}}}`,
 	}
@@ -35,7 +36,7 @@ func FuzzRender(f *testing.F) {
 		if data == nil {
 			return // not an object -> nothing to render
 		}
-		_ = Render(nil, data, now)
-		_ = RenderCompact(nil, data, now)
+		_ = Render(data, now)
+		_ = RenderCompact(data, now)
 	})
 }

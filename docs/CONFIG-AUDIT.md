@@ -89,7 +89,7 @@ hatch. The defaults are all calibrated and sane.
 - **runway band:** `CCPOOL_RUNWAY_FAST` (1.5), `CCPOOL_RUNWAY_SLOW` (0.7),
   `CCPOOL_RUNWAY_MIN_DENSITY` (0.5).
 - **review / rhythm internals:** `CCPOOL_LOW_OUTPUT` (500), `CCPOOL_RHYTHM_PEAK` (0.25).
-- **misc:** `CCPOOL_BAR_COLOR` (truecolour cyan), `CCPOOL_PRUNE` (opt-in delete flag),
+- **misc:** `CCPOOL_BAR_COLOR` (raw escape for the week cells; default dim), `CCPOOL_PRUNE` (opt-in delete flag),
   `CCPOOL_PACE_MARGIN` (3 — shared by status/check/warn/run; borderline documentable).
 
 **Verdict: KEEP as-is, leave undocumented.** They don't burden onboarding (invisible), they're

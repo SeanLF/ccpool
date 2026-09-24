@@ -8,8 +8,8 @@ import (
 
 // FuzzBlocksParse fuzzes the ccusage blocks parse path (the JSON decode + blocksArray extraction +
 // per-block field reads that ccusageBlocks runs on ccusage's output). ccusage output is external
-// and can be malformed; this parse feeds the $ calibration that the statusline reads, so a panic
-// here would surface on the fail-open path. In-package so the unexported helpers are reachable
+// and can be malformed; this parse feeds the $ calibration that the statusline's detached
+// warm-up computes, so a panic here would surface on the fail-open path. In-package so the unexported helpers are reachable
 // without shelling out to a fake ccusage on every iteration.
 func FuzzBlocksParse(f *testing.F) {
 	seeds := []string{

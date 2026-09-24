@@ -37,7 +37,7 @@ func Command(now int64, embed bool) {
 	}
 
 	// One store open for the whole render path -- capture (write), warm's staleness probe, the opt-in
-	// prune, and the $ read all share it, so a render opens the DB once instead of once per read.
+	// and the opt-in prune all share it, so a render opens the DB once instead of once per read.
 	// Best-effort -- store.Open never returns a usable handle on a non-OK state (it returns nil), and
 	// every consumer is nil-safe, so a failed open just degrades the optional bits; never blanks the line.
 	s, _ := store.Open()
@@ -71,9 +71,9 @@ func Command(now int64, embed bool) {
 
 	var line string
 	if embed {
-		line = RenderCompact(s, data, now)
+		line = RenderCompact(data, now)
 	} else {
-		line = Render(s, data, now)
+		line = Render(data, now)
 	}
 	if line != "" {
 		fmt.Print(line)
@@ -156,8 +156,9 @@ func spliceCapturedAt(raw []byte, now int64) ([]byte, bool) {
 	return out, true
 }
 
-// warm kicks off a DETACHED background $/1% recompute when the calibration is stale, so a
-// statusline-only user still gets a $ without a render ever blocking on ccusage. Throttled to one
+// warm kicks off a DETACHED background $/1% recompute when the calibration is stale, so `status`
+// has a fresh $ and history rows their ccusage cost without a render ever blocking on ccusage (and
+// WarmCalib rolls the daily DB backup). Throttled to one
 // attempt / 5 min via a marker file. Fail-open throughout.
 func warm(s *store.Store, now int64) {
 	defer func() { _ = recover() }()
@@ -210,9 +211,9 @@ func preview(s *store.Store, now int64, embed bool) {
 	age := now - SnapshotCapturedAt(data)
 	var line string
 	if embed {
-		line = RenderCompact(s, data, now)
+		line = RenderCompact(data, now)
 	} else {
-		line = Render(s, data, now)
+		line = Render(data, now)
 	}
 	fmt.Fprintf(os.Stderr, "[preview from a %s-old snapshot -- ctx/cache may be stale; live values come from Claude Code]\n", fmtx.Dur(age))
 	if line != "" {

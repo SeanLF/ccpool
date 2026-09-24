@@ -209,7 +209,7 @@ Commands:
   run -- <cmd...>    run <cmd>, downshifting subagent model/effort when you're ahead of pace.
   review [days]      retrospective: did you use the right model for the work? (default 7d)
   statusline         render the Claude Code statusLine; bare in a terminal shows a preview.
-  statusline --embed compact $-left + pace only, to embed in another statusline (e.g. a
+  statusline --embed compact weekly % + pace only, to embed in another statusline (e.g. a
                      ccstatusline custom-command widget). Keep your line, add ccpool's gauge.
   warn               Claude Code hook: warn mid-turn on pace / 5h / context (stdin = payload).
   prune [--history]  delete stale snapshot rows (add --history to also compact old history rows).

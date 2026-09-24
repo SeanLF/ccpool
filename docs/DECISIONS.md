@@ -156,7 +156,7 @@ context compaction or the scratch wipe. (Governor-era detail also in
 - **Freshness = 2min** (statusline re-renders multi-x/min when active; past it → estimate tier).
   **3-tier:** fresh / estimated-via-accrued-cost / stale-with-warning. Fail OPEN everywhere.
 - **Pruning opt-in** (deleting files is never silent-by-default); `ccpool prune` + status nudge.
-- **Statusline bar uses 24-bit truecolour** (16-colour cyan got remapped to pink by Ghostty).
+- **Statusline bar uses 24-bit truecolour** (16-colour cyan got remapped to pink by Ghostty). *(Superseded 2026-09-24: the bar is dim by default; see the last section.)*
 - **ccusage pinned @20**, fail-loud schema-probe.
 
 ## Methodology (the real dividend)
@@ -230,7 +230,7 @@ to adopt ccpool. Decided it's a **must-have for release** and built it, adversar
   an empirical end-to-end capture (v2.2.22)** proved the opposite: ccstatusline forwards the
   **full payload incl. `rate_limits`** to widgets. **Lesson: verify against source/empirics, not
   docs — the README under-documented the contract and nearly cost a wrapper we didn't need.**
-- **BUILT: `ccpool statusline --embed`** — a compact `pool 45% $1.4k +2↑` segment (weekly % ·
+- **BUILT: `ccpool statusline --embed`** *(Superseded 2026-09-24: now `pool 45% +2↑`, no $; see the last section.)* — a compact `pool 45% $1.4k +2↑` segment (weekly % ·
   $-of-pool · pace), for embedding as a ccstatusline custom-command widget. `init` detects a
   ccstatusline host and prints the widget recipe instead of clobbering it (won't replace even with
   `--replace-statusline` — composing is strictly better). ccpool stays downstream + tiny; the host
@@ -410,7 +410,7 @@ Then a config-file feature emerged from a conversation about how users actually 
   is cached (6h TTL, warmed by a DETACHED process — a goroutine can't outlive the render). Reset to 0
   (weekly or a surprise Anthropic reset) is handled: the display reads the live number; the
   calibration segments at hard wk drops + `wk_reset` windows with the same 300s jitter tolerance as A0.
-- **cacheState kept (measured cheap).** The prompt-cache "going cold" countdown reads a bounded 32KB
+- **cacheState kept (measured cheap).** *(Superseded 2026-09-24: retired for the native `prompt_cache` field, see the last section.)* The prompt-cache "going cold" countdown reads a bounded 32KB
   transcript tail ~0.3ms/render (the whole render is ~5ms, process-startup-bound). Not a hot-path cost.
 - **clock=auto costs ~8ms** (a `defaults read` subprocess), but only on `status`/`check`/`rhythm`
   (on-demand), never the statusline. Persisting the detected `12`/`24` to the config eliminates it.
@@ -604,7 +604,7 @@ Then a config-file feature emerged from a conversation about how users actually 
     intervals where `wk` moved with ~$0 local cost (off-machine) can be excluded. Additive schema column
     (needs a migration primitive the store lacks today: `PRAGMA user_version` + `ALTER TABLE`); render
     path unchanged until weeks of clean aligned data exist, then recalibrate with Deming + Fieller.
-  - **Follow-up (UX, deferred to a golden-touching change): present the `$` with honest imprecision.** The
+  - **Follow-up (UX, deferred to a golden-touching change): present the `$` with honest imprecision.** *(Statusline part moot 2026-09-24: the statusline no longer shows a $; still applies to `status`.)* The
     statusline shows a whole-dollar figure (`report.USD`) that reads as precise; given the ~$13-30 band it
     should be coarsened or shown as a range (which the small-n literature also prescribes). Not done here
     (needs the golden refresh + a format call).
@@ -794,3 +794,63 @@ not worth deciding on.
   or hand-rolled parse of the handful of fields we actually read) rather than pin the toolchain.
 - Conformance goldens were byte-unchanged across the bump, and no golden embeds JSON error text
   (checked), which is the documented place v1-over-v2 compat is allowed to differ.
+
+## Statusline: native prompt_cache, a 7-day week, no $ (2026-09-24)
+
+- **The transcript-tail cache scraper is retired.** Claude Code 2.1.251 added a `prompt_cache`
+  object to the statusline payload (`warm`, `ttl`, `expires_at`, `hit_ratio`,
+  `recache_tokens_if_cold`, miss causes), and re-renders the line when `expires_at` passes. That
+  supersedes the "cacheState kept" entry above: the scraper existed only because the payload had no
+  cache state. Older Claude Code simply shows no cache segment (fail open). Reproduce:
+  `sqlite3 ~/.ccpool/ccpool.db "select payload from snapshots order by captured_at desc limit 1" | jq .prompt_cache`.
+- **No "cost to rewarm" readout.** `recache_tokens_if_cold` tracks `ctx % x window size` closely
+  (503,582 vs `ctx 50% 1M` on a live session), so `ctx` already says what going cold costs. Turning
+  it into dollars would need a per-token price, which we don't hand-roll.
+- **Cache is always shown, dim until under 15 min left** (then yellow, red under 3, `cold`). A
+  conditional segment made the line jump mid-glance and hid which TTL you're on (on 1h you only
+  ever saw `cold`); dimming keeps the every-turn `59m left` out of the way, and the colour change
+  is the alert.
+- **The weekly meter is 7 cells, filled in order by cumulative use** (was a 14..40-cell horizontal
+  bar sized from `COLUMNS`). Each cell is a seventh of the week and fills bottom-up (`▁..█`). When
+  use is ahead of pace by the rule `--embed`'s arrow uses (`round(used - pace) >= 1`, pace from
+  `pool.GetPace`), the cells holding use past the pace point are red, so the line can't contradict
+  `status`/`warn`; `TestWeekCellsRedAgreesWithPoolPace` sweeps all three profiles for that. A first
+  cut reddened only past the pace at the END of today ("eaten into tomorrow"); an adversarial review
+  showed that disagrees with every other surface by up to a day's allowance (hundreds of cases
+  under `weekdays`/`workhours`), so it was dropped. Tried in Claude Code itself: background colours
+  do render, but a grey track read as heavy dark blocks on a light theme, and a non-tty statusline
+  can't detect the theme, so empty cells are dim dots. A per-day sparkline (each cell = that day's
+  own use) was the alternative; it answers "how did I spend the week", which belongs in
+  `status`/`rhythm`, not a glance while working.
+- **No $ on any statusline, and no `day N%`.** Two cold reads (Haiku, no ccpool context) both took
+  `$1.4k` for money spent this week, the reverse of its meaning, and neither could read `day 20%`.
+  Neither Anthropic's nor OpenAI's usage page shows money either. `--embed` drops it too (now
+  `pool 45% +2↑`); the misreading doesn't depend on which line it's in. This narrows the
+  positioning above: the $ value of the pool lives in `status`/`review`, and the statusline is a
+  pace gauge. The detached calibration warm-up stays: `status`, the history `ccusage_cost` column
+  and the daily DB backup still ride on it. Labels now say what they are: `5h-ses` (Anthropic's
+  usage page calls it the session; `ses` alone read as the Claude Code session), `↻` before reset
+  countdowns, `cache 6m left` (an hourglass `⏳` didn't disambiguate age from time left in a second
+  cold read; the word does).
+- **Not shown, because the payload lacks it:** the separate per-model weekly limit (Fable) and a
+  subscriber's extra-usage spend. `rate_limits` pins at 100 (history: `ses` hit exactly 100 twelve
+  times, never above); `spend_limit` exists only behind a Claude apps gateway. Claude Code shows its
+  own "Now using extra usage" notice.
+- **UI pass (ui-design-craft).** Red now means one thing on the weekly segment: ahead of pace. The
+  weekly % (full line and `--embed`) lost its 75/90% threshold colour, which fired on 97% used an
+  hour before reset. The red cells get a redundant text cue, `+4↑`, so pace survives
+  colour-blindness and NO_COLOR (colour alone fails WCAG 1.4.1). Secondary text (reset countdowns,
+  window size, a far-off cache) is dim so the numbers you act on lead. The old teal `#56B6C2`
+  measured 2.1:1 on a light terminal, under WCAG 1.4.11's 3:1 for graphics (see the next bullet for
+  where the bar colour ended up). `ctx` and `5h-ses` keep their thresholds: those are hard
+  limits, not pace.
+- **Ambient by default.** Labels, countdowns and every healthy value are dim, so anything at full
+  strength means "look at me": `ctx`/`5h-ses` values when yellow or red, the cache under 15 min, the
+  week % and `+N↑` when ahead of pace. The week bar is dim too while on pace, red past it: a
+  coloured "healthy" fill was the one colour on the line that didn't mean "look", fill vs empty is
+  already carried by shape (blocks vs dots), grey vs red differs in lightness as well as hue (better
+  for colour-blind readers than teal vs red), and a dim block follows the terminal's own grey, which
+  retires the light-theme contrast problem. `CCPOOL_BAR_COLOR` still overrides it. Dim (SGR 2) is
+  terminal-defined, so if it reads too faint on some light theme, the fallback is dimming only
+  labels and separators. `--embed` keeps its own layout (it sits in someone else's line) but shares the palette: `+N↑`
+  red when ahead, the behind-pace `-N↓` dim.

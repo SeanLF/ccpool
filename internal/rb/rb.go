@@ -1,7 +1,7 @@
 // Package rb reproduces the handful of Ruby coercions the port must match byte-for-byte.
 // Ruby's String#to_i / String#to_f parse the longest valid numeric prefix and yield 0 on no match
 // (e.g. "120px".to_i == 120, "abc".to_f == 0.0, ".5".to_f == 0.5) — strconv rejects all of those.
-// The renderer coerces env like COLUMNS and used_percentage this way, so the difference is visible
+// The renderer coerces env and used_percentage this way, so the difference is visible
 // in output. Keep this tiny and faithful, not a general parser.
 package rb
 

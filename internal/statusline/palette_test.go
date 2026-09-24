@@ -10,26 +10,23 @@ import (
 // conformance suite; this pins the degraded tiers and the gates the goldens don't exercise.
 func TestPaletteColorMatrix(t *testing.T) {
 	const (
-		tealTrue = "\x1b[38;2;86;182;194m"
-		teal256  = "\x1b[38;5;73m"
-		teal16   = "\x1b[36m"
-		yellow   = "\x1b[93m" // already 16-colour -> unchanged across tiers
-		red      = "\x1b[91m"
-		dim      = "\x1b[2m"
+		yellow = "\x1b[93m" // already 16-colour -> unchanged across tiers
+		red    = "\x1b[91m"
+		dim    = "\x1b[2m"
 	)
 	cases := []struct {
 		name                  string
 		env                   map[string]string
 		bar, yellow, red, dim string
 	}{
-		{"default forces truecolor", nil, tealTrue, yellow, red, dim},
-		{"CCPOOL_COLOR=truecolor", map[string]string{"CCPOOL_COLOR": "truecolor"}, tealTrue, yellow, red, dim},
-		{"CCPOOL_COLOR=256 degrades the bar", map[string]string{"CCPOOL_COLOR": "256"}, teal256, yellow, red, dim},
-		{"CCPOOL_COLOR=16 degrades the bar", map[string]string{"CCPOOL_COLOR": "16"}, teal16, yellow, red, dim},
+		{"default forces truecolor", nil, dim, yellow, red, dim},
+		{"CCPOOL_COLOR=truecolor", map[string]string{"CCPOOL_COLOR": "truecolor"}, dim, yellow, red, dim},
+		{"CCPOOL_COLOR=256 keeps the bar dim", map[string]string{"CCPOOL_COLOR": "256"}, dim, yellow, red, dim},
+		{"CCPOOL_COLOR=16 keeps the bar dim", map[string]string{"CCPOOL_COLOR": "16"}, dim, yellow, red, dim},
 		{"CCPOOL_COLOR=ascii -> no colour", map[string]string{"CCPOOL_COLOR": "ascii"}, "", "", "", ""},
-		{"unknown CCPOOL_COLOR fails open to truecolor", map[string]string{"CCPOOL_COLOR": "rainbow"}, tealTrue, yellow, red, dim},
+		{"unknown CCPOOL_COLOR fails open to truecolor", map[string]string{"CCPOOL_COLOR": "rainbow"}, dim, yellow, red, dim},
 		{"NO_COLOR beats a forced profile", map[string]string{"CCPOOL_COLOR": "truecolor", "NO_COLOR": "1"}, "", "", "", ""},
-		{"empty NO_COLOR does NOT disable", map[string]string{"NO_COLOR": ""}, tealTrue, yellow, red, dim},
+		{"empty NO_COLOR does NOT disable", map[string]string{"NO_COLOR": ""}, dim, yellow, red, dim},
 		{"TERM=dumb -> no colour", map[string]string{"TERM": "dumb"}, "", "", "", ""},
 		{"CCPOOL_BAR_COLOR raw override, verbatim", map[string]string{"CCPOOL_BAR_COLOR": "\x1b[35m"}, "\x1b[35m", yellow, red, dim},
 		{"CCPOOL_BAR_COLOR suppressed when colour off", map[string]string{"CCPOOL_BAR_COLOR": "\x1b[35m", "NO_COLOR": "1"}, "", "", "", ""},
