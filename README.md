@@ -33,7 +33,7 @@ Burn         ·  ~0.9%/h -> hits cap in ~2.5d; resets first (in 2.1d) -- you're 
 Runway       ·  budget outlasts the week -> reset (2d 3h) comes first with headroom, burn freely
 ```
 
-https://github.com/user-attachments/assets/94e93c09-0d97-41ea-9c8c-4658726ce924
+https://github.com/user-attachments/assets/59095883-b61c-4085-bce7-7ae22341a9d5
 
 ![ccpool statusline and status readout](demo/overview.gif)
 
