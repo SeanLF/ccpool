@@ -9,6 +9,33 @@ behaviour doesn't.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-24
+
+### Changed
+
+- The statusline is quieter and easier to read cold. Everything is dim while it's fine; a value
+  lights up (yellow, then red) only when it needs you:
+  `ctx 50% 1M · cache 06m left · 5h-ses 41% ↻2h10m · wk ████▂·· 60% +3↑ ↻3d01h`.
+  Most fields keep a fixed width, so segments stay put as values count down.
+- The week is now 7 cells, each a day's worth, filled in order as you use it, instead of a wide
+  bar. Use past pace turns red and `+N↑` says by how many points, using the same verdict as
+  `ccpool status` and the `warn` hook, under every pace profile. The weekly % no longer turns
+  yellow/red at 75/90% on its own: 97% used an hour before reset is fine.
+- The prompt-cache countdown comes from Claude Code's own `prompt_cache` field (Claude Code 2.1.251
+  or newer; older versions show no cache segment) and is always shown, dim until under 15 minutes.
+- Labels say what they are: `5h-ses` (was `ses`), `↻` before reset countdowns, `cache 06m left`.
+- `CCPOOL_BAR_COLOR` still overrides the week cells; the default is now dim rather than teal.
+- Built against SQLite 3.53.4 (`modernc.org/sqlite` v1.59.0), which includes upstream's fix for a
+  journal-rollback data-corruption bug in the store that holds ccpool's history.
+
+### Removed
+
+- The `$` from the statusline and from `--embed` (now `pool 45% +2↑`). Readers took it for money
+  spent rather than value left; `ccpool status` still shows it. If you parse `--embed` output
+  rather than display it, the `$` field is gone.
+- `day N%` from the statusline.
+- The statusline no longer reads `COLUMNS`; its width is fixed.
+
 ## [0.3.1] - 2026-08-24
 
 ### Fixed
