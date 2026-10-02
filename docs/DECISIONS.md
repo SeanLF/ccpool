@@ -864,3 +864,35 @@ not worth deciding on.
   terminal (flexbox `space-between`, ccstatusline's "flex mode"). It puts ~125 empty columns
   between `ctx` and `wk` on a 200-column terminal, and filling `COLUMNS` exactly risks a wrap onto
   a second row if one glyph's width is miscounted. Stable positions come cheaper from fixed widths.
+
+## Limit weighting by token type and model: measured, mostly confirms (2026-10-01)
+
+No code change; recorded so the next attempt starts from here. Data: 243 five-hour windows
+(Jul 2 to Oct 1) from `history`, 241k local requests from `~/.claude/projects/**/*.jsonl` (deduped
+on `message.id` + `requestId`), and 1.9k off-machine news-digest calls (`model_calls` from its
+`bin/db-clone` + `bin/psql`; `bin/ops usage` and `bin/usage` lack per-call timestamps).
+
+- **Method.** Per window (grouped by `ses_reset`, 10 min jitter tolerance): y = peak `ses`; X =
+  tokens from window start to that peak, by model family (opus / sonnet+haiku / fable) x kind
+  (write = input + cache creation, cache read, output). Dropped windows with a mid-window drop of 5+
+  points, a peak under 5%, or straddling a plan change. NNLS, no intercept, 5-fold CV R^2,
+  bootstrap 5-95% intervals, split by regime (before/after the Sep 14 +25% change). Negative
+  control: shuffled y scores CV R^2 < 0 while the real fit reaches ~0.67, so the harness isn't
+  manufacturing signal.
+- **Robust: cache reads barely count.** Opus cache read 0.008 (0-0.017) %5h/Mtok vs cache write
+  2.8 (1.7-4.3); dropping cache reads costs ~no CV R^2 in either regime. That is ~1/300 of a write
+  where API list pricing implies ~1/20 (pricing structure quoted from memory, not re-checked). Cache
+  reads were 41B of 42B Opus tokens and most of ccusage's `$`, so `$/1%` drifts with how
+  cache-heavy a week is; this is the mechanism behind the "$13-30, not identifiable to a point"
+  finding above. The `$` stays a readout, as decided.
+- **Not identified:** write vs output (collinear; the two regimes swap which one carries the load),
+  and per-model weights (fable reads heavier than opus in both regimes but intervals include 0;
+  sonnet+haiku came out heavier than opus, implausible, likely overlap with opus-heavy windows).
+  Needs more varied data, e.g. a deliberate sonnet-only stretch. The $100 period had 2 clean windows.
+- **Plan change observations (n=1 each).** Downgrade $200 -> $100 (Oct 1 00:21) zeroed both
+  counters; upgrade back (22:24) zeroed `ses` and moved `wk` 33 -> 6 with `wk_reset` unchanged. The
+  Sep 15 +25% change rescaled `wk` 48 -> 39 (= 48/1.25), so a rescale reading of the upgrade implies
+  a ~5.5x weekly pool; the `ses`/`wk` slope ratio (~3.9 on $200, ~8.7 on $100) with the advertised
+  4x session ratio implies ~1.8x, matching public reports (1.5-2x, finopsllm 2026-09-27). Unresolved.
+- **Off-machine usage is small:** news-digest is ~$5/day API-equivalent (~0.25 wk-points/day);
+  claude.ai's usage-by-product page showed 100% Claude Code, so nothing else draws the pool.
