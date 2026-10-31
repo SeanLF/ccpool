@@ -165,5 +165,47 @@
     "name": "store-unreadable",
     "now": 1720000000,
     "db_unreadable": true
+  },
+  {
+    "name": "no-five-hour-reported",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719999950,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 40, "resets_at": 1720300000 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "five-hour-idle-past-lookback",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719970000,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 40, "resets_at": 1720300000 },
+          "five_hour": { "used_percentage": 30, "resets_at": 1719980000 }
+        }
+      }
+    ]
+  },
+  {
+    "name": "five-hour-idle-then-new-session",
+    "now": 1720000000,
+    "snaps": [
+      {
+        "session_id": "s1",
+        "captured_at": 1719970000,
+        "rate_limits": {
+          "seven_day": { "used_percentage": 40, "resets_at": 1720300000 },
+          "five_hour": { "used_percentage": 30, "resets_at": 1719980000 }
+        }
+      },
+      { "session_id": "s2", "captured_at": 1719999990 }
+    ]
   }
 ]

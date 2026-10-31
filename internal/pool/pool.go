@@ -131,6 +131,30 @@ func FiveHour(snaps []map[string]any, now int64) (Window, bool) {
 	return GetWindow(snaps, "five_hour", now, 6*3600)
 }
 
+// Reported says whether any snapshot captured within `within` seconds of the newest one carrying
+// rate_limits has the window at all. Separates "the account reports no such window" (ultra has no 5h limit) from "it
+// expired". Anchored on the newest snapshot, not now: old snapshots persist for months so only recent
+// ones speak for the plan, but a long idle stretch mustn't make a Max plan look like ultra. A new
+// session renders before its first API response with no rate_limits, so it can't be the anchor.
+func Reported(snaps []map[string]any, key string, within int64) bool {
+	var newest int64
+	for _, d := range snaps {
+		if c, ok := rb.Num(d["captured_at"]); ok && digNum(d, "rate_limits") != nil {
+			newest = max(newest, int64(c))
+		}
+	}
+	for _, d := range snaps {
+		c, ok := rb.Num(d["captured_at"])
+		if !ok || newest-int64(c) > within {
+			continue
+		}
+		if digNum(d, "rate_limits", key) != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // --- helpers ---
 
 func digNum(m map[string]any, keys ...string) map[string]any {

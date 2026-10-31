@@ -49,6 +49,10 @@ func Report(now int64) (lines []string, code int) {
 
 	age, ageOK := pool.DataAge(snaps, now)
 	ses, sesOK := pool.GetWindow(snaps, "five_hour", now, 6*3600)
+	// Plans without a 5h limit (ultra) send no five_hour at all: skip its query and every line about
+	// it, since agents read check each loop and a line about a nonexistent window is wasted tokens.
+	// A live window is reported by definition, whatever its captured_at says.
+	sesReported := sesOK || pool.Reported(snaps, "five_hour", 6*3600)
 	wk, wkOK := pool.GetWindow(snaps, "seven_day", now, pool.Week+86400)
 
 	var wkHist, sesHist []burn.Entry
@@ -56,7 +60,9 @@ func Report(now int64) (lines []string, code int) {
 	if sSt == store.StateOK {
 		var wkSt, sesSt store.ReadState
 		wkHist, wkSt = burn.WeeklyEnvelope(s, now)
-		sesHist, sesSt = burn.FiveHourEnvelope(s, now)
+		if sesReported {
+			sesHist, sesSt = burn.FiveHourEnvelope(s, now)
+		}
 		histState = worseState(wkSt, sesSt)
 	}
 
@@ -69,10 +75,10 @@ func Report(now int64) (lines []string, code int) {
 	if g, ok := cutoverGuard(s); ok {
 		out = append(out, g, "")
 	}
-	sesSoon := sessionLines(&out, ses, sesOK, sesHist, now)
+	sesSoon := sessionLines(&out, ses, sesOK, sesReported, sesHist, now)
 	paceWarn := weeklyLines(&out, wk, wkOK, wkHist, histState, now)
 	out = append(out, "")
-	out = append(out, "VERDICT  "+verdict(ses, sesOK, wk, wkOK, sesSoon, paceWarn, now))
+	out = append(out, "VERDICT  "+verdict(ses, sesOK, sesReported, wk, wkOK, sesSoon, paceWarn, now))
 	if line, ok := recoveryNudgeBrief(); ok { // a recovery can co-exist with live data (snapshots repopulated)
 		out = append([]string{line, ""}, out...)
 	}
@@ -205,9 +211,12 @@ func freshness(age int64, ageOK bool) string {
 	return "STALE -- " + fmtx.Dur(age) + " old; statusline not rendering. The real budget may have moved."
 }
 
-// sessionLines appends the 5h SESSION block. Returns ses_soon: the projected 5h cap is imminent even
-// if the window isn't yet >= SESSION_FULL.
-func sessionLines(lines *[]string, ses pool.Window, sesOK bool, sesHist []burn.Entry, now int64) bool {
+// sessionLines appends the 5h SESSION block, or nothing when no 5h window is reported. Returns
+// ses_soon: the projected 5h cap is imminent even if the window isn't yet >= SESSION_FULL.
+func sessionLines(lines *[]string, ses pool.Window, sesOK, sesReported bool, sesHist []burn.Entry, now int64) bool {
+	if !sesReported {
+		return false
+	}
 	if !sesOK {
 		*lines = append(*lines, "SESSION  (no live 5h window across sessions -- all snapshots predate the last reset)")
 		return false
@@ -302,7 +311,7 @@ func weeklyLines(lines *[]string, wk pool.Window, wkOK bool, wkHist []burn.Entry
 // verdict is the keep-going/stop decision. The trap (learned the hard way) is treating a near-full
 // 5h SESSION window as "out of budget" and stopping — it resets in hours; only the WEEKLY pool
 // genuinely low is a real "stop for the week".
-func verdict(ses pool.Window, sesOK bool, wk pool.Window, wkOK bool, sesSoon, paceWarn bool, now int64) string {
+func verdict(ses pool.Window, sesOK, sesReported bool, wk pool.Window, wkOK bool, sesSoon, paceWarn bool, now int64) string {
 	sessionFull := env.Float("CCPOOL_CHECK_SES_FULL", 92)
 	weeklyLow := env.Float("CCPOOL_CHECK_WEEKLY_LOW", 90)
 	coast := env.Int64("CCPOOL_COAST_SECS", 43200)
@@ -355,11 +364,14 @@ func verdict(ses pool.Window, sesOK bool, wk pool.Window, wkOK bool, sesSoon, pa
 		if wkOK {
 			wkp = strconv.Itoa(wkLeft) + "% weekly headroom"
 		}
-		sesp := "session unknown (no live window)"
-		if sesOK {
-			sesp = "session has room"
+		sesp := ", session unknown (no live window)"
+		switch {
+		case sesOK:
+			sesp = ", session has room"
+		case !sesReported:
+			sesp = "" // no 5h limit on this plan: nothing to say
 		}
-		return "KEEP GOING -- " + wkp + ", " + sesp + ". Spend the budget you were asked to spend."
+		return "KEEP GOING -- " + wkp + sesp + ". Spend the budget you were asked to spend."
 	}
 }
 
