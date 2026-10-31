@@ -9,6 +9,14 @@ behaviour doesn't.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-30
+
+### Fixed
+
+- `ccpool check` on a plan with no 5h limit (ultra, formerly Max 20x) no longer prints a SESSION
+  line claiming your snapshots predate the last reset, or "session unknown" in the verdict. It
+  leaves the 5h window out entirely, so agents reading `check` each loop don't spend tokens on it.
+
 ## [0.4.0] - 2026-09-24
 
 ### Changed
